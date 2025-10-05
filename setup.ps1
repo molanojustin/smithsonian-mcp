@@ -127,14 +127,38 @@ function Test-ApiKey {
     try {
         $result = python -c "
 import sys
+import asyncio
+import httpx
 import os
 os.environ['SMITHSONIAN_API_KEY'] = '$ApiKey'
 sys.path.insert(0, '.')
-from smithsonian_mcp.api_client import create_client
+
+async def test_api_key():
+    try:
+        headers = {'X-Api-Key': '$ApiKey'}
+        async with httpx.AsyncClient(headers=headers, timeout=10.0) as client:
+            response = await client.get('https://api.si.edu/openaccess/api/v1.0/search?q=test&rows=1')
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, dict) and 'response' in data and 'rows' in data['response']:
+                    print('API key is valid')
+                    return True
+                else:
+                    print('API key is valid')
+                    return True
+            else:
+                print(f'API returned status {response.status_code}')
+                return False
+    except Exception as e:
+        print(f'API key validation failed: {e}')
+        return False
+
 try:
-    client = create_client()
-    response = client.get_smithsonian_units()
-    print('API key is valid')
+    result = asyncio.run(test_api_key())
+    if result:
+        sys.exit(0)
+    else:
+        sys.exit(1)
 except Exception as e:
     print(f'API key validation failed: {e}')
     sys.exit(1)

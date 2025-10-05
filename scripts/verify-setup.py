@@ -88,7 +88,11 @@ def check_dependencies() -> Tuple[bool, List[str]]:
                 if line and not line.startswith('#'):
                     package = line.split('>=')[0].split('==')[0].split('<=')[0]
                     try:
-                        __import__(package.replace('-', '_'))
+                        # Handle special cases for package names
+                        import_name = package.replace('-', '_')
+                        if package == 'python-decouple':
+                            import_name = 'decouple'
+                        __import__(import_name)
                     except ImportError:
                         missing.append(package)
     except Exception as e:
@@ -121,11 +125,12 @@ def test_api_connection() -> Tuple[bool, str]:
                 headers["X-Api-Key"] = Config.API_KEY
             
             async with httpx.AsyncClient(headers=headers, timeout=10.0) as client:
-                response = await client.get("https://api.si.edu/openaccess/api/v1.0/unit")
+                # Use search endpoint with a simple query to test API connectivity
+                response = await client.get("https://api.si.edu/openaccess/api/v1.0/search?q=test&rows=1")
                 if response.status_code == 200:
                     data = response.json()
-                    if isinstance(data, dict) and 'rows' in data:
-                        return True, f"Successfully connected, found {len(data['rows'])} Smithsonian units"
+                    if isinstance(data, dict) and 'response' in data and 'rows' in data['response']:
+                        return True, f"Successfully connected, API is responding"
                     else:
                         return True, "Successfully connected, API is responding"
                 else:

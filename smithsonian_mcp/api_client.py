@@ -3,6 +3,7 @@ HTTP client for interacting with the Smithsonian Open Access API via api.data.go
 """
 
 import asyncio
+import json
 import logging
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlencode, urljoin
@@ -142,7 +143,7 @@ class SmithsonianAPIClient:
         if not self.session:
             await self.connect()
 
-        url = urljoin(self.base_url, endpoint)
+        url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
         try:
             logger.debug(f"Making request to {url} with params: {params}")
@@ -152,32 +153,42 @@ class SmithsonianAPIClient:
             if self.api_key:
                 request_params["api_key"] = self.api_key
 
+            # Double-check session is available
+            if self.session is None:
+                raise APIError(error="session_error", message="Failed to initialize HTTP session", details=None, status_code=None)
+            
             response = await self.session.get(url, params=request_params)
             response.raise_for_status()
 
             return response.json()
 
-        except HTTPError as e:
-            logger.error(f"HTTP error occurred: {e}")
-            raise Exception(f"HTTP Error: {str(e)}")
         except Exception as e:
-            logger.error(f"Unexpected error occurred: {e}")
-            raise Exception(f"Unexpected Error: {str(e)}")
-
-        except RequestError as e:
-            error_msg = f"Request error: {str(e)}"
-            logger.error(f"Request failed: {error_msg}")
-            raise APIError(error="request_error", message=error_msg)
-
-        except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error: {error_msg}")
-            raise APIError(error="unknown_error", message=error_msg)
+            error_msg = f"Request failed: {str(e)}"
+            logger.error(error_msg)
+            
+            raise APIError(
+                error="request_error", 
+                message=error_msg, 
+                status_code=None,
+                details={"exception_type": type(e).__name__}
+            )
 
     def _parse_object_data(self, raw_data: Dict[str, Any]) -> SmithsonianObject:
         """
         Parse raw API response data into a SmithsonianObject.
         """
+        # Handle case where raw_data might be a string (JSON string)
+        if isinstance(raw_data, str):
+            try:
+                raw_data = json.loads(raw_data)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse raw_data as JSON: {raw_data}")
+                raise ValueError("raw_data is not valid JSON or dict")
+        
+        if not isinstance(raw_data, dict):
+            logger.error(f"raw_data is not a dict or JSON string: {type(raw_data)}")
+            raise ValueError("raw_data must be a dict or JSON string")
+        
         content = raw_data.get("content", {})
         descriptive_non_repeating = content.get("descriptiveNonRepeating", {})
         freetext = content.get("freetext", {})
@@ -198,6 +209,12 @@ class SmithsonianAPIClient:
                         ImageData(
                             url=media_item.get("content"),
                             thumbnail_url=media_item.get("thumbnail"),
+                            iiif_url=media_item.get("iiif"),
+                            alt_text=media_item.get("caption", ""),
+                            width=media_item.get("width"),
+                            height=media_item.get("height"),
+                            format=media_item.get("format"),
+                            size_bytes=media_item.get("size"),
                             caption=media_item.get("caption", ""),
                             is_cc0=media_item.get("usage", {}).get("access") == "CC0",
                         )
@@ -212,12 +229,16 @@ class SmithsonianAPIClient:
                         Model3D(
                             url=media_item.get("content"),
                             format=media_item.get("format"),
+                            preview_url=media_item.get("thumbnail"),
+                            file_size=media_item.get("size"),
+                            polygons=media_item.get("polygons"),
                         )
                     )
 
         return SmithsonianObject(
             id=obj_id,
             title=title,
+            url=None,  # raw_data.get("url") is an internal ID, not a URL
             unit_code=unit_code,
             unit_name=(
                 indexed_structured.get("unit_name", [{}])[0].get("content")
@@ -236,14 +257,20 @@ class SmithsonianAPIClient:
             models_3d=models_3d,
             raw_metadata=raw_data,
             date=descriptive_non_repeating.get("date", {}).get("content"),
-            maker=[maker.get("content") for maker in freetext.get("maker", [])],
+            date_standardized=descriptive_non_repeating.get("date", {}).get("date_standardized"),
+            dimensions=descriptive_non_repeating.get("physicalDescription", [{}])[0].get("content") if descriptive_non_repeating.get("physicalDescription") else None,
+            summary=freetext.get("summary", [{}])[0].get("content") if freetext.get("summary") else None,
+            notes="\n".join(note.get("content", "") for note in freetext.get("notes", [])) if freetext.get("notes") else None,
+            credit_line=descriptive_non_repeating.get("creditLine", ""),
+            rights=descriptive_non_repeating.get("rights", ""),
+            record_link=descriptive_non_repeating.get("record_link"),
+            last_modified=raw_data.get("modified"),
+            maker=list(filter(None, [maker.get("content") for maker in freetext.get("maker", []) if isinstance(maker, dict)])),
             object_type=next(
                 (t.get("content") for t in freetext.get("objectType", [])), None
             ),
-            materials=[
-                m.get("content") for m in freetext.get("physicalDescription", [])
-            ],
-            topics=[t.get("content") for t in indexed_structured.get("topic", [])],
+            materials=list(filter(None, [m.get("content") for m in freetext.get("physicalDescription", []) if isinstance(m, dict)])),
+            topics=indexed_structured.get("topic", []),
             is_cc0=descriptive_non_repeating.get("metadata_usage", {}).get("access")
             == "CC0",
         )
@@ -275,6 +302,8 @@ class SmithsonianAPIClient:
                 logger.warning(
                     f"Failed to parse object data for row {row.get('id')}: {e}"
                 )
+                # Debug: print the problematic row structure
+                logger.debug(f"Row data: {row}")
                 continue
 
         total_count = response_data.get("response", {}).get("rowCount", 0)
@@ -328,15 +357,69 @@ class SmithsonianAPIClient:
         # The Smithsonian API doesn't have a dedicated endpoint for units.
         # Return a hardcoded list of known units based on documentation
         known_units = [
-            SmithsonianUnit(code="NMNH", name="National Museum of Natural History"),
-            SmithsonianUnit(code="NPG", name="National Portrait Gallery"),
-            SmithsonianUnit(code="SAAM", name="Smithsonian American Art Museum"),
-            SmithsonianUnit(code="HMSG", name="Hirshhorn Museum and Sculpture Garden"),
-            SmithsonianUnit(code="FSG", name="Freer and Sackler Galleries"),
-            SmithsonianUnit(code="NMAfA", name="National Museum of African Art"),
-            SmithsonianUnit(code="NMAI", name="National Museum of the American Indian"),
-            SmithsonianUnit(code="NASM", name="National Air and Space Museum"),
-            SmithsonianUnit(code="NMAH", name="National Museum of American History"),
+            SmithsonianUnit(
+                code="NMNH", 
+                name="National Museum of Natural History",
+                description="Natural history museum",
+                website=None,
+                location="Washington, DC"
+            ),
+            SmithsonianUnit(
+                code="NPG", 
+                name="National Portrait Gallery",
+                description="Portrait art museum",
+                website=None,
+                location="Washington, DC"
+            ),
+            SmithsonianUnit(
+                code="SAAM", 
+                name="Smithsonian American Art Museum",
+                description="American art museum",
+                website=None,
+                location="Washington, DC"
+            ),
+            SmithsonianUnit(
+                code="HMSG", 
+                name="Hirshhorn Museum and Sculpture Garden",
+                description="Modern and contemporary art",
+                website=None,
+                location="Washington, DC"
+            ),
+            SmithsonianUnit(
+                code="FSG", 
+                name="Freer and Sackler Galleries",
+                description="Asian art museum",
+                website=None,
+                location="Washington, DC"
+            ),
+            SmithsonianUnit(
+                code="NMAfA", 
+                name="National Museum of African Art",
+                description="African art museum",
+                website=None,
+                location="Washington, DC"
+            ),
+            SmithsonianUnit(
+                code="NMAI", 
+                name="National Museum of the American Indian",
+                description="Native American art and culture",
+                website=None,
+                location="Washington, DC"
+            ),
+            SmithsonianUnit(
+                code="NASM", 
+                name="National Air and Space Museum",
+                description="Air and space museum",
+                website=None,
+                location="Washington, DC"
+            ),
+            SmithsonianUnit(
+                code="NMAH", 
+                name="National Museum of American History",
+                description="American history museum",
+                website=None,
+                location="Washington, DC"
+            ),
         ]
 
         return known_units
