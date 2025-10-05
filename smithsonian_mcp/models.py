@@ -184,12 +184,15 @@ class CollectionStats(BaseModel):
     last_updated: datetime = Field(..., description="Statistics last updated")
 
 
-class APIError(BaseModel):
+class APIError(Exception):
     """API error response structure."""
 
-    error: str = Field(..., description="Error type")
-    message: str = Field(..., description="Error message")
-    details: Optional[Dict[str, Any]] = Field(
-        None, description="Additional error details"
-    )
-    status_code: Optional[int] = Field(None, description="HTTP status code")
+    def __init__(self, error: str, message: str, details: Optional[Dict[str, Any]] = None, status_code: Optional[int] = None):
+        self.error = error
+        self.message = message
+        self.details = details
+        self.status_code = status_code
+        super().__init__(f"{error}: {message}")
+    
+    def __str__(self):
+        return f"{self.error}: {self.message}"

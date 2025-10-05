@@ -7,7 +7,7 @@ Open Access collections through a standardized interface.
 
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -33,6 +33,9 @@ from .models import (
 logging.basicConfig(level=getattr(logging, Config.LOG_LEVEL))
 logger = logging.getLogger(__name__)
 
+# Global API client instance for mcpo compatibility
+_global_api_client: Optional[SmithsonianAPIClient] = None
+
 
 @dataclass
 class ServerContext:
@@ -41,9 +44,23 @@ class ServerContext:
     api_client: SmithsonianAPIClient
 
 
+async def get_api_client(ctx: Optional[Context[ServerSession, ServerContext]] = None) -> SmithsonianAPIClient:
+    """Get API client from global instance for mcpo compatibility."""
+    global _global_api_client
+    
+    # Always use global client to avoid context access issues
+    # This works for both normal MCP and mcpo scenarios
+    if _global_api_client is None:
+        _global_api_client = await create_client()
+        logger.info("Global API client initialized")
+    
+    return _global_api_client
+
+
 @asynccontextmanager
 async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
     """Manage server lifecycle with API client initialization."""
+    global _global_api_client
     logger.info("Initializing Smithsonian MCP Server...")
 
     # Validate configuration
@@ -55,6 +72,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
 
     # Initialize API client
     api_client = await create_client()
+    _global_api_client = api_client  # Set global reference for mcpo compatibility
 
     try:
         logger.info(
@@ -64,6 +82,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
     finally:
         logger.info("Shutting down Smithsonian MCP Server...")
         await api_client.disconnect()
+        _global_api_client = None
 
 
 # Initialize MCP server with lifespan management
@@ -136,12 +155,9 @@ async def search_collections(
             date_end=None,
         )
 
-        # Perform search
-        results = (
-            await ctx.request_context.lifespan_context.api_client.search_collections(
-                filters
-            )
-        )
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
 
         logger.info(
             f"Search completed: '{query}' returned {results.returned_count} of {results.total_count} results"
@@ -171,9 +187,8 @@ async def get_object_details(
         Detailed object information, or None if object not found
     """
     try:
-        result = await ctx.request_context.lifespan_context.api_client.get_object_by_id(
-            object_id
-        )
+        api_client = await get_api_client(ctx)
+        result = await api_client.get_object_by_id(object_id)
 
         if result:
             logger.info(f"Retrieved object details: {object_id}")
@@ -202,7 +217,8 @@ async def get_smithsonian_units(
         List of Smithsonian units with their codes and descriptions
     """
     try:
-        units = await ctx.request_context.lifespan_context.api_client.get_units()
+        api_client = await get_api_client(ctx)
+        units = await api_client.get_units()
         logger.info(f"Retrieved {len(units)} Smithsonian units")
         return units
 
@@ -225,9 +241,8 @@ async def get_collection_statistics(
         Collection statistics and metrics
     """
     try:
-        stats = (
-            await ctx.request_context.lifespan_context.api_client.get_collection_stats()
-        )
+        api_client = await get_api_client(ctx)
+        stats = await api_client.get_collection_stats()
         logger.info("Retrieved collection statistics")
         return stats
 
@@ -283,12 +298,9 @@ async def search_by_unit(
             date_end=None,
         )
 
-        # Perform search
-        results = (
-            await ctx.request_context.lifespan_context.api_client.search_collections(
-                filters
-            )
-        )
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
 
         logger.info(
             f"Search by unit '{unit_code}' completed: '{query}' returned {results.returned_count} of {results.total_count} results"
@@ -335,11 +347,8 @@ async def get_search_context(
             has_3d=None,
             is_cc0=None,
         )
-        results = (
-            await ctx.request_context.lifespan_context.api_client.search_collections(
-                filters
-            )
-        )
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
 
         output = [f"Search Results for '{query}':\n"]
 
@@ -369,9 +378,8 @@ async def get_object_context(
         object_id: The ID of the object to retrieve
     """
     try:
-        obj = await ctx.request_context.lifespan_context.api_client.get_object_by_id(
-            object_id
-        )
+        api_client = await get_api_client(ctx)
+        obj = await api_client.get_object_by_id(object_id)
 
         if not obj:
             return f"Object {object_id} not found."
@@ -412,7 +420,8 @@ async def get_units_context(ctx: Context[ServerSession, ServerContext]) -> str:
     Provides information about all Smithsonian museums and research centers.
     """
     try:
-        units = await ctx.request_context.lifespan_context.api_client.get_units()
+        api_client = await get_api_client(ctx)
+        units = await api_client.get_units()
 
         output = ["Smithsonian Institution Museums and Research Centers:\n"]
 
@@ -436,9 +445,8 @@ async def get_stats_context(ctx: Context[ServerSession, ServerContext]) -> str:
     Provides overview statistics for the Smithsonian Open Access collection.
     """
     try:
-        stats = (
-            await ctx.request_context.lifespan_context.api_client.get_collection_stats()
-        )
+        api_client = await get_api_client(ctx)
+        stats = await api_client.get_collection_stats()
 
         output = [
             "Smithsonian Open Access Collection Statistics:\n",

@@ -6,6 +6,12 @@ A **Model Context Protocol (MCP)** server that provides AI assistants with acces
 
 ### Automated Setup (Recommended)
 
+The enhanced setup script now includes:
+- ✅ **API key validation** - Tests your key before saving
+- ✅ **Service installation** - Auto-install as system service  
+- ✅ **Claude Desktop config** - Automatic configuration
+- ✅ **Health checks** - Verify everything works
+
 **macOS/Linux:**
 ```bash
 chmod +x setup.sh
@@ -23,6 +29,13 @@ chmod +x setup.sh
 2. **Install**: `pip install -r requirements.txt`
 3. **Configure**: Copy `.env.example` to `.env` and set your API key
 4. **Test**: `python examples/test-api-connection.py`
+
+### Verify Setup
+
+Run the verification script to check your installation:
+```bash
+python scripts/verify-setup.py
+```
 
 ## Features
 
@@ -60,6 +73,129 @@ chmod +x setup.sh
 *Or copy the provided `claude-desktop-config.json` and update the API key*
 
 2. **Test**: Ask Claude "What Smithsonian museums are available?"
+
+### mcpo Integration (MCP Orchestrator)
+
+**mcpo** is an MCP orchestrator that converts multiple MCP servers into OpenAPI/HTTP endpoints, ideal for combining multiple services into a single systemd service.
+
+#### Installation
+```bash
+# Install mcpo
+pip install mcpo
+
+# Or using uvx
+uvx mcpo --help
+```
+
+#### Configuration
+Create a `mcpo-config.json` file:
+
+```json
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "python",
+      "args": ["-m", "smithsonian_mcp.server"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_api_key_here"
+      }
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "time": {
+      "command": "uvx",
+      "args": ["mcp-server-time", "--local-timezone=America/New_York"]
+    }
+  }
+}
+```
+
+#### Running with mcpo
+```bash
+# Start mcpo with hot-reload
+mcpo --config mcpo-config.json --port 8000 --hot-reload
+
+# With API key authentication
+mcpo --config mcpo-config.json --port 8000 --api-key "your_secret_key"
+
+# Access endpoints:
+# - Smithsonian: http://localhost:8000/smithsonian_open_access
+# - Memory: http://localhost:8000/memory  
+# - Time: http://localhost:8000/time
+# - API docs: http://localhost:8000/docs
+```
+
+#### Systemd Service
+Create `/etc/systemd/system/mcpo.service`:
+
+```ini
+[Unit]
+Description=MCP Orchestrator Service
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/your/config
+Environment=PATH=/path/to/venv/bin
+ExecStart=/path/to/venv/bin/mcpo --config mcpo-config.json --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Enable and start service
+sudo systemctl enable mcpo
+sudo systemctl start mcpo
+sudo systemctl status mcpo
+```
+
+#### Troubleshooting mcpo
+
+**"ModuleNotFoundError: No module named 'smithsonian_mcp'"**
+This occurs when mcpo can't find the Smithsonian MCP module. Fix by:
+
+1. **Use absolute Python path** in your mcpo config:
+```json
+{
+  "command": "/full/path/to/your/project/.venv/bin/python",
+  "env": {
+    "PYTHONPATH": "/full/path/to/your/project"
+  }
+}
+```
+
+2. **Verify paths**:
+```bash
+# Check Python executable exists
+ls -la /path/to/your/project/.venv/bin/python
+
+# Test module import
+/path/to/your/project/.venv/bin/python -c "import smithsonian_mcp; print('OK')"
+```
+
+3. **Regenerate config** with setup script:
+```bash
+./setup.sh  # Will create mcpo-config.json with correct paths
+```
+
+**"Connection closed" errors**
+- Ensure API key is valid and set in environment
+- Check that the virtual environment has all dependencies installed
+- Verify the MCP server can start manually: `python -m smithsonian_mcp.server --test`
+
+**"Port 8000 already in use"**
+```bash
+# Check what's using the port
+lsof -i :8000
+# Or use different port
+mcpo --config mcpo-config.json --port 8001
+```
 
 ### VS Code
 
@@ -126,6 +262,9 @@ python -m smithsonian_mcp.server
 # Run test suite
 pytest tests/
 
+# Verify complete setup
+python scripts/verify-setup.py
+
 # VS Code Tasks (if using workspace)
 # - Test MCP Server
 # - Run Tests  
@@ -133,10 +272,80 @@ pytest tests/
 # - Lint Code
 ```
 
+## Service Management
+
+### Linux (systemd)
+```bash
+# Start service
+systemctl --user start smithsonian-mcp
+
+# Stop service  
+systemctl --user stop smithsonian-mcp
+
+# Check status
+systemctl --user status smithsonian-mcp
+
+# Enable on boot
+systemctl --user enable smithsonian-mcp
+```
+
+### macOS (launchd)
+```bash
+# Load service
+launchctl load ~/Library/LaunchAgents/com.smithsonian.mcp.plist
+
+# Unload service
+launchctl unload ~/Library/LaunchAgents/com.smithsonian.mcp.plist
+
+# Check status
+launchctl list | grep com.smithsonian.mcp
+```
+
+### Windows
+```powershell
+# Start service
+Start-Service SmithsonianMCP
+
+# Stop service
+Stop-Service SmithsonianMCP
+
+# Check status
+Get-Service SmithsonianMCP
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**"API key validation failed"**
+- Get a free key from [api.data.gov/signup](https://api.data.gov/signup/)
+- Ensure no extra spaces in your API key
+- Check that `.env` file contains: `SMITHSONIAN_API_KEY=your_key_here`
+
+**"Service failed to start"**
+- Run `python scripts/verify-setup.py` for diagnostics
+- Check logs: `journalctl --user -u smithsonian-mcp` (Linux) or `~/Library/Logs/com.smithsonian.mcp.log` (macOS)
+- Ensure virtual environment is activated
+
+**"Claude Desktop not connecting"**
+- Restart Claude Desktop after configuration
+- Check Claude Desktop config file exists and contains correct paths
+- Verify MCP server is running: `python -m smithsonian_mcp.server`
+
+**"Module import errors"**
+- Activate virtual environment: `source .venv/bin/activate` (Linux/macOS) or `.\venv\Scripts\Activate.ps1` (Windows)
+- Reinstall dependencies: `pip install -r requirements.txt`
+
+### Getting Help
+
+1. Run verification script: `python scripts/verify-setup.py`
+2. Check the [Integration Guide](INTEGRATION_GUIDE.md)
+3. Review [GitHub Issues](https://github.com/molanojustin/smithsonian-mcp/issues)
+
 ## Documentation
 
 - **Integration Guide**: Claude Desktop and VS Code setup
-- **API Reference**: Complete tool and resource documentation
+- **API Reference**: Complete tool and resource documentation  
 - **Examples**: Real-world usage scenarios
 - **Deployment Guide**: Production deployment options
 
