@@ -324,6 +324,31 @@ def check_mcpo_service() -> Tuple[bool, str]:
         return False, f"mcpo service check failed: {e}"
 
 
+def test_mcpo_endpoints() -> Tuple[bool, str]:
+    """Test mcpo HTTP endpoints if service is running"""
+    try:
+        import httpx
+        
+        # Test the docs endpoint first
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get("http://localhost:8000/docs")
+            if response.status_code == 200:
+                # Test Smithsonian endpoint
+                response = client.get("http://localhost:8000/smithsonian_open_access/get_smithsonian_units")
+                if response.status_code == 200:
+                    return True, "mcpo endpoints responding correctly"
+                elif response.status_code == 500:
+                    return False, "mcpo endpoint returning 500 errors (check server logs)"
+                else:
+                    return False, f"mcpo endpoint returned {response.status_code}"
+            else:
+                return False, f"mcpo docs endpoint returned {response.status_code}"
+    except ImportError:
+        return False, "httpx not available for endpoint testing"
+    except Exception as e:
+        return False, f"mcpo endpoint test failed: {e}"
+
+
 def run_diagnostics() -> Dict[str, Tuple[bool, str]]:
     """Run all diagnostic checks"""
     diagnostics = {}
@@ -407,6 +432,14 @@ def run_diagnostics() -> Dict[str, Tuple[bool, str]]:
         diagnostics["mcpo_service"] = (mcpo_service_ok, mcpo_service_msg)
         if mcpo_service_ok:
             success(mcpo_service_msg)
+            
+            # Test endpoints if service is running
+            mcpo_endpoint_ok, mcpo_endpoint_msg = test_mcpo_endpoints()
+            diagnostics["mcpo_endpoints"] = (mcpo_endpoint_ok, mcpo_endpoint_msg)
+            if mcpo_endpoint_ok:
+                success(mcpo_endpoint_msg)
+            else:
+                error(mcpo_endpoint_msg)
         else:
             info(mcpo_service_msg)
     
@@ -458,6 +491,11 @@ def provide_suggestions(diagnostics: Dict[str, Tuple[bool, str]]) -> None:
     if diagnostics.get("mcpo_installation", (False, ""))[0] and diagnostics.get("mcpo_config", (False, ""))[0] and not diagnostics.get("mcpo_service", (False, ""))[0]:
         info("• Start mcpo: mcpo --config mcpo-config.json --port 8000")
         info("• Check if port 8000 is available")
+    
+    if diagnostics.get("mcpo_endpoints", (False, ""))[0] == False:
+        info("• Check mcpo logs for errors: mcpo --config mcpo-config.json --port 8000 --verbose")
+        info("• Verify API key is valid and configured correctly")
+        info("• Test MCP server directly: python -m smithsonian_mcp.server --test")
 
 
 def main():

@@ -1,11 +1,12 @@
 {
   "mcpServers": {
     "smithsonian_open_access": {
-      "command": "python",
+      "command": "/path/to/your/project/.venv/bin/python",
       "args": ["-m", "smithsonian_mcp.server"],
       "env": {
         "SMITHSONIAN_API_KEY": "your_api_key_here",
-        "LOG_LEVEL": "INFO"
+        "LOG_LEVEL": "INFO",
+        "PYTHONPATH": "/path/to/your/project"
       }
     },
     "memory": {

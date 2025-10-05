@@ -59,10 +59,16 @@ setup_mcpo_config() {
     local config_file="mcpo-config.json"
     cp "mcpo-config.example.json" "$config_file"
     
-    # Replace API key in config
+    # Replace paths and API key in config
+    local python_path="$PROJECT_DIR/$VENV_DIR/bin/python"
+    sed -i.bak "s|/path/to/your/project/.venv/bin/python|$python_path|g" "$config_file"
+    sed -i.bak "s|/path/to/your/project|$PROJECT_DIR|g" "$config_file"
+    
     if [ -n "$api_key" ]; then
         sed -i.bak "s/your_api_key_here/$api_key/g" "$config_file"
         info "mcpo configuration created at: $config_file"
+        info "Python path set to: $python_path"
+        info "Project path set to: $PROJECT_DIR"
         info "You can start mcpo with: mcpo --config $config_file --port 8000"
         return 0
     else

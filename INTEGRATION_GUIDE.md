@@ -190,22 +190,58 @@ which mcpo
 pip install mcpo
 ```
 
+**"ModuleNotFoundError: No module named 'smithsonian_mcp'"**
+This is the most common issue - mcpo can't find the Smithsonian MCP module:
+
+```bash
+# 1. Check your mcpo config uses absolute paths
+cat mcpo-config.json | grep "command"
+
+# 2. Verify the Python executable exists
+ls -la /path/to/your/project/.venv/bin/python
+
+# 3. Test the module import directly
+/path/to/your/project/.venv/bin/python -c "import smithsonian_mcp; print('Module found')"
+
+# 4. Regenerate config with correct paths
+./setup.sh  # Choose "y" when asked about mcpo configuration
+```
+
 **"Server failed to start"**
 ```bash
-# Check mcpo logs
+# Check mcpo logs with verbose output
 mcpo --config mcpo-config.json --port 8000 --verbose
 
 # Verify individual MCP servers work
 python -m smithsonian_mcp.server --test
+
+# Check API key is valid
+python examples/test-api-connection.py
 ```
+
+**"Connection closed" or "ExceptionGroup" errors**
+- Ensure API key is set correctly in mcpo config environment
+- Check that PYTHONPATH includes your project directory
+- Verify all dependencies are installed in the virtual environment
 
 **"Endpoint not accessible"**
 ```bash
 # Check if service is running
 curl http://localhost:8000/docs
 
+# Test specific endpoint
+curl http://localhost:8000/smithsonian_open_access/search_collections
+
 # Verify systemd service
 sudo journalctl -u mcpo -f
+```
+
+**"Port 8000 already in use"**
+```bash
+# Find what's using the port
+sudo lsof -i :8000
+# Or use different port
+mcpo --config mcpo-config.json --port 8001
 ```
 
 ## Testing

@@ -338,18 +338,26 @@ function Set-McpoConfig {
     $configFile = "mcpo-config.json"
     Copy-Item "mcpo-config.example.json" $configFile
 
-    # Replace API key in config
+    # Get absolute paths
+    $projectDir = Get-Location
+    $pythonPath = ".\venv\Scripts\python.exe"
+    $fullPythonPath = Join-Path $projectDir $pythonPath
+
+    # Replace paths and API key in config
+    $configContent = Get-Content $configFile -Raw
+    $configContent = $configContent -replace "/path/to/your/project/.venv/bin/python", $fullPythonPath
+    $configContent = $configContent -replace "/path/to/your/project", $projectDir
+    
     if ($ApiKey) {
-        $configContent = Get-Content $configFile -Raw
         $configContent = $configContent -replace "your_api_key_here", $ApiKey
-        $configContent | Out-File -FilePath $configFile -Encoding UTF8
-        Write-Success "mcpo configuration created at: $configFile"
-        Write-Info "You can start mcpo with: mcpo --config $configFile --port 8000"
-        return $true
-    } else {
-        Write-Warning "No API key provided. Edit $configFile and add your API key."
-        return $false
     }
+    
+    $configContent | Out-File -FilePath $configFile -Encoding UTF8
+    Write-Success "mcpo configuration created at: $configFile"
+    Write-Info "Python path set to: $fullPythonPath"
+    Write-Info "Project path set to: $projectDir"
+    Write-Info "You can start mcpo with: mcpo --config $configFile --port 8000"
+    return $true
 }
 
 # Test the installation

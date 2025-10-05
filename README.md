@@ -155,6 +155,48 @@ sudo systemctl start mcpo
 sudo systemctl status mcpo
 ```
 
+#### Troubleshooting mcpo
+
+**"ModuleNotFoundError: No module named 'smithsonian_mcp'"**
+This occurs when mcpo can't find the Smithsonian MCP module. Fix by:
+
+1. **Use absolute Python path** in your mcpo config:
+```json
+{
+  "command": "/full/path/to/your/project/.venv/bin/python",
+  "env": {
+    "PYTHONPATH": "/full/path/to/your/project"
+  }
+}
+```
+
+2. **Verify paths**:
+```bash
+# Check Python executable exists
+ls -la /path/to/your/project/.venv/bin/python
+
+# Test module import
+/path/to/your/project/.venv/bin/python -c "import smithsonian_mcp; print('OK')"
+```
+
+3. **Regenerate config** with setup script:
+```bash
+./setup.sh  # Will create mcpo-config.json with correct paths
+```
+
+**"Connection closed" errors**
+- Ensure API key is valid and set in environment
+- Check that the virtual environment has all dependencies installed
+- Verify the MCP server can start manually: `python -m smithsonian_mcp.server --test`
+
+**"Port 8000 already in use"**
+```bash
+# Check what's using the port
+lsof -i :8000
+# Or use different port
+mcpo --config mcpo-config.json --port 8001
+```
+
 ### VS Code
 
 1. **Open Workspace**: `code smithsonian-mcp-workspace.code-workspace`
