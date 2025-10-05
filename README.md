@@ -6,12 +6,6 @@ A **Model Context Protocol (MCP)** server that provides AI assistants with acces
 
 ### Automated Setup (Recommended)
 
-The enhanced setup script now includes:
-- ✅ **API key validation** - Tests your key before saving
-- ✅ **Service installation** - Auto-install as system service  
-- ✅ **Claude Desktop config** - Automatic configuration
-- ✅ **Health checks** - Verify everything works
-
 **macOS/Linux:**
 ```bash
 chmod +x setup.sh
