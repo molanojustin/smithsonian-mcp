@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "python",
+      "args": ["-m", "smithsonian_mcp.server"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_api_key_here",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+
+/*
+Configuration Instructions:
+1. Copy this file to your Claude Desktop config location:
+   - macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+   - Windows: %APPDATA%\Claude\claude_desktop_config.json  
+   - Linux: ~/.config/Claude/claude_desktop_config.json
+
+2. Replace "your_api_key_here" with your actual API key from:
+   https://api.data.gov/signup/
+
+3. Restart Claude Desktop
+
+4. Test by asking: "What Smithsonian museums are available?"
+*/

@@ -1,0 +1,76 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start MCP Server",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-c",
+        "set -a && source .env && set +a && .venv/bin/python -m smithsonian_mcp.server"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Test MCP Server",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-c",
+        "set -a && source .env && set +a && .venv/bin/python examples/test-api-connection.py"
+      ],
+      "group": "test"
+    },
+    {
+      "label": "Install Dependencies",
+      "type": "shell",
+      "command": ".venv/bin/pip",
+      "args": ["install", "-r", "requirements.txt"],
+      "group": "build"
+    },
+    {
+      "label": "Run Tests",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-c",
+        "set -a && source .env && set +a && .venv/bin/pytest tests/ -v"
+      ],
+      "group": "test"
+    },
+    {
+      "label": "Format Code",
+      "type": "shell",
+      "command": ".venv/bin/black",
+      "args": ["smithsonian_mcp/", "tests/", "examples/"],
+      "group": "build"
+    },
+    {
+      "label": "Lint Code",
+      "type": "shell",
+      "command": ".venv/bin/pylint",
+      "args": ["smithsonian_mcp/"],
+      "group": "test"
+    },
+    {
+      "label": "Debug with MCP Inspector",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-c",
+        "set -a && source .env && set +a && .venv/bin/mcp-inspector smithsonian_mcp.server"
+      ],
+      "group": "test"
+    }
+  ]
+}
