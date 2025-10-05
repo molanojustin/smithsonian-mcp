@@ -158,7 +158,3 @@ MIT License - see LICENSE file for details.
 - **api.data.gov** for API infrastructure
 - **FastMCP** team for the MCP framework
 - **Model Context Protocol** community
-
----
-
-**Start exploring 3+ million Smithsonian objects with AI!**
