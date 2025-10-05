@@ -6,6 +6,12 @@ A **Model Context Protocol (MCP)** server that provides AI assistants with acces
 
 ### Automated Setup (Recommended)
 
+The enhanced setup script now includes:
+- ✅ **API key validation** - Tests your key before saving
+- ✅ **Service installation** - Auto-install as system service  
+- ✅ **Claude Desktop config** - Automatic configuration
+- ✅ **Health checks** - Verify everything works
+
 **macOS/Linux:**
 ```bash
 chmod +x setup.sh
@@ -23,6 +29,13 @@ chmod +x setup.sh
 2. **Install**: `pip install -r requirements.txt`
 3. **Configure**: Copy `.env.example` to `.env` and set your API key
 4. **Test**: `python examples/test-api-connection.py`
+
+### Verify Setup
+
+Run the verification script to check your installation:
+```bash
+python scripts/verify-setup.py
+```
 
 ## Features
 
@@ -126,6 +139,9 @@ python -m smithsonian_mcp.server
 # Run test suite
 pytest tests/
 
+# Verify complete setup
+python scripts/verify-setup.py
+
 # VS Code Tasks (if using workspace)
 # - Test MCP Server
 # - Run Tests  
@@ -133,10 +149,80 @@ pytest tests/
 # - Lint Code
 ```
 
+## Service Management
+
+### Linux (systemd)
+```bash
+# Start service
+systemctl --user start smithsonian-mcp
+
+# Stop service  
+systemctl --user stop smithsonian-mcp
+
+# Check status
+systemctl --user status smithsonian-mcp
+
+# Enable on boot
+systemctl --user enable smithsonian-mcp
+```
+
+### macOS (launchd)
+```bash
+# Load service
+launchctl load ~/Library/LaunchAgents/com.smithsonian.mcp.plist
+
+# Unload service
+launchctl unload ~/Library/LaunchAgents/com.smithsonian.mcp.plist
+
+# Check status
+launchctl list | grep com.smithsonian.mcp
+```
+
+### Windows
+```powershell
+# Start service
+Start-Service SmithsonianMCP
+
+# Stop service
+Stop-Service SmithsonianMCP
+
+# Check status
+Get-Service SmithsonianMCP
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**"API key validation failed"**
+- Get a free key from [api.data.gov/signup](https://api.data.gov/signup/)
+- Ensure no extra spaces in your API key
+- Check that `.env` file contains: `SMITHSONIAN_API_KEY=your_key_here`
+
+**"Service failed to start"**
+- Run `python scripts/verify-setup.py` for diagnostics
+- Check logs: `journalctl --user -u smithsonian-mcp` (Linux) or `~/Library/Logs/com.smithsonian.mcp.log` (macOS)
+- Ensure virtual environment is activated
+
+**"Claude Desktop not connecting"**
+- Restart Claude Desktop after configuration
+- Check Claude Desktop config file exists and contains correct paths
+- Verify MCP server is running: `python -m smithsonian_mcp.server`
+
+**"Module import errors"**
+- Activate virtual environment: `source .venv/bin/activate` (Linux/macOS) or `.\venv\Scripts\Activate.ps1` (Windows)
+- Reinstall dependencies: `pip install -r requirements.txt`
+
+### Getting Help
+
+1. Run verification script: `python scripts/verify-setup.py`
+2. Check the [Integration Guide](INTEGRATION_GUIDE.md)
+3. Review [GitHub Issues](https://github.com/molanojustin/smithsonian-mcp/issues)
+
 ## Documentation
 
 - **Integration Guide**: Claude Desktop and VS Code setup
-- **API Reference**: Complete tool and resource documentation
+- **API Reference**: Complete tool and resource documentation  
 - **Examples**: Real-world usage scenarios
 - **Deployment Guide**: Production deployment options
 

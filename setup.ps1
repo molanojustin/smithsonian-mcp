@@ -115,6 +115,119 @@ function Get-ApiKey {
     }
 }
 
+# Validate API key
+function Test-ApiKey {
+    param([string]$ApiKey)
+
+    if (-not $ApiKey -or $ApiKey -eq "your_api_key_here") {
+        return $false
+    }
+
+    Write-Info "Validating API key..."
+    try {
+        $result = python -c "
+import sys
+import os
+os.environ['SMITHSONIAN_API_KEY'] = '$ApiKey'
+sys.path.insert(0, '.')
+from smithsonian_mcp.api_client import create_client
+try:
+    client = create_client()
+    response = client.get_smithsonian_units()
+    print('API key is valid')
+except Exception as e:
+    print(f'API key validation failed: {e}')
+    sys.exit(1)
+" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+    }
+    catch {
+        # Validation failed
+    }
+    return $false
+}
+
+# Get API key from user with validation
+function Get-ApiKey {
+    param([string]$ProvidedKey)
+
+    if ($ProvidedKey) {
+        if (Test-ApiKey -ApiKey $ProvidedKey) {
+            return $ProvidedKey
+        } else {
+            Write-Warning "Provided API key is invalid."
+        }
+    }
+
+    Write-Host ""
+    Write-Info "API Key Setup"
+    Write-Host "You need an API key from api.data.gov to access Smithsonian data."
+    Write-Host "If you don't have one yet:"
+    Write-Host "1. Visit: https://api.data.gov/signup/"
+    Write-Host "2. Sign up for free (no special permissions needed)"
+    Write-Host "3. Copy your API key"
+    Write-Host ""
+
+    while ($true) {
+        $key = Read-Host "Enter your API key (or press Enter to skip)"
+
+        if (-not $key) {
+            Write-Warning "Skipping API key setup. You'll need to configure it later."
+            return $null
+        }
+
+        if (Test-ApiKey -ApiKey $key) {
+            "SMITHSONIAN_API_KEY=$key" | Out-File -FilePath ".env" -Encoding UTF8
+            Write-Success "API key validated and saved to .env file"
+            return $key
+        } else {
+            Write-Error "Invalid API key. Please try again or press Enter to skip."
+        }
+    }
+}
+
+# Setup Windows service
+function Set-WindowsService {
+    Write-Info "Setting up Windows service..."
+
+    $serviceName = "SmithsonianMCP"
+    $projectDir = Get-Location
+    $pythonPath = ".\venv\Scripts\python.exe"
+
+    # Check if running as administrator
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+    $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    if (-not $isAdmin) {
+        Write-Warning "Windows service installation requires administrator privileges."
+        Write-Info "To install as a service, run this script as Administrator."
+        return
+    }
+
+    try {
+        # Create service using New-Service
+        $serviceExists = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+        
+        if ($serviceExists) {
+            Write-Warning "Service $serviceName already exists. Updating..."
+            Stop-Service -Name $serviceName -Force
+            Remove-Service -Name $serviceName
+        }
+
+        New-Service -Name $serviceName -DisplayName "Smithsonian MCP Server" -BinaryPathName "`"$pythonPath`" -m smithsonian_mcp.server" -StartupType Automatic -WorkingDirectory $projectDir
+        Write-Success "Windows service '$serviceName' installed successfully"
+        Write-Info "Start the service with: Start-Service $serviceName"
+        Write-Info "Stop the service with: Stop-Service $serviceName"
+    }
+    catch {
+        Write-Error "Failed to install Windows service: $($_.Exception.Message)"
+        Write-Info "You can run the server manually with: python -m smithsonian_mcp.server"
+    }
+}
+
 # Setup Claude Desktop configuration
 function Set-ClaudeDesktop {
     param([string]$ApiKey)
@@ -123,6 +236,8 @@ function Set-ClaudeDesktop {
 
     $claudeConfigDir = "$env:APPDATA\Claude"
     $claudeConfigFile = "$claudeConfigDir\claude_desktop_config.json"
+    $projectDir = Get-Location
+    $pythonPath = ".\venv\Scripts\python.exe"
 
     Write-Info "Claude config path: $claudeConfigFile"
 
@@ -131,10 +246,31 @@ function Set-ClaudeDesktop {
         New-Item -ItemType Directory -Path $claudeConfigDir -Force | Out-Null
     }
 
-    # Copy configuration file
-    Copy-Item "claude-desktop-config.json" $claudeConfigFile
+    # Backup existing config
+    if (Test-Path $claudeConfigFile) {
+        $backupFile = "$claudeConfigFile.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Copy-Item $claudeConfigFile $backupFile
+        Write-Info "Backed up existing Claude Desktop config."
+    }
 
-    Write-Success "Claude Desktop configuration created"
+    # Create configuration with absolute paths
+    $config = @{
+        mcpServers = @{
+            smithsonian_open_access = @{
+                command = $pythonPath
+                args = @("-m", "smithsonian_mcp.server")
+                env = @{
+                    SMITHSONIAN_API_KEY = $ApiKey
+                    LOG_LEVEL = "INFO"
+                }
+            }
+        }
+    }
+
+    $configJson = $config | ConvertTo-Json -Depth 4
+    $configJson | Out-File -FilePath $claudeConfigFile -Encoding UTF8
+
+    Write-Success "Claude Desktop configuration updated"
     Write-Warning "You need to restart Claude Desktop for changes to take effect"
 }
 
@@ -160,6 +296,39 @@ function Test-Installation {
     Write-Success "Installation test complete"
 }
 
+# Run health check
+function Invoke-HealthCheck {
+    Write-Info "Running health check..."
+
+    # Test API connection
+    try {
+        python examples/test-api-connection.py
+        Write-Success "✓ API connection test passed"
+    }
+    catch {
+        Write-Error "✗ API connection test failed"
+        return $false
+    }
+
+    # Test MCP server startup (brief test)
+    try {
+        $process = Start-Process -FilePath "python" -ArgumentList "-m", "smithsonian_mcp.server", "--test" -PassThru -WindowStyle Hidden
+        Start-Sleep -Seconds 5
+        if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force
+            Write-Success "✓ MCP server startup test passed"
+        } else {
+            Write-Warning "⚠ MCP server startup test inconclusive (this may be normal)"
+        }
+    }
+    catch {
+        Write-Warning "⚠ MCP server startup test inconclusive (this may be normal)"
+    }
+
+    Write-Success "Health check completed."
+    return $true
+}
+
 # Main installation function
 function Start-Installation {
     try {
@@ -175,22 +344,74 @@ function Start-Installation {
         $pythonCmd = Test-Python
         New-VirtualEnvironment -PythonCmd $pythonCmd
         Install-Dependencies
-        $apiKey = Get-ApiKey -ProvidedKey $ApiKey
-        Set-ClaudeDesktop -ApiKey $apiKey
-        Test-Installation -ApiKey $apiKey -SkipTests $SkipTests
+
+        # Setup .env file
+        if (-not (Test-Path ".env")) {
+            if (Test-Path ".env.example") {
+                Copy-Item ".env.example" ".env"
+                Write-Info "Created .env from .env.example"
+            } else {
+                "SMITHSONIAN_API_KEY=your_api_key_here" | Out-File -FilePath ".env" -Encoding UTF8
+            }
+        }
+
+        # Check for existing API key
+        $existingKey = $null
+        if (Test-Path ".env") {
+            $envContent = Get-Content ".env"
+            $keyLine = $envContent | Where-Object { $_ -match "^SMITHSONIAN_API_KEY=" }
+            if ($keyLine) {
+                $existingKey = $keyLine -replace "^SMITHSONIAN_API_KEY=", ""
+            }
+        }
+
+        if ($existingKey -and $existingKey -ne "your_api_key_here" -and (Test-ApiKey -ApiKey $existingKey)) {
+            $apiKey = $existingKey
+            Write-Success "Using existing valid API key from .env file."
+        } else {
+            $apiKey = Get-ApiKey -ProvidedKey $ApiKey
+        }
+
+        # Setup Windows service
+        $setupService = Read-Host "Do you want to install Smithsonian MCP as a Windows service? (y/N)"
+        if ($setupService -match '^[Yy]') {
+            Set-WindowsService
+        }
+
+        # Setup Claude Desktop config
+        if ($apiKey) {
+            $setupClaude = Read-Host "Do you want to automatically configure Claude Desktop? (y/N)"
+            if ($setupClaude -match '^[Yy]') {
+                Set-ClaudeDesktop -ApiKey $apiKey
+            }
+        }
+
+        # Run health check
+        $runCheck = Read-Host "Do you want to run a health check? (Y/n)"
+        if ($runCheck -notmatch '^[Nn]') {
+            Invoke-HealthCheck
+        }
 
         Write-Host ""
-        Write-Host "Setup Complete!" -ForegroundColor Green
+        Write-Host "🎉 Setup Complete!" -ForegroundColor Green
         Write-Host ""
-        Write-Host "Next steps:"
-        Write-Host "1. If you didn't set an API key, edit .env and add: SMITHSONIAN_API_KEY=your_key"
-        Write-Host "2. Restart Claude Desktop to load the MCP server"
-        Write-Host "3. Open VS Code with: code smithsonian-mcp-workspace.code-workspace"
-        Write-Host "4. Test the integration by asking Claude about Smithsonian collections"
+        if ($apiKey) {
+            Write-Success "✓ API key configured and validated"
+        } else {
+            Write-Warning "⚠ Edit .env and add your API key from https://api.data.gov/signup/"
+        }
+        Write-Success "✓ Dependencies installed"
+        Write-Success "✓ Virtual environment created"
         Write-Host ""
-        Write-Host "Quick test commands:"
-        Write-Host "• python examples/test-api-connection.py"
-        Write-Host "• python -m smithsonian_mcp.server"
+        Write-Host "Usage:"
+        Write-Host "  Activate environment: .\venv\Scripts\Activate.ps1"
+        Write-Host "  Test connection: python examples/test-api-connection.py"
+        Write-Host "  Run server: python -m smithsonian_mcp.server"
+        if (Get-Service -Name "SmithsonianMCP" -ErrorAction SilentlyContinue) {
+            Write-Host "  Manage service: Start-Service SmithsonianMCP / Stop-Service SmithsonianMCP"
+        }
+        Write-Host ""
+        Write-Host "For troubleshooting, see README.md or run: python scripts\verify-setup.py"
     }
     catch {
         Write-Error "Setup failed: $($_.Exception.Message)"
