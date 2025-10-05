@@ -383,7 +383,7 @@ def run_diagnostics() -> Dict[str, Tuple[bool, str]]:
     api_ok, api_msg = check_api_key()
     diagnostics["api_key"] = (api_ok, api_msg)
     if api_ok:
-        success(api_msg)
+        success("API key is valid.")
     else:
         error("API key is missing or invalid. Please check your configuration.")
     
