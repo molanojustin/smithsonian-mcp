@@ -107,9 +107,9 @@ def check_api_key() -> Tuple[bool, str]:
         api_key = Config.API_KEY
         if not api_key or api_key == "your_api_key_here":
             return False, "No API key configured"
-        return True, "API key found"
+        return True, "API key configured"
     except Exception as e:
-        return False, f"API key check failed: {e}"
+        return False, "API key check failed"
 
 
 def test_api_connection() -> Tuple[bool, str]:
@@ -139,7 +139,7 @@ def test_api_connection() -> Tuple[bool, str]:
         result = asyncio.run(test_connection())
         return result
     except Exception as e:
-        return False, f"API connection failed: {e}"
+        return False, "API connection failed"
 
 
 def check_mcp_server() -> Tuple[bool, str]:
@@ -300,10 +300,10 @@ def check_mcpo_config() -> Tuple[bool, str]:
         
         return True, f"mcpo configuration found at {config_file}"
     
-    except json.JSONDecodeError as e:
-        return False, f"mcpo config JSON error: {e}"
-    except Exception as e:
-        return False, f"mcpo config check failed: {e}"
+    except json.JSONDecodeError:
+        return False, "mcpo config JSON error"
+    except Exception:
+        return False, "mcpo config check failed"
 
 
 def check_mcpo_service() -> Tuple[bool, str]:
