@@ -330,17 +330,24 @@ def test_mcpo_endpoints() -> Tuple[bool, str]:
         import httpx
         
         # Test the docs endpoint first
-        with httpx.Client(timeout=5.0) as client:
+        with httpx.Client(timeout=10.0) as client:
             response = client.get("http://localhost:8000/docs")
             if response.status_code == 200:
-                # Test Smithsonian endpoint
+                # Test Smithsonian endpoint that was failing
                 response = client.get("http://localhost:8000/smithsonian_open_access/get_smithsonian_units")
                 if response.status_code == 200:
-                    return True, "mcpo endpoints responding correctly"
+                    # Test the other endpoint that was failing
+                    response = client.get("http://localhost:8000/smithsonian_open_access/get_collection_statistics")
+                    if response.status_code == 200:
+                        return True, "mcpo endpoints responding correctly (both units and stats working)"
+                    elif response.status_code == 500:
+                        return False, "mcpo stats endpoint returning 500 errors (context issue not fixed)"
+                    else:
+                        return False, f"mcpo stats endpoint returned {response.status_code}"
                 elif response.status_code == 500:
-                    return False, "mcpo endpoint returning 500 errors (check server logs)"
+                    return False, "mcpo units endpoint returning 500 errors (context issue not fixed)"
                 else:
-                    return False, f"mcpo endpoint returned {response.status_code}"
+                    return False, f"mcpo units endpoint returned {response.status_code}"
             else:
                 return False, f"mcpo docs endpoint returned {response.status_code}"
     except ImportError:

@@ -45,21 +45,14 @@ class ServerContext:
 
 
 async def get_api_client(ctx: Optional[Context[ServerSession, ServerContext]] = None) -> SmithsonianAPIClient:
-    """Get API client from context or global instance for mcpo compatibility."""
+    """Get API client from global instance for mcpo compatibility."""
     global _global_api_client
     
-    # Try to get from context first (normal MCP operation)
-    if ctx and hasattr(ctx, 'request_context') and ctx.request_context:
-        try:
-            return ctx.request_context.lifespan_context.api_client
-        except (ValueError, AttributeError):
-            # Context not available, fall back to global client
-            pass
-    
-    # Use global client (for mcpo or when context is not available)
+    # Always use global client to avoid context access issues
+    # This works for both normal MCP and mcpo scenarios
     if _global_api_client is None:
         _global_api_client = await create_client()
-        logger.info("Global API client initialized for mcpo compatibility")
+        logger.info("Global API client initialized")
     
     return _global_api_client
 
