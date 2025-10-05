@@ -1,0 +1,68 @@
+# Python cache and compiled files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Node.js (keep only what's needed)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Git
+.git/
+.gitignore
+
+# Development files
+setup.sh
+setup.ps1
+*.code-workspace
+test_*.py
+find_valid_objects.py
+mcpo-config.example.json
+claude-desktop-config.json
+
+# Documentation (keep README and LICENSE)
+*.md
+!README.md
+!LICENSE.md
+!NPM_DEPLOYMENT_GUIDE.md
+!INTEGRATION_GUIDE.md
+
+# Test files
+tests/

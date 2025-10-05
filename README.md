@@ -4,20 +4,46 @@ A **Model Context Protocol (MCP)** server that provides AI assistants with acces
 
 ## Quick Start
 
-### Automated Setup (Recommended)
+### Option 1: npm/npx Installation (Easiest)
 
+The npm package includes automatic Python dependency management and works across platforms:
+
+```bash
+# Install globally
+npm install -g @molanojustin/smithsonian-mcp
+
+# Or run directly with npx (no installation needed)
+npx -y @molanojustin/smithsonian-mcp
+
+# Set your API key
+export SMITHSONIAN_API_KEY=your_key_here
+
+# Start the server
+smithsonian-mcp
+```
+
+### Option 2: Automated Setup (Recommended for Python users)
+
+The enhanced setup script now includes:
+
+- ✅ **API key validation** - Tests your key before saving
+- ✅ **Service installation** - Auto-install as system service
+- ✅ **Claude Desktop config** - Automatic configuration
+- ✅ **Health checks** - Verify everything works
 **macOS/Linux:**
+
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
 **Windows:**
+
 ```powershell
 .\setup.ps1
 ```
 
-### Manual Setup
+### Option 3: Manual Setup
 
 1. **Get API Key**: [api.data.gov/signup](https://api.data.gov/signup/) (free)
 2. **Install**: `pip install -r requirements.txt`
@@ -27,6 +53,7 @@ chmod +x setup.sh
 ### Verify Setup
 
 Run the verification script to check your installation:
+
 ```bash
 python scripts/verify-setup.py
 ```
@@ -34,6 +61,7 @@ python scripts/verify-setup.py
 ## Features
 
 ### Core Functionality
+
 - **Search Collections**: 3+ million objects across 19 Smithsonian museums
 - **Object Details**: Complete metadata, descriptions, and provenance
 - **Image Access**: High-resolution images (CC0 licensed when available)
@@ -41,15 +69,37 @@ python scripts/verify-setup.py
 - **Museum Information**: Browse all Smithsonian institutions
 
 ### AI Integration
+
 - **9 MCP Tools**: Search, filter, retrieve collection data, and get context
-- **Smart Context**: Contextual data sources for AI assistants  
+- **Smart Context**: Contextual data sources for AI assistants
 - **Rich Metadata**: Complete object information and statistics
 
 ## Integration
 
 ### Claude Desktop
 
+#### Option 1: Using npm/npx (Recommended)
+
 1. **Configure** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "npx",
+      "args": ["-y", "@molanojustin/smithsonian-mcp"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_key_here"
+      }
+    }
+  }
+}
+```
+
+#### Option 2: Using Python installation
+
+1. **Configure** (`claude_desktop_config.json`):
+
 ```json
 {
   "mcpServers": {
@@ -64,7 +114,7 @@ python scripts/verify-setup.py
 }
 ```
 
-*Or copy the provided `claude-desktop-config.json` and update the API key*
+_Or copy the provided `claude-desktop-config.json` and update the API key_
 
 2. **Test**: Ask Claude "What Smithsonian museums are available?"
 
@@ -73,6 +123,7 @@ python scripts/verify-setup.py
 **mcpo** is an MCP orchestrator that converts multiple MCP servers into OpenAPI/HTTP endpoints, ideal for combining multiple services into a single systemd service.
 
 #### Installation
+
 ```bash
 # Install mcpo
 pip install mcpo
@@ -82,6 +133,7 @@ uvx mcpo --help
 ```
 
 #### Configuration
+
 Create a `mcpo-config.json` file:
 
 ```json
@@ -107,6 +159,7 @@ Create a `mcpo-config.json` file:
 ```
 
 #### Running with mcpo
+
 ```bash
 # Start mcpo with hot-reload
 mcpo --config mcpo-config.json --port 8000 --hot-reload
@@ -116,12 +169,13 @@ mcpo --config mcpo-config.json --port 8000 --api-key "your_secret_key"
 
 # Access endpoints:
 # - Smithsonian: http://localhost:8000/smithsonian_open_access
-# - Memory: http://localhost:8000/memory  
+# - Memory: http://localhost:8000/memory
 # - Time: http://localhost:8000/time
 # - API docs: http://localhost:8000/docs
 ```
 
 #### Systemd Service
+
 Create `/etc/systemd/system/mcpo.service`:
 
 ```ini
@@ -155,6 +209,7 @@ sudo systemctl status mcpo
 This occurs when mcpo can't find the Smithsonian MCP module. Fix by:
 
 1. **Use absolute Python path** in your mcpo config:
+
 ```json
 {
   "command": "/full/path/to/your/project/.venv/bin/python",
@@ -165,6 +220,7 @@ This occurs when mcpo can't find the Smithsonian MCP module. Fix by:
 ```
 
 2. **Verify paths**:
+
 ```bash
 # Check Python executable exists
 ls -la /path/to/your/project/.venv/bin/python
@@ -174,16 +230,19 @@ ls -la /path/to/your/project/.venv/bin/python
 ```
 
 3. **Regenerate config** with setup script:
+
 ```bash
 ./setup.sh  # Will create mcpo-config.json with correct paths
 ```
 
 **"Connection closed" errors**
+
 - Ensure API key is valid and set in environment
 - Check that the virtual environment has all dependencies installed
 - Verify the MCP server can start manually: `python -m smithsonian_mcp.server --test`
 
 **"Port 8000 already in use"**
+
 ```bash
 # Check what's using the port
 lsof -i :8000
@@ -209,11 +268,13 @@ mcpo --config mcpo-config.json --port 8001
 ## MCP Tools
 
 ### Search & Discovery
+
 - `search_collections` - Advanced search with filters
 - `get_object_details` - Detailed object information
 - `search_by_unit` - Museum-specific searches
 
 ### Information & Context
+
 - `get_smithsonian_units` - List all museums
 - `get_collection_statistics` - Collection metrics
 - `get_search_context` - Get search results as context data
@@ -224,27 +285,54 @@ mcpo --config mcpo-config.json --port 8001
 ## Use Cases
 
 ### Research & Education
+
 - **Scholarly Research**: Multi-step academic investigation
 - **Lesson Planning**: Educational content creation
 - **Object Analysis**: In-depth cultural object study
 
 ### Curation & Exhibition
+
 - **Exhibition Planning**: Thematic object selection
 - **Collection Development**: Gap analysis and acquisition
 - **Digital Humanities**: Large-scale analysis projects
 
 ### Development
+
 - **Cultural Apps**: Applications using museum data
 - **Educational Tools**: Interactive learning platforms
 - **API Integration**: Professional development workflows
 
 ## Requirements
 
+### For npm/npx installation:
+
+- Node.js 16.0 or higher
+- Python 3.10 or higher (auto-detected and dependencies managed)
+- API key from [api.data.gov](https://api.data.gov/signup/) (free)
+- Internet connection for API access
+
+### For Python installation:
+
 - Python 3.10 or higher
 - API key from [api.data.gov](https://api.data.gov/signup/) (free)
 - Internet connection for API access
 
 ## Testing
+
+### Using npm/npx:
+
+```bash
+# Test API connection
+smithsonian-mcp --test
+
+# Run MCP server
+smithsonian-mcp
+
+# Show help
+smithsonian-mcp --help
+```
+
+### Using Python:
 
 ```bash
 # Test API connection
@@ -261,7 +349,7 @@ python scripts/verify-setup.py
 
 # VS Code Tasks (if using workspace)
 # - Test MCP Server
-# - Run Tests  
+# - Run Tests
 # - Format Code
 # - Lint Code
 ```
@@ -269,11 +357,12 @@ python scripts/verify-setup.py
 ## Service Management
 
 ### Linux (systemd)
+
 ```bash
 # Start service
 systemctl --user start smithsonian-mcp
 
-# Stop service  
+# Stop service
 systemctl --user stop smithsonian-mcp
 
 # Check status
@@ -284,6 +373,7 @@ systemctl --user enable smithsonian-mcp
 ```
 
 ### macOS (launchd)
+
 ```bash
 # Load service
 launchctl load ~/Library/LaunchAgents/com.smithsonian.mcp.plist
@@ -296,6 +386,7 @@ launchctl list | grep com.smithsonian.mcp
 ```
 
 ### Windows
+
 ```powershell
 # Start service
 Start-Service SmithsonianMCP
@@ -312,21 +403,25 @@ Get-Service SmithsonianMCP
 ### Common Issues
 
 **"API key validation failed"**
+
 - Get a free key from [api.data.gov/signup](https://api.data.gov/signup/)
 - Ensure no extra spaces in your API key
 - Check that `.env` file contains: `SMITHSONIAN_API_KEY=your_key_here`
 
 **"Service failed to start"**
+
 - Run `python scripts/verify-setup.py` for diagnostics
 - Check logs: `journalctl --user -u smithsonian-mcp` (Linux) or `~/Library/Logs/com.smithsonian.mcp.log` (macOS)
 - Ensure virtual environment is activated
 
 **"Claude Desktop not connecting"**
+
 - Restart Claude Desktop after configuration
 - Check Claude Desktop config file exists and contains correct paths
 - Verify MCP server is running: `python -m smithsonian_mcp.server`
 
 **"Module import errors"**
+
 - Activate virtual environment: `source .venv/bin/activate` (Linux/macOS) or `.\venv\Scripts\Activate.ps1` (Windows)
 - Reinstall dependencies: `pip install -r requirements.txt`
 
@@ -339,7 +434,7 @@ Get-Service SmithsonianMCP
 ## Documentation
 
 - **Integration Guide**: Claude Desktop and VS Code setup
-- **API Reference**: Complete tool and resource documentation  
+- **API Reference**: Complete tool and resource documentation
 - **Examples**: Real-world usage scenarios
 - **Deployment Guide**: Production deployment options
 

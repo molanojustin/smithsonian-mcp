@@ -1,0 +1,76 @@
+{
+  "name": "@molanojustin/smithsonian-open-access-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for Smithsonian Open Access collections - 3+ million museum objects",
+  "main": "bin/smithsonian-mcp.js",
+  "bin": {
+    "smithsonian-mcp": "bin/smithsonian-mcp.js"
+  },
+  "scripts": {
+    "start": "node bin/smithsonian-mcp.js",
+    "test": "node bin/smithsonian-mcp.js --test",
+    "prepublishOnly": "npm test",
+    "preversion": "npm test",
+    "version": "git add -A .",
+    "postversion": "git push && git push --tags"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "smithsonian",
+    "museum",
+    "api",
+    "open-access",
+    "collections",
+    "ai",
+    "claude",
+    "anthropic",
+    "art",
+    "culture",
+    "research",
+    "education"
+  ],
+  "author": {
+    "name": "Smithsonian Open Access MCP Team",
+    "email": "openaccess@si.edu",
+    "url": "https://www.si.edu/openaccess"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/molanojustin/smithsonian-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/molanojustin/smithsonian-mcp/issues"
+  },
+  "homepage": "https://github.com/molanojustin/smithsonian-mcp#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE.md",
+    "requirements.txt",
+    "smithsonian_mcp/",
+    "scripts/",
+    "examples/",
+    ".env.example"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "cross-spawn": "^7.0.3",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "funding": {
+    "type": "individual",
+    "url": "https://github.com/sponsors/molanojustin"
+  }
+}
