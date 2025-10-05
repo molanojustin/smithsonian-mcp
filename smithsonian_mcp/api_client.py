@@ -162,6 +162,27 @@ class SmithsonianAPIClient:
 
             return response.json()
 
+        except httpx.HTTPStatusError as e:
+            # Handle HTTP status errors (like 404) gracefully
+            status_code = e.response.status_code
+            error_msg = f"HTTP {status_code} error for {url}: {str(e)}"
+            
+            if status_code == 404:
+                logger.debug(f"Resource not found: {url}")
+                raise APIError(
+                    error="not_found", 
+                    message="Resource not found", 
+                    status_code=status_code,
+                    details={"url": url}
+                )
+            else:
+                logger.error(error_msg)
+                raise APIError(
+                    error="http_error", 
+                    message=error_msg, 
+                    status_code=status_code,
+                    details={"url": url}
+                )
         except Exception as e:
             error_msg = f"Request failed: {str(e)}"
             logger.error(error_msg)
@@ -343,7 +364,8 @@ class SmithsonianAPIClient:
                 )
                 return None
         except APIError as e:
-            if e.status_code == 404:
+            if e.error == "not_found" or e.status_code == 404:
+                logger.info(f"Object {object_id} not found in Smithsonian collection")
                 return None
             raise
 
