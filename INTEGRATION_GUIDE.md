@@ -59,6 +59,155 @@ Ask Claude these questions:
 5. **Test**: Use "Test MCP Server" task to verify API connection
 6. **Debug**: Use F5 to debug the server or "Debug with MCP Inspector" task
 
+## mcpo Integration (Advanced)
+
+**mcpo** (MCP Orchestrator) converts multiple MCP servers into HTTP/OpenAPI endpoints, perfect for combining services into a single systemd deployment.
+
+### When to Use mcpo
+
+- **Multiple MCP Services**: Combine Smithsonian with other MCP servers (memory, time, filesystem, etc.)
+- **HTTP API Access**: Need REST/OpenAPI endpoints instead of stdio communication
+- **Centralized Management**: Single service managing multiple MCP capabilities
+- **Production Deployment**: Better suited for production environments than individual stdio services
+
+### Setup Steps
+
+#### 1. Install mcpo
+```bash
+# Using pip
+pip install mcpo
+
+# Or using uvx (recommended)
+uvx mcpo --help
+```
+
+#### 2. Create mcpo Configuration
+Create `mcpo-config.json`:
+
+```json
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "python",
+      "args": ["-m", "smithsonian_mcp.server"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_api_key_here",
+        "LOG_LEVEL": "INFO"
+      }
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "time": {
+      "command": "uvx",
+      "args": ["mcp-server-time", "--local-timezone=America/New_York"]
+    }
+  }
+}
+```
+
+#### 3. Test mcpo Configuration
+```bash
+# Test with hot-reload for development
+mcpo --config mcpo-config.json --port 8000 --hot-reload
+
+# Test endpoints in another terminal:
+curl http://localhost:8000/smithsonian_open_access/search_collections
+curl http://localhost:8000/memory/search
+curl http://localhost:8000/time/get_current_time
+
+# View auto-generated API docs
+open http://localhost:8000/docs
+```
+
+#### 4. Production Deployment (systemd)
+
+Create `/etc/systemd/system/mcpo.service`:
+
+```ini
+[Unit]
+Description=MCP Orchestrator Service
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+WorkingDirectory=/path/to/your/project
+Environment=PATH=/path/to/venv/bin
+ExecStart=/path/to/venv/bin/mcpo --config /path/to/mcpo-config.json --port 8000
+Restart=always
+RestartSec=10
+EnvironmentFile=/path/to/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable mcpo
+sudo systemctl start mcpo
+sudo systemctl status mcpo
+```
+
+#### 5. Claude Desktop Integration (Optional)
+
+If you still want Claude Desktop access alongside HTTP endpoints, configure it to use mcpo:
+
+```json
+{
+  "mcpServers": {
+    "mcpo_orchestrator": {
+      "command": "mcpo",
+      "args": ["--config", "/path/to/mcpo-config.json"],
+      "env": {
+        "MCP_API_KEY": "your_secret_key"
+      }
+    }
+  }
+}
+```
+
+### mcpo vs Direct Integration
+
+| Feature | Direct MCP | mcpo Integration |
+|---------|------------|------------------|
+| **Setup** | Simple, single service | More complex, requires config |
+| **Performance** | Lower overhead | HTTP overhead, but more scalable |
+| **Access** | Claude Desktop only | Any HTTP client |
+| **Monitoring** | Limited | Full HTTP monitoring/logging |
+| **Security** | Environment variables | API keys, HTTP auth |
+| **Production** | Challenging | Production-ready |
+
+### Troubleshooting mcpo
+
+**"mcpo command not found"**
+```bash
+# Ensure mcpo is installed and in PATH
+which mcpo
+pip install mcpo
+```
+
+**"Server failed to start"**
+```bash
+# Check mcpo logs
+mcpo --config mcpo-config.json --port 8000 --verbose
+
+# Verify individual MCP servers work
+python -m smithsonian_mcp.server --test
+```
+
+**"Endpoint not accessible"**
+```bash
+# Check if service is running
+curl http://localhost:8000/docs
+
+# Verify systemd service
+sudo journalctl -u mcpo -f
+```
+
 ## Testing
 
 ### Quick Test

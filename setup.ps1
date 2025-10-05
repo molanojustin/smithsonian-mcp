@@ -298,6 +298,60 @@ function Set-ClaudeDesktop {
     Write-Warning "You need to restart Claude Desktop for changes to take effect"
 }
 
+# Check if mcpo is available
+function Test-McpoAvailable {
+    try {
+        $mcpoVersion = mcpo --version 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+    }
+    catch {
+        # mcpo not found directly
+    }
+    
+    try {
+        $uvxTest = uvx mcpo --help 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+    }
+    catch {
+        # uvx mcpo not available
+    }
+    
+    return $false
+}
+
+# Setup mcpo configuration
+function Set-McpoConfig {
+    param([string]$ApiKey)
+
+    Write-Info "Setting up mcpo configuration..."
+
+    if (-not (Test-Path "mcpo-config.example.json")) {
+        Write-Warning "mcpo-config.example.json not found. Skipping mcpo setup."
+        return $false
+    }
+
+    # Create mcpo config from example
+    $configFile = "mcpo-config.json"
+    Copy-Item "mcpo-config.example.json" $configFile
+
+    # Replace API key in config
+    if ($ApiKey) {
+        $configContent = Get-Content $configFile -Raw
+        $configContent = $configContent -replace "your_api_key_here", $ApiKey
+        $configContent | Out-File -FilePath $configFile -Encoding UTF8
+        Write-Success "mcpo configuration created at: $configFile"
+        Write-Info "You can start mcpo with: mcpo --config $configFile --port 8000"
+        return $true
+    } else {
+        Write-Warning "No API key provided. Edit $configFile and add your API key."
+        return $false
+    }
+}
+
 # Test the installation
 function Test-Installation {
     param([string]$ApiKey, [bool]$SkipTests)
@@ -394,6 +448,17 @@ function Start-Installation {
             Write-Success "Using existing valid API key from .env file."
         } else {
             $apiKey = Get-ApiKey -ProvidedKey $ApiKey
+        }
+
+        # Check for mcpo and offer setup
+        if (Test-McpoAvailable) {
+            Write-Success "mcpo detected on your system."
+            $setupMcpo = Read-Host "Do you want to create an mcpo configuration file? (y/N)"
+            if ($setupMcpo -match '^[Yy]') {
+                Set-McpoConfig -ApiKey $apiKey
+            }
+        } else {
+            Write-Info "mcpo not found. For multi-MCP orchestration, install with: pip install mcpo"
         }
 
         # Setup Windows service

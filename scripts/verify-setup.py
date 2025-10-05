@@ -235,6 +235,95 @@ def check_service_status() -> Tuple[bool, str]:
         return False, f"Service check failed: {e}"
 
 
+def check_mcpo_installation() -> Tuple[bool, str]:
+    """Check if mcpo is installed and available"""
+    try:
+        # Check if mcpo command is available
+        result = subprocess.run(
+            ["mcpo", "--version"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            return True, f"mcpo installed: {version}"
+        else:
+            return False, "mcpo command failed"
+    except FileNotFoundError:
+        # Try uvx mcpo
+        try:
+            result = subprocess.run(
+                ["uvx", "mcpo", "--help"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                return True, "mcpo available via uvx"
+            else:
+                return False, "mcpo not available via uvx"
+        except FileNotFoundError:
+            return False, "mcpo not found (install with: pip install mcpo)"
+    except subprocess.TimeoutExpired:
+        return False, "mcpo command timed out"
+    except Exception as e:
+        return False, f"mcpo check failed: {e}"
+
+
+def check_mcpo_config() -> Tuple[bool, str]:
+    """Check mcpo configuration file"""
+    config_file = project_root / "mcpo-config.json"
+    example_file = project_root / "mcpo-config.example.json"
+    
+    if not config_file.exists():
+        if example_file.exists():
+            return False, "mcpo-config.json not found (example exists)"
+        else:
+            return False, "No mcpo configuration files found"
+    
+    try:
+        with open(config_file) as f:
+            config = json.load(f)
+        
+        if "mcpServers" not in config:
+            return False, "mcpo config missing 'mcpServers' section"
+        
+        if "smithsonian_open_access" not in config["mcpServers"]:
+            return False, "smithsonian_open_access not configured in mcpo"
+        
+        smithsonian_config = config["mcpServers"]["smithsonian_open_access"]
+        if "command" not in smithsonian_config:
+            return False, "smithsonian_open_access missing command in mcpo config"
+        
+        # Check if API key is configured
+        if "env" in smithsonian_config and "SMITHSONIAN_API_KEY" in smithsonian_config["env"]:
+            api_key = smithsonian_config["env"]["SMITHSONIAN_API_KEY"]
+            if api_key == "your_api_key_here":
+                return False, "mcpo config contains placeholder API key"
+        
+        return True, f"mcpo configuration found at {config_file}"
+    
+    except json.JSONDecodeError as e:
+        return False, f"mcpo config JSON error: {e}"
+    except Exception as e:
+        return False, f"mcpo config check failed: {e}"
+
+
+def check_mcpo_service() -> Tuple[bool, str]:
+    """Check if mcpo service is running"""
+    try:
+        # Try to connect to default mcpo port
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex(('localhost', 8000))
+        sock.close()
+        
+        if result == 0:
+            return True, "mcpo service responding on port 8000"
+        else:
+            return False, "mcpo service not responding on port 8000"
+    except Exception as e:
+        return False, f"mcpo service check failed: {e}"
+
+
 def run_diagnostics() -> Dict[str, Tuple[bool, str]]:
     """Run all diagnostic checks"""
     diagnostics = {}
@@ -297,6 +386,30 @@ def run_diagnostics() -> Dict[str, Tuple[bool, str]]:
     else:
         info(service_msg)
     
+    header("mcpo Integration Checks")
+    mcpo_install_ok, mcpo_install_msg = check_mcpo_installation()
+    diagnostics["mcpo_installation"] = (mcpo_install_ok, mcpo_install_msg)
+    if mcpo_install_ok:
+        success(mcpo_install_msg)
+    else:
+        info(mcpo_install_msg)
+    
+    mcpo_config_ok, mcpo_config_msg = check_mcpo_config()
+    diagnostics["mcpo_config"] = (mcpo_config_ok, mcpo_config_msg)
+    if mcpo_config_ok:
+        success(mcpo_config_msg)
+    else:
+        info(mcpo_config_msg)
+    
+    # Only check mcpo service if both installation and config are OK
+    if mcpo_install_ok and mcpo_config_ok:
+        mcpo_service_ok, mcpo_service_msg = check_mcpo_service()
+        diagnostics["mcpo_service"] = (mcpo_service_ok, mcpo_service_msg)
+        if mcpo_service_ok:
+            success(mcpo_service_msg)
+        else:
+            info(mcpo_service_msg)
+    
     return diagnostics
 
 
@@ -333,6 +446,18 @@ def provide_suggestions(diagnostics: Dict[str, Tuple[bool, str]]) -> None:
     if not diagnostics["service_status"][0]:
         info("• Run setup script to install as a service")
         info("• Or start manually: python -m smithsonian_mcp.server")
+    
+    if not diagnostics["mcpo_installation"][0]:
+        info("• Install mcpo: pip install mcpo")
+        info("• Or use uvx: uvx mcpo --help")
+    
+    if not diagnostics["mcpo_config"][0]:
+        info("• Run setup script to create mcpo configuration")
+        info("• Or copy mcpo-config.example.json to mcpo-config.json")
+    
+    if diagnostics.get("mcpo_installation", (False, ""))[0] and diagnostics.get("mcpo_config", (False, ""))[0] and not diagnostics.get("mcpo_service", (False, ""))[0]:
+        info("• Start mcpo: mcpo --config mcpo-config.json --port 8000")
+        info("• Check if port 8000 is available")
 
 
 def main():

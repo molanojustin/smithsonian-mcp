@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "python",
+      "args": ["-m", "smithsonian_mcp.server"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_api_key_here",
+        "LOG_LEVEL": "INFO"
+      }
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "time": {
+      "command": "uvx",
+      "args": ["mcp-server-time", "--local-timezone=America/New_York"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your_github_token_here"
+      }
+    }
+  }
+}

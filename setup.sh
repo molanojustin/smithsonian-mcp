@@ -32,6 +32,45 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to check if mcpo is available
+check_mcpo() {
+    if command_exists mcpo; then
+        return 0
+    elif command_exists uvx; then
+        # Check if mcpo can be run via uvx
+        if uvx mcpo --help >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Function to setup mcpo configuration
+setup_mcpo_config() {
+    local api_key="$1"
+    info "Setting up mcpo configuration..."
+    
+    if [ ! -f "mcpo-config.example.json" ]; then
+        warning "mcpo-config.example.json not found. Skipping mcpo setup."
+        return 1
+    fi
+    
+    # Create mcpo config from example
+    local config_file="mcpo-config.json"
+    cp "mcpo-config.example.json" "$config_file"
+    
+    # Replace API key in config
+    if [ -n "$api_key" ]; then
+        sed -i.bak "s/your_api_key_here/$api_key/g" "$config_file"
+        info "mcpo configuration created at: $config_file"
+        info "You can start mcpo with: mcpo --config $config_file --port 8000"
+        return 0
+    else
+        warning "No API key provided. Edit $config_file and add your API key."
+        return 1
+    fi
+}
+
 # Function to detect OS
 detect_os() {
     case "$(uname -s)" in
@@ -336,7 +375,19 @@ if [ -z "$api_key" ]; then
     fi
 fi
 
-# 5. Setup service
+# 5. Check for mcpo and offer setup
+if check_mcpo; then
+    info "mcpo detected on your system."
+    echo -n "Do you want to create an mcpo configuration file? (y/N): "
+    read -r setup_mcpo
+    if [[ "$setup_mcpo" =~ ^[Yy]$ ]]; then
+        setup_mcpo_config "$api_key"
+    fi
+else
+    info "mcpo not found. For multi-MCP orchestration, install with: pip install mcpo"
+fi
+
+# 6. Setup service
 os=$(detect_os)
 if [ "$os" != "unknown" ]; then
     echo -n "Do you want to install $SERVICE_NAME as a system service? (y/N): "
@@ -346,7 +397,7 @@ if [ "$os" != "unknown" ]; then
     fi
 fi
 
-# 6. Setup Claude Desktop config
+# 7. Setup Claude Desktop config
 if [ -n "$api_key" ]; then
     echo -n "Do you want to automatically configure Claude Desktop? (y/N): "
     read -r setup_claude
@@ -355,7 +406,7 @@ if [ -n "$api_key" ]; then
     fi
 fi
 
-# 7. Run health check
+# 8. Run health check
 echo -n "Do you want to run a health check? (Y/n): "
 read -r run_check
 if [[ ! "$run_check" =~ ^[Nn]$ ]]; then

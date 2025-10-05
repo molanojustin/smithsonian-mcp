@@ -74,6 +74,87 @@ python scripts/verify-setup.py
 
 2. **Test**: Ask Claude "What Smithsonian museums are available?"
 
+### mcpo Integration (MCP Orchestrator)
+
+**mcpo** is an MCP orchestrator that converts multiple MCP servers into OpenAPI/HTTP endpoints, ideal for combining multiple services into a single systemd service.
+
+#### Installation
+```bash
+# Install mcpo
+pip install mcpo
+
+# Or using uvx
+uvx mcpo --help
+```
+
+#### Configuration
+Create a `mcpo-config.json` file:
+
+```json
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "python",
+      "args": ["-m", "smithsonian_mcp.server"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_api_key_here"
+      }
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "time": {
+      "command": "uvx",
+      "args": ["mcp-server-time", "--local-timezone=America/New_York"]
+    }
+  }
+}
+```
+
+#### Running with mcpo
+```bash
+# Start mcpo with hot-reload
+mcpo --config mcpo-config.json --port 8000 --hot-reload
+
+# With API key authentication
+mcpo --config mcpo-config.json --port 8000 --api-key "your_secret_key"
+
+# Access endpoints:
+# - Smithsonian: http://localhost:8000/smithsonian_open_access
+# - Memory: http://localhost:8000/memory  
+# - Time: http://localhost:8000/time
+# - API docs: http://localhost:8000/docs
+```
+
+#### Systemd Service
+Create `/etc/systemd/system/mcpo.service`:
+
+```ini
+[Unit]
+Description=MCP Orchestrator Service
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/your/config
+Environment=PATH=/path/to/venv/bin
+ExecStart=/path/to/venv/bin/mcpo --config mcpo-config.json --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Enable and start service
+sudo systemctl enable mcpo
+sudo systemctl start mcpo
+sudo systemctl status mcpo
+```
+
 ### VS Code
 
 1. **Open Workspace**: `code smithsonian-mcp-workspace.code-workspace`
