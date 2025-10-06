@@ -40,6 +40,7 @@ class TestModels:
             has_images=None,
             has_3d=None,
             is_cc0=None,
+            on_view=None,
         )
 
         assert filter_obj.query == "pottery"
@@ -66,6 +67,9 @@ class TestModels:
             rights=None,
             record_link=None,
             last_modified=None,
+            is_on_view=False,
+            exhibition_title=None,
+            exhibition_location=None,
         )
 
         assert obj.id == "test-123"

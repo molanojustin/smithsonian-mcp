@@ -73,6 +73,9 @@ class CollectionSearchFilter(BaseModel):
     has_images: Optional[bool] = Field(None, description="Filter objects with images")
     has_3d: Optional[bool] = Field(None, description="Filter objects with 3D models")
     is_cc0: Optional[bool] = Field(None, description="Filter CC0 licensed objects")
+    on_view: Optional[bool] = Field(
+        None, description="Filter objects currently on physical exhibit"
+    )
     limit: int = Field(default=20, description="Maximum number of results")
     offset: int = Field(default=0, description="Result offset for pagination")
 
@@ -136,6 +139,17 @@ class SmithsonianObject(BaseModel):
     credit_line: Optional[str] = Field(None, description="Credit line")
     rights: Optional[str] = Field(None, description="Rights statement")
     is_cc0: bool = Field(default=False, description="CC0 license status")
+
+    # Exhibition information
+    is_on_view: bool = Field(
+        default=False, description="Whether object is currently on physical exhibit"
+    )
+    exhibition_title: Optional[str] = Field(
+        None, description="Current exhibition title"
+    )
+    exhibition_location: Optional[str] = Field(
+        None, description="Exhibition location/room"
+    )
 
     # Administrative
     record_link: Optional[HttpUrl] = Field(None, description="Link to full record")

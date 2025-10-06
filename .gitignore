@@ -430,5 +430,12 @@ FodyWeavers.xsd
 # Additional
 .DS_Store
 AGENTS.md
-dev/
+
 smithsonian-mcp-workspace.code-workspace
+
+# Ignore everything in /dev/
+dev/*
+
+# But do not ignore /dev/documentation/ and its contents
+!dev/documentation/
+!dev/documentation/**

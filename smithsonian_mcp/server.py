@@ -108,7 +108,8 @@ async def search_collections(
     has_images: Optional[bool] = None,
     has_3d: Optional[bool] = None,
     is_cc0: Optional[bool] = None,
-    limit: int = 20,
+    on_view: Optional[bool] = None,
+    limit: int = 500,
     offset: int = 0,
 ) -> SearchResult:
     """
@@ -127,7 +128,10 @@ async def search_collections(
         has_images: Filter objects that have associated images
         has_3d: Filter objects that have 3D models available
         is_cc0: Filter objects with CC0 (public domain) licensing
-        limit: Maximum number of results to return (default: 20, max: 100)
+        on_view: Filter objects currently on physical exhibit (NOTE: API filter is unreliable,
+                 returns many false positives. For accurate on-view results, search broadly
+                 with high limit and check is_on_view field in results)
+        limit: Maximum number of results to return (default: 500, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
@@ -135,8 +139,8 @@ async def search_collections(
     """
     try:
         # Validate inputs
-        if limit > 100:
-            limit = 100
+        if limit > 1000:
+            limit = 1000
         if limit < 1:
             limit = 1
 
@@ -151,6 +155,7 @@ async def search_collections(
             has_images=has_images,
             has_3d=has_3d,
             is_cc0=is_cc0,
+            on_view=on_view,
             limit=limit,
             offset=offset,
             date_start=None,
@@ -258,7 +263,7 @@ async def search_by_unit(
     ctx: Context[ServerSession, ServerContext],
     unit_code: str,
     query: Optional[str] = None,
-    limit: int = 20,
+    limit: int = 500,
     offset: int = 0,
 ) -> SearchResult:
     """
@@ -270,7 +275,7 @@ async def search_by_unit(
     Args:
         unit_code: Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM", "NASM")
         query: Optional search terms within that unit's collection
-        limit: Maximum number of results (default: 20, max: 100)
+        limit: Maximum number of results (default: 20, max: 1000)
         offset: Results offset for pagination (default: 0)
 
     Returns:
@@ -278,8 +283,8 @@ async def search_by_unit(
     """
     try:
         # Validate inputs
-        if limit > 100:
-            limit = 100
+        if limit > 1000:
+            limit = 1000
         if limit < 1:
             limit = 1
 
@@ -296,6 +301,7 @@ async def search_by_unit(
             has_images=None,
             has_3d=None,
             is_cc0=None,
+            on_view=None,
             date_start=None,
             date_end=None,
         )
@@ -313,6 +319,201 @@ async def search_by_unit(
     except Exception as e:
         logger.error(f"Unexpected error during search by unit: {str(e)}")
         raise Exception(f"Search by unit failed: {str(e)}")
+
+
+@mcp.tool()
+async def get_objects_on_view(
+    ctx: Context[ServerSession, ServerContext],
+    unit_code: Optional[str] = None,
+    limit: int = 500,
+    offset: int = 0,
+) -> SearchResult:
+    """
+    Get objects that are currently on physical exhibit at Smithsonian museums.
+
+    This tool specifically finds objects that are marked as being on display
+    for the public, which is useful for planning museum visits or finding
+    currently accessible objects.
+
+    IMPORTANT: The Smithsonian API filter for on-view objects has data quality 
+    issues and often returns false positives. For best results:
+    1. Use high limit values (500-1000) to get more results
+    2. Specify a particular museum (unit_code) like "FSG", "SAAM", "NMAH"
+    3. Results are filtered to only include objects with verified exhibition data
+    4. Consider searching without on_view filter and filtering results manually
+
+    Args:
+        unit_code: Optional filter by specific Smithsonian unit (e.g., "NMAH", "FSG", "SAAM")
+        limit: Maximum number of results to return (default: 500, max: 1000)
+        offset: Number of results to skip for pagination (default: 0)
+
+    Returns:
+        Search results containing objects actually marked as on physical exhibit
+    """
+    try:
+        # Validate inputs
+        if limit > 1000:
+            limit = 1000
+        if limit < 1:
+            limit = 1
+
+        # Create search filter for on-view objects
+        filters = CollectionSearchFilter(
+            query="*",
+            unit_code=unit_code,
+            on_view=True,
+            limit=limit,
+            offset=offset,
+            object_type=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        # Filter out false positives - API returns objects without actual exhibition data
+        verified_on_view = [obj for obj in results.objects if obj.is_on_view]
+        
+        logger.info(
+            f"On-view search completed: {len(verified_on_view)} verified on-view out of {results.returned_count} returned ({results.total_count} total matches)"
+        )
+
+        # Return only verified on-view objects
+        from .models import SearchResult as SR
+        return SR(
+            objects=verified_on_view,
+            total_count=len(verified_on_view),
+            returned_count=len(verified_on_view),
+            offset=offset,
+            has_more=False,
+            next_offset=None
+        )
+
+    except Exception as e:
+        logger.error(f"API error during on-view search: {e}")
+        raise Exception(f"On-view search failed: {e}")
+
+
+@mcp.tool()
+async def check_object_on_view(
+    ctx: Context[ServerSession, ServerContext], object_id: str
+) -> Optional[SmithsonianObject]:
+    """
+    Check if a specific object is currently on physical exhibit.
+
+    This tool retrieves detailed information about an object including
+    its current exhibition status.
+
+    Args:
+        object_id: Unique identifier for the object
+
+    Returns:
+        Object details including on-view status, or None if object not found
+    """
+    try:
+        api_client = await get_api_client(ctx)
+        result = await api_client.get_object_by_id(object_id)
+
+        if result:
+            status = "on view" if result.is_on_view else "not on view"
+            logger.info(f"Object {object_id} is {status}")
+        else:
+            logger.warning(f"Object not found: {object_id}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"API error checking object {object_id}: {e}")
+        raise Exception(f"Failed to check object status: {e}")
+
+
+
+@mcp.tool()
+async def find_on_view_items(
+    ctx: Context[ServerSession, ServerContext],
+    query: str,
+    unit_code: Optional[str] = None,
+    max_results: int = 1000,
+) -> SearchResult:
+    """
+    Find ALL items currently on physical exhibit matching a search query.
+    
+    This tool automatically handles pagination to search through all matching items
+    and filters them to return only those with verified exhibition status. Use this
+    when you need to find all on-view items for a topic.
+    
+    Important: This tool searches up to max_results items and filters to only
+    those with verified exhibition data, which is more reliable than using the
+    on_view parameter in other search functions.
+    
+    Args:
+        query: Search terms (e.g., "muppet", "Hokusai", "dinosaur fossils")
+        unit_code: Optional museum code (e.g., "NMAH", "FSG", "NMNH", "NASM")
+        max_results: Maximum items to search through (default: 1000, max: 1000)
+    
+    Returns:
+        Search results with only verified on-view items, including exhibition details
+    
+    Examples:
+        find_on_view_items(query="muppet", unit_code="NMAH")
+        find_on_view_items(query="Hokusai", unit_code="FSG")
+    """
+    try:
+        if max_results > 1000:
+            max_results = 1000
+        if max_results < 1:
+            max_results = 1
+        
+        logger.info(f"Finding on-view items for '{query}' at {unit_code or 'all museums'}")
+        
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            on_view=None,
+            limit=max_results,
+            offset=0,
+            object_type=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+            date_start=None,
+            date_end=None,
+        )
+        
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+        
+        on_view_items = [obj for obj in results.objects if obj.is_on_view]
+        
+        logger.info(
+            f"Found {len(on_view_items)} verified on-view out of {results.returned_count} searched"
+        )
+        
+        from .models import SearchResult as SR
+        return SR(
+            objects=on_view_items,
+            total_count=len(on_view_items),
+            returned_count=len(on_view_items),
+            offset=0,
+            has_more=False,
+            next_offset=None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error finding on-view items: {e}")
+        raise Exception(f"Failed to find on-view items: {e}")
+
 
 
 # ============================================================================
@@ -348,6 +549,7 @@ async def get_search_context(
             has_images=None,
             has_3d=None,
             is_cc0=None,
+            on_view=None,
         )
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
@@ -412,6 +614,64 @@ async def get_object_context(
 
     except Exception as e:
         return f"Error retrieving object details: {str(e)}"
+
+
+@mcp.tool()
+async def get_on_view_context(
+    ctx: Context[ServerSession, ServerContext],
+    unit_code: Optional[str] = None,
+    limit: int = 10,
+) -> str:
+    """
+    Get objects currently on view as context data for AI assistants.
+
+    This tool provides information about objects currently on exhibit that
+    can be used as context data without explicitly calling search tools.
+
+    Args:
+        unit_code: Optional filter by specific Smithsonian unit
+        limit: Maximum number of results to return (default: 10)
+    """
+    try:
+        filters = CollectionSearchFilter(
+            query="*",
+            limit=limit,
+            unit_code=unit_code,
+            on_view=True,
+            object_type=None,
+            date_start=None,
+            date_end=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+        )
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        unit_text = f" at {unit_code}" if unit_code else ""
+        output = [f"Objects Currently On View{unit_text}:\n"]
+
+        if not results.objects:
+            output.append("No objects are currently on view.")
+            return "\n".join(output)
+
+        for obj in results.objects:
+            output.append(f"• {obj.title}")
+            if obj.unit_name:
+                output.append(f"  Museum: {obj.unit_name}")
+            if obj.object_type:
+                output.append(f"  Type: {obj.object_type}")
+            output.append(f"  ID: {obj.id}")
+            output.append(f"  Status: Currently on exhibit ✓")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error retrieving on-view objects: {str(e)}"
 
 
 @mcp.tool()

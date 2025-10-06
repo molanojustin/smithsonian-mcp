@@ -114,6 +114,12 @@ class SmithsonianAPIClient:
         if filters.is_cc0:
             filter_queries.append("usage_rights:CC0")
 
+        if filters.on_view is not None:
+            if filters.on_view:
+                filter_queries.append('onPhysicalExhibit:"Yes"')
+            else:
+                filter_queries.append('onPhysicalExhibit:"No"')
+
         if filter_queries:
             params["fq"] = " AND ".join(filter_queries)
 
@@ -197,6 +203,46 @@ class SmithsonianAPIClient:
                 status_code=None,
                 details={"exception_type": type(e).__name__},
             )
+
+    def _parse_on_view_status(self, indexed_structured: Dict[str, Any]) -> bool:
+        """
+        Parse the onPhysicalExhibit field which can be a list of strings or dicts.
+        """
+        on_exhibit = indexed_structured.get("onPhysicalExhibit", [])
+        if not on_exhibit:
+            return False
+        
+        first_item = on_exhibit[0]
+        if isinstance(first_item, str):
+            return first_item == "Yes"
+        elif isinstance(first_item, dict):
+            return first_item.get("content") == "Yes"
+        return False
+
+    def _parse_exhibition_title(self, indexed_structured: Dict[str, Any]) -> Optional[str]:
+        """
+        Parse exhibition title from the exhibition field.
+        """
+        exhibitions = indexed_structured.get("exhibition", [])
+        if exhibitions and isinstance(exhibitions[0], dict):
+            return exhibitions[0].get("exhibitionTitle")
+        return None
+
+    def _parse_exhibition_location(self, indexed_structured: Dict[str, Any]) -> Optional[str]:
+        """
+        Parse exhibition location from the exhibition field.
+        """
+        exhibitions = indexed_structured.get("exhibition", [])
+        if exhibitions and isinstance(exhibitions[0], dict):
+            building = exhibitions[0].get("building", "")
+            room = exhibitions[0].get("room", "")
+            if building and room:
+                return f"{building}, {room}"
+            elif building:
+                return building
+            elif room:
+                return room
+        return None
 
     def _parse_object_data(self, raw_data: Dict[str, Any]) -> SmithsonianObject:
         """
@@ -332,6 +378,9 @@ class SmithsonianAPIClient:
             topics=indexed_structured.get("topic", []),
             is_cc0=descriptive_non_repeating.get("metadata_usage", {}).get("access")
             == "CC0",
+            is_on_view=self._parse_on_view_status(indexed_structured),
+            exhibition_title=self._parse_exhibition_title(indexed_structured),
+            exhibition_location=self._parse_exhibition_location(indexed_structured),
         )
 
     async def search_collections(self, filters: CollectionSearchFilter) -> SearchResult:
