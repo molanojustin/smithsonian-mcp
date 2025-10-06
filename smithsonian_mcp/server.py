@@ -109,7 +109,7 @@ async def search_collections(
     has_3d: Optional[bool] = None,
     is_cc0: Optional[bool] = None,
     on_view: Optional[bool] = None,
-    limit: int = 20,
+    limit: int = 100,
     offset: int = 0,
 ) -> SearchResult:
     """
@@ -129,7 +129,7 @@ async def search_collections(
         has_3d: Filter objects that have 3D models available
         is_cc0: Filter objects with CC0 (public domain) licensing
         on_view: Filter objects currently on physical exhibit
-        limit: Maximum number of results to return (default: 20, max: 1000)
+        limit: Maximum number of results to return (default: 100, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
@@ -261,7 +261,7 @@ async def search_by_unit(
     ctx: Context[ServerSession, ServerContext],
     unit_code: str,
     query: Optional[str] = None,
-    limit: int = 20,
+    limit: int = 100,
     offset: int = 0,
 ) -> SearchResult:
     """
@@ -323,7 +323,7 @@ async def search_by_unit(
 async def get_objects_on_view(
     ctx: Context[ServerSession, ServerContext],
     unit_code: Optional[str] = None,
-    limit: int = 20,
+    limit: int = 100,
     offset: int = 0,
 ) -> SearchResult:
     """
@@ -333,13 +333,20 @@ async def get_objects_on_view(
     for the public, which is useful for planning museum visits or finding
     currently accessible objects.
 
+    IMPORTANT: The Smithsonian API filter for on-view objects has data quality 
+    issues and often returns false positives. For best results:
+    1. Use high limit values (500-1000) to get more results
+    2. Specify a particular museum (unit_code) like "FSG", "SAAM", "NMAH"
+    3. Results are filtered to only include objects with verified exhibition data
+    4. Consider searching without on_view filter and filtering results manually
+
     Args:
-        unit_code: Optional filter by specific Smithsonian unit (e.g., "NMNH", "NPG")
-        limit: Maximum number of results to return (default: 20, max: 1000)
+        unit_code: Optional filter by specific Smithsonian unit (e.g., "FSG", "SAAM")
+        limit: Maximum number of results to return (default: 100, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
-        Search results containing objects currently on physical exhibit
+        Search results containing objects actually marked as on physical exhibit
     """
     try:
         # Validate inputs
@@ -370,11 +377,23 @@ async def get_objects_on_view(
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
+        # Filter out false positives - API returns objects without actual exhibition data
+        verified_on_view = [obj for obj in results.objects if obj.is_on_view]
+        
         logger.info(
-            f"On-view search completed: returned {results.returned_count} of {results.total_count} objects on exhibit"
+            f"On-view search completed: {len(verified_on_view)} verified on-view out of {results.returned_count} returned ({results.total_count} total matches)"
         )
 
-        return results
+        # Return only verified on-view objects
+        from .models import SearchResult as SR
+        return SR(
+            objects=verified_on_view,
+            total_count=len(verified_on_view),
+            returned_count=len(verified_on_view),
+            offset=offset,
+            has_more=False,
+            next_offset=None
+        )
 
     except Exception as e:
         logger.error(f"API error during on-view search: {e}")
