@@ -109,7 +109,7 @@ async def search_collections(
     has_3d: Optional[bool] = None,
     is_cc0: Optional[bool] = None,
     on_view: Optional[bool] = None,
-    limit: int = 100,
+    limit: int = 500,
     offset: int = 0,
 ) -> SearchResult:
     """
@@ -128,8 +128,10 @@ async def search_collections(
         has_images: Filter objects that have associated images
         has_3d: Filter objects that have 3D models available
         is_cc0: Filter objects with CC0 (public domain) licensing
-        on_view: Filter objects currently on physical exhibit
-        limit: Maximum number of results to return (default: 100, max: 1000)
+        on_view: Filter objects currently on physical exhibit (NOTE: API filter is unreliable,
+                 returns many false positives. For accurate on-view results, search broadly
+                 with high limit and check is_on_view field in results)
+        limit: Maximum number of results to return (default: 500, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
@@ -261,7 +263,7 @@ async def search_by_unit(
     ctx: Context[ServerSession, ServerContext],
     unit_code: str,
     query: Optional[str] = None,
-    limit: int = 100,
+    limit: int = 500,
     offset: int = 0,
 ) -> SearchResult:
     """
@@ -323,7 +325,7 @@ async def search_by_unit(
 async def get_objects_on_view(
     ctx: Context[ServerSession, ServerContext],
     unit_code: Optional[str] = None,
-    limit: int = 100,
+    limit: int = 500,
     offset: int = 0,
 ) -> SearchResult:
     """
@@ -341,8 +343,8 @@ async def get_objects_on_view(
     4. Consider searching without on_view filter and filtering results manually
 
     Args:
-        unit_code: Optional filter by specific Smithsonian unit (e.g., "FSG", "SAAM")
-        limit: Maximum number of results to return (default: 100, max: 1000)
+        unit_code: Optional filter by specific Smithsonian unit (e.g., "NMAH", "FSG", "SAAM")
+        limit: Maximum number of results to return (default: 500, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
