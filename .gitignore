@@ -47,11 +47,11 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
-# Build results on 'Bin' directories
-**/[Bb]in/*
-# Uncomment if you have tasks that rely on *.refresh files to move binaries
-# (https://github.com/github/gitignore/pull/3736)
-#!**/[Bb]in/*.refresh
+# Build results on 'Bin' directories (but not our bin/ directory)
+# Ignore bin directories except for our specific bin/ directory
+**/bin/*
+!bin/
+!bin/**
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

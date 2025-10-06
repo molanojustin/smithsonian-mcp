@@ -44,6 +44,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Include bin/ directory for Node.js wrapper
+!bin/
+
 # Git
 .git/
 .gitignore
