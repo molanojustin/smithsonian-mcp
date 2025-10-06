@@ -28,9 +28,9 @@ from .config import Config
 from .models import SmithsonianObject, SearchResult, CollectionSearchFilter
 from .api_client import SmithsonianAPIClient, create_client
 
-__version__ = "1.0.0"
-__author__ = "Smithsonian MCP Server"
-__email__ = "support@example.com"
+__version__ = "0.1.0"
+__author__ = "Justin Molano"
+__email__ = "160653314+molanojustin@users.noreply.github.com"
 
 __all__ = [
     "mcp",
