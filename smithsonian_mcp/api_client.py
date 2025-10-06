@@ -114,6 +114,12 @@ class SmithsonianAPIClient:
         if filters.is_cc0:
             filter_queries.append("usage_rights:CC0")
 
+        if filters.on_view is not None:
+            if filters.on_view:
+                filter_queries.append('onPhysicalExhibit:"Yes"')
+            else:
+                filter_queries.append('onPhysicalExhibit:"No"')
+
         if filter_queries:
             params["fq"] = " AND ".join(filter_queries)
 
@@ -332,6 +338,12 @@ class SmithsonianAPIClient:
             topics=indexed_structured.get("topic", []),
             is_cc0=descriptive_non_repeating.get("metadata_usage", {}).get("access")
             == "CC0",
+            is_on_view=indexed_structured.get("onPhysicalExhibit", [{}])[0].get(
+                "content"
+            )
+            == "Yes",
+            exhibition_title=None,  # Will be extracted from exhibition block if needed
+            exhibition_location=None,  # Will be extracted from exhibition block if needed
         )
 
     async def search_collections(self, filters: CollectionSearchFilter) -> SearchResult:

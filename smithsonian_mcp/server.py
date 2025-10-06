@@ -108,6 +108,7 @@ async def search_collections(
     has_images: Optional[bool] = None,
     has_3d: Optional[bool] = None,
     is_cc0: Optional[bool] = None,
+    on_view: Optional[bool] = None,
     limit: int = 20,
     offset: int = 0,
 ) -> SearchResult:
@@ -127,6 +128,7 @@ async def search_collections(
         has_images: Filter objects that have associated images
         has_3d: Filter objects that have 3D models available
         is_cc0: Filter objects with CC0 (public domain) licensing
+        on_view: Filter objects currently on physical exhibit
         limit: Maximum number of results to return (default: 20, max: 100)
         offset: Number of results to skip for pagination (default: 0)
 
@@ -151,6 +153,7 @@ async def search_collections(
             has_images=has_images,
             has_3d=has_3d,
             is_cc0=is_cc0,
+            on_view=on_view,
             limit=limit,
             offset=offset,
             date_start=None,
@@ -296,6 +299,7 @@ async def search_by_unit(
             has_images=None,
             has_3d=None,
             is_cc0=None,
+            on_view=None,
             date_start=None,
             date_end=None,
         )
@@ -313,6 +317,101 @@ async def search_by_unit(
     except Exception as e:
         logger.error(f"Unexpected error during search by unit: {str(e)}")
         raise Exception(f"Search by unit failed: {str(e)}")
+
+
+@mcp.tool()
+async def get_objects_on_view(
+    ctx: Context[ServerSession, ServerContext],
+    unit_code: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> SearchResult:
+    """
+    Get objects that are currently on physical exhibit at Smithsonian museums.
+
+    This tool specifically finds objects that are marked as being on display
+    for the public, which is useful for planning museum visits or finding
+    currently accessible objects.
+
+    Args:
+        unit_code: Optional filter by specific Smithsonian unit (e.g., "NMNH", "NPG")
+        limit: Maximum number of results to return (default: 20, max: 100)
+        offset: Number of results to skip for pagination (default: 0)
+
+    Returns:
+        Search results containing objects currently on physical exhibit
+    """
+    try:
+        # Validate inputs
+        if limit > 100:
+            limit = 100
+        if limit < 1:
+            limit = 1
+
+        # Create search filter for on-view objects
+        filters = CollectionSearchFilter(
+            query="*",
+            unit_code=unit_code,
+            on_view=True,
+            limit=limit,
+            offset=offset,
+            object_type=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        logger.info(
+            f"On-view search completed: returned {results.returned_count} of {results.total_count} objects on exhibit"
+        )
+
+        return results
+
+    except Exception as e:
+        logger.error(f"API error during on-view search: {e}")
+        raise Exception(f"On-view search failed: {e}")
+
+
+@mcp.tool()
+async def check_object_on_view(
+    ctx: Context[ServerSession, ServerContext], object_id: str
+) -> Optional[SmithsonianObject]:
+    """
+    Check if a specific object is currently on physical exhibit.
+
+    This tool retrieves detailed information about an object including
+    its current exhibition status.
+
+    Args:
+        object_id: Unique identifier for the object
+
+    Returns:
+        Object details including on-view status, or None if object not found
+    """
+    try:
+        api_client = await get_api_client(ctx)
+        result = await api_client.get_object_by_id(object_id)
+
+        if result:
+            status = "on view" if result.is_on_view else "not on view"
+            logger.info(f"Object {object_id} is {status}")
+        else:
+            logger.warning(f"Object not found: {object_id}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"API error checking object {object_id}: {e}")
+        raise Exception(f"Failed to check object status: {e}")
 
 
 # ============================================================================
@@ -348,6 +447,7 @@ async def get_search_context(
             has_images=None,
             has_3d=None,
             is_cc0=None,
+            on_view=None,
         )
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
@@ -412,6 +512,64 @@ async def get_object_context(
 
     except Exception as e:
         return f"Error retrieving object details: {str(e)}"
+
+
+@mcp.tool()
+async def get_on_view_context(
+    ctx: Context[ServerSession, ServerContext],
+    unit_code: Optional[str] = None,
+    limit: int = 10,
+) -> str:
+    """
+    Get objects currently on view as context data for AI assistants.
+
+    This tool provides information about objects currently on exhibit that
+    can be used as context data without explicitly calling search tools.
+
+    Args:
+        unit_code: Optional filter by specific Smithsonian unit
+        limit: Maximum number of results to return (default: 10)
+    """
+    try:
+        filters = CollectionSearchFilter(
+            query="*",
+            limit=limit,
+            unit_code=unit_code,
+            on_view=True,
+            object_type=None,
+            date_start=None,
+            date_end=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+        )
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        unit_text = f" at {unit_code}" if unit_code else ""
+        output = [f"Objects Currently On View{unit_text}:\n"]
+
+        if not results.objects:
+            output.append("No objects are currently on view.")
+            return "\n".join(output)
+
+        for obj in results.objects:
+            output.append(f"• {obj.title}")
+            if obj.unit_name:
+                output.append(f"  Museum: {obj.unit_name}")
+            if obj.object_type:
+                output.append(f"  Type: {obj.object_type}")
+            output.append(f"  ID: {obj.id}")
+            output.append(f"  Status: Currently on exhibit ✓")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error retrieving on-view objects: {str(e)}"
 
 
 @mcp.tool()
