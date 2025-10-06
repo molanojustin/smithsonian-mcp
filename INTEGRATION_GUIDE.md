@@ -52,7 +52,7 @@ Ask Claude these questions:
 
 ## VS Code Integration
 
-1. **Open Workspace**: `code smithsonian-mcp-workspace.code-workspace`
+1. **Open Workspace**: `code .vscode/smithsonian-mcp-workspace.code-workspace`
 2. **Install Dependencies**: Use "Install Dependencies" task
 3. **Configure Environment**: Copy `.env.example` to `.env` and set API key
 4. **Run Server**: Use "Start MCP Server" task

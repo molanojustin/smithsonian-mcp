@@ -155,8 +155,13 @@ class SmithsonianAPIClient:
 
             # Double-check session is available
             if self.session is None:
-                raise APIError(error="session_error", message="Failed to initialize HTTP session", details=None, status_code=None)
-            
+                raise APIError(
+                    error="session_error",
+                    message="Failed to initialize HTTP session",
+                    details=None,
+                    status_code=None,
+                )
+
             response = await self.session.get(url, params=request_params)
             response.raise_for_status()
 
@@ -166,32 +171,32 @@ class SmithsonianAPIClient:
             # Handle HTTP status errors (like 404) gracefully
             status_code = e.response.status_code
             error_msg = f"HTTP {status_code} error for {url}: {str(e)}"
-            
+
             if status_code == 404:
                 logger.debug(f"Resource not found: {url}")
                 raise APIError(
-                    error="not_found", 
-                    message="Resource not found", 
+                    error="not_found",
+                    message="Resource not found",
                     status_code=status_code,
-                    details={"url": url}
+                    details={"url": url},
                 )
             else:
                 logger.error(error_msg)
                 raise APIError(
-                    error="http_error", 
-                    message=error_msg, 
+                    error="http_error",
+                    message=error_msg,
                     status_code=status_code,
-                    details={"url": url}
+                    details={"url": url},
                 )
         except Exception as e:
             error_msg = f"Request failed: {str(e)}"
             logger.error(error_msg)
-            
+
             raise APIError(
-                error="request_error", 
-                message=error_msg, 
+                error="request_error",
+                message=error_msg,
                 status_code=None,
-                details={"exception_type": type(e).__name__}
+                details={"exception_type": type(e).__name__},
             )
 
     def _parse_object_data(self, raw_data: Dict[str, Any]) -> SmithsonianObject:
@@ -205,11 +210,11 @@ class SmithsonianAPIClient:
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse raw_data as JSON: {raw_data}")
                 raise ValueError("raw_data is not valid JSON or dict")
-        
+
         if not isinstance(raw_data, dict):
             logger.error(f"raw_data is not a dict or JSON string: {type(raw_data)}")
             raise ValueError("raw_data must be a dict or JSON string")
-        
+
         content = raw_data.get("content", {})
         descriptive_non_repeating = content.get("descriptiveNonRepeating", {})
         freetext = content.get("freetext", {})
@@ -278,19 +283,53 @@ class SmithsonianAPIClient:
             models_3d=models_3d,
             raw_metadata=raw_data,
             date=descriptive_non_repeating.get("date", {}).get("content"),
-            date_standardized=descriptive_non_repeating.get("date", {}).get("date_standardized"),
-            dimensions=descriptive_non_repeating.get("physicalDescription", [{}])[0].get("content") if descriptive_non_repeating.get("physicalDescription") else None,
-            summary=freetext.get("summary", [{}])[0].get("content") if freetext.get("summary") else None,
-            notes="\n".join(note.get("content", "") for note in freetext.get("notes", [])) if freetext.get("notes") else None,
+            date_standardized=descriptive_non_repeating.get("date", {}).get(
+                "date_standardized"
+            ),
+            dimensions=(
+                descriptive_non_repeating.get("physicalDescription", [{}])[0].get(
+                    "content"
+                )
+                if descriptive_non_repeating.get("physicalDescription")
+                else None
+            ),
+            summary=(
+                freetext.get("summary", [{}])[0].get("content")
+                if freetext.get("summary")
+                else None
+            ),
+            notes=(
+                "\n".join(note.get("content", "") for note in freetext.get("notes", []))
+                if freetext.get("notes")
+                else None
+            ),
             credit_line=descriptive_non_repeating.get("creditLine", ""),
             rights=descriptive_non_repeating.get("rights", ""),
             record_link=descriptive_non_repeating.get("record_link"),
             last_modified=raw_data.get("modified"),
-            maker=list(filter(None, [maker.get("content") for maker in freetext.get("maker", []) if isinstance(maker, dict)])),
+            maker=list(
+                filter(
+                    None,
+                    [
+                        maker.get("content")
+                        for maker in freetext.get("maker", [])
+                        if isinstance(maker, dict)
+                    ],
+                )
+            ),
             object_type=next(
                 (t.get("content") for t in freetext.get("objectType", [])), None
             ),
-            materials=list(filter(None, [m.get("content") for m in freetext.get("physicalDescription", []) if isinstance(m, dict)])),
+            materials=list(
+                filter(
+                    None,
+                    [
+                        m.get("content")
+                        for m in freetext.get("physicalDescription", [])
+                        if isinstance(m, dict)
+                    ],
+                )
+            ),
             topics=indexed_structured.get("topic", []),
             is_cc0=descriptive_non_repeating.get("metadata_usage", {}).get("access")
             == "CC0",
@@ -380,67 +419,67 @@ class SmithsonianAPIClient:
         # Return a hardcoded list of known units based on documentation
         known_units = [
             SmithsonianUnit(
-                code="NMNH", 
+                code="NMNH",
                 name="National Museum of Natural History",
                 description="Natural history museum",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="NPG", 
+                code="NPG",
                 name="National Portrait Gallery",
                 description="Portrait art museum",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="SAAM", 
+                code="SAAM",
                 name="Smithsonian American Art Museum",
                 description="American art museum",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="HMSG", 
+                code="HMSG",
                 name="Hirshhorn Museum and Sculpture Garden",
                 description="Modern and contemporary art",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="FSG", 
+                code="FSG",
                 name="Freer and Sackler Galleries",
                 description="Asian art museum",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="NMAfA", 
+                code="NMAfA",
                 name="National Museum of African Art",
                 description="African art museum",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="NMAI", 
+                code="NMAI",
                 name="National Museum of the American Indian",
                 description="Native American art and culture",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="NASM", 
+                code="NASM",
                 name="National Air and Space Museum",
                 description="Air and space museum",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="NMAH", 
+                code="NMAH",
                 name="National Museum of American History",
                 description="American history museum",
                 website=None,
-                location="Washington, DC"
+                location="Washington, DC",
             ),
         ]
 

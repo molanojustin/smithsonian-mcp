@@ -2,7 +2,6 @@
 Configuration management for Smithsonian MCP Server.
 """
 
-import os
 from typing import Optional
 from decouple import config
 
@@ -13,9 +12,9 @@ class Config:
     # API Configuration
     API_DATA_GOV_BASE_URL: str = config(
         "API_DATA_GOV_BASE_URL", default="https://api.data.gov"
-    )
+    )  # type: ignore
 
-    API_KEY: Optional[str] = config("SMITHSONIAN_API_KEY", default=None)
+    API_KEY: Optional[str] = config("SMITHSONIAN_API_KEY", default=None)  # type: ignore
 
     # Smithsonian specific endpoints
     EDAN_API_PATH: str = "/edan"
@@ -24,11 +23,11 @@ class Config:
     DEFAULT_RATE_LIMIT: int = config("DEFAULT_RATE_LIMIT", default=60, cast=int)
 
     # Server configuration
-    SERVER_NAME: str = config("SERVER_NAME", default="Smithsonian Open Access")
-    SERVER_VERSION: str = config("SERVER_VERSION", default="1.0.0")
+    SERVER_NAME: str = config("SERVER_NAME", default="Smithsonian Open Access")  # type: ignore
+    SERVER_VERSION: str = config("SERVER_VERSION", default="1.0.0")  # type: ignore
 
     # Logging
-    LOG_LEVEL: str = config("LOG_LEVEL", default="INFO")
+    LOG_LEVEL: str = config("LOG_LEVEL", default="INFO")  # type: ignore
 
     # Cache settings
     ENABLE_CACHE: bool = config("ENABLE_CACHE", default=True, cast=bool)
