@@ -129,7 +129,7 @@ async def search_collections(
         has_3d: Filter objects that have 3D models available
         is_cc0: Filter objects with CC0 (public domain) licensing
         on_view: Filter objects currently on physical exhibit
-        limit: Maximum number of results to return (default: 20, max: 100)
+        limit: Maximum number of results to return (default: 20, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
@@ -137,8 +137,8 @@ async def search_collections(
     """
     try:
         # Validate inputs
-        if limit > 100:
-            limit = 100
+        if limit > 1000:
+            limit = 1000
         if limit < 1:
             limit = 1
 
@@ -273,7 +273,7 @@ async def search_by_unit(
     Args:
         unit_code: Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM", "NASM")
         query: Optional search terms within that unit's collection
-        limit: Maximum number of results (default: 20, max: 100)
+        limit: Maximum number of results (default: 20, max: 1000)
         offset: Results offset for pagination (default: 0)
 
     Returns:
@@ -281,8 +281,8 @@ async def search_by_unit(
     """
     try:
         # Validate inputs
-        if limit > 100:
-            limit = 100
+        if limit > 1000:
+            limit = 1000
         if limit < 1:
             limit = 1
 
@@ -335,7 +335,7 @@ async def get_objects_on_view(
 
     Args:
         unit_code: Optional filter by specific Smithsonian unit (e.g., "NMNH", "NPG")
-        limit: Maximum number of results to return (default: 20, max: 100)
+        limit: Maximum number of results to return (default: 20, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
@@ -343,8 +343,8 @@ async def get_objects_on_view(
     """
     try:
         # Validate inputs
-        if limit > 100:
-            limit = 100
+        if limit > 1000:
+            limit = 1000
         if limit < 1:
             limit = 1
 
