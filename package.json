@@ -1,5 +1,5 @@
 {
-  "name": "@molanojustin/smithsonian-open-access-mcp",
+  "name": "@molanojustin/smithsonian-mcp",
   "version": "1.0.0",
   "description": "Model Context Protocol (MCP) server for Smithsonian Open Access collections - 3+ million museum objects",
   "main": "bin/smithsonian-mcp.js",
@@ -31,9 +31,9 @@
     "education"
   ],
   "author": {
-    "name": "Smithsonian Open Access MCP Team",
-    "email": "openaccess@si.edu",
-    "url": "https://www.si.edu/openaccess"
+    "name": "Justin Molano",
+    "email": "justinmolano2@gmail.com",
+    "url": "https://github.com/molanojustin"
   },
   "license": "MIT",
   "repository": {
