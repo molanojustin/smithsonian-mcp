@@ -433,6 +433,87 @@ async def check_object_on_view(
         raise Exception(f"Failed to check object status: {e}")
 
 
+
+@mcp.tool()
+async def find_on_view_items(
+    ctx: Context[ServerSession, ServerContext],
+    query: str,
+    unit_code: Optional[str] = None,
+    max_results: int = 1000,
+) -> SearchResult:
+    """
+    Find ALL items currently on physical exhibit matching a search query.
+    
+    This tool automatically handles pagination to search through all matching items
+    and filters them to return only those with verified exhibition status. Use this
+    when you need to find all on-view items for a topic.
+    
+    Important: This tool searches up to max_results items and filters to only
+    those with verified exhibition data, which is more reliable than using the
+    on_view parameter in other search functions.
+    
+    Args:
+        query: Search terms (e.g., "muppet", "Hokusai", "dinosaur fossils")
+        unit_code: Optional museum code (e.g., "NMAH", "FSG", "NMNH", "NASM")
+        max_results: Maximum items to search through (default: 1000, max: 1000)
+    
+    Returns:
+        Search results with only verified on-view items, including exhibition details
+    
+    Examples:
+        find_on_view_items(query="muppet", unit_code="NMAH")
+        find_on_view_items(query="Hokusai", unit_code="FSG")
+    """
+    try:
+        if max_results > 1000:
+            max_results = 1000
+        if max_results < 1:
+            max_results = 1
+        
+        logger.info(f"Finding on-view items for '{query}' at {unit_code or 'all museums'}")
+        
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            on_view=None,
+            limit=max_results,
+            offset=0,
+            object_type=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+            date_start=None,
+            date_end=None,
+        )
+        
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+        
+        on_view_items = [obj for obj in results.objects if obj.is_on_view]
+        
+        logger.info(
+            f"Found {len(on_view_items)} verified on-view out of {results.returned_count} searched"
+        )
+        
+        from .models import SearchResult as SR
+        return SR(
+            objects=on_view_items,
+            total_count=len(on_view_items),
+            returned_count=len(on_view_items),
+            offset=0,
+            has_more=False,
+            next_offset=None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error finding on-view items: {e}")
+        raise Exception(f"Failed to find on-view items: {e}")
+
+
+
 # ============================================================================
 # RESOURCES - Data sources that provide context to AI assistants
 # ============================================================================
