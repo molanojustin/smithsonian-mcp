@@ -166,20 +166,26 @@ class UnitStats(BaseModel):
     unit_code: str = Field(..., description="Unit identifier")
     unit_name: str = Field(..., description="Unit name")
     total_objects: int = Field(..., description="Total objects in collection")
-    digitized_objects: int = Field(..., description="Digitized objects count")
-    cc0_objects: int = Field(..., description="CC0 licensed objects count")
-    objects_with_images: int = Field(..., description="Objects with images count")
-    objects_with_3d: int = Field(..., description="Objects with 3D models count")
+    digitized_objects: Optional[int] = Field(
+        None, description="Digitized objects count"
+    )
+    cc0_objects: Optional[int] = Field(None, description="CC0 licensed objects count")
+    objects_with_images: Optional[int] = Field(
+        None, description="Objects with images count"
+    )
+    objects_with_3d: Optional[int] = Field(
+        None, description="Objects with 3D models count"
+    )
 
 
 class CollectionStats(BaseModel):
     """Overall collection statistics."""
 
     total_objects: int = Field(..., description="Total objects across all units")
-    total_digitized: int = Field(..., description="Total digitized objects")
-    total_cc0: int = Field(..., description="Total CC0 licensed objects")
-    total_with_images: int = Field(..., description="Objects with images")
-    total_with_3d: int = Field(..., description="Objects with 3D models")
+    total_digitized: Optional[int] = Field(None, description="Total digitized objects")
+    total_cc0: Optional[int] = Field(None, description="Total CC0 licensed objects")
+    total_with_images: Optional[int] = Field(None, description="Objects with images")
+    total_with_3d: Optional[int] = Field(None, description="Objects with 3D models")
     units: List[UnitStats] = Field(..., description="Per-unit statistics")
     last_updated: datetime = Field(..., description="Statistics last updated")
 

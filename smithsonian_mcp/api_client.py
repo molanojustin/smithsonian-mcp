@@ -5,11 +5,10 @@ HTTP client for interacting with the Smithsonian Open Access API via api.data.go
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Optional, Dict, Any, List
-from urllib.parse import urlencode, urljoin
 
 import httpx
-from httpx import HTTPError, RequestError
 
 from .config import Config
 from .models import (
@@ -492,55 +491,125 @@ class SmithsonianAPIClient:
         Returns:
             Collection statistics
         """
-        from datetime import datetime
 
-        # Get real total count from API
         try:
-            # Search with empty query and rows=0 to get total count
-            filters = CollectionSearchFilter(query="*", limit=0)
-            search_result = await self.search_collections(filters)
-            total_objects = search_result.total_count
-            
-            # Get CC0 licensed count
-            filters_cc0 = CollectionSearchFilter(query="*", limit=0, usage="CC0")
-            search_result_cc0 = await self.search_collections(filters_cc0)
-            total_cc0 = search_result_cc0.total_count
-            
-            # Get count with images (search for objects with media)
-            filters_media = CollectionSearchFilter(query="*", limit=0, has_media=True)
-            search_result_media = await self.search_collections(filters_media)
-            total_with_images = search_result_media.total_count
-            
-        except Exception as e:
-            logger.warning(f"Failed to get real stats from API: {e}")
-            # Fallback to estimated values
-            total_objects = 900000
-            total_cc0 = 270000
-            total_with_images = 225000
+            # Use the dedicated stats endpoint for accurate data
+            response = await self._make_request("stats")
+            stats_data = response.get("response", {})
 
-        units = await self.get_units()
-        unit_stats = [
-            UnitStats(
-                unit_code=unit.code,
-                unit_name=unit.name,
-                total_objects=total_objects // len(units),  # Distribute evenly
-                digitized_objects=total_objects // len(units) // 2,
-                cc0_objects=total_cc0 // len(units),
-                objects_with_images=total_with_images // len(units),
-                objects_with_3d=1000,  # Still estimated
+            total_objects = stats_data.get("total_objects", 0)
+            metrics = stats_data.get("metrics", {})
+
+            total_cc0 = metrics.get("CC0_records", 0)
+            total_with_cc0_media = metrics.get("CC0_records_with_CC0_media", 0)
+            total_cc0_media = metrics.get("CC0_media", 0)
+
+            logger.info(
+                f"Stats from API - Total: {total_objects:,}, CC0: {total_cc0:,}, CC0 Media: {total_cc0_media:,}"
             )
-            for unit in units
-        ]
 
-        return CollectionStats(
-            total_objects=total_objects,
-            total_digitized=total_objects // 2,  # Estimate
-            total_cc0=total_cc0,
-            total_with_images=total_with_images,
-            total_with_3d=1000 * len(units),  # Still estimated
-            units=unit_stats,
-            last_updated=datetime.now(),
-        )
+            # Build unit statistics from the API response
+            unit_stats = []
+            units_data = stats_data.get("units", [])
+
+            # Get unit names from the units endpoint to match codes with names
+            units_info = await self.get_units()
+            unit_name_map = {unit.code: unit.name for unit in units_info}
+
+            for unit_data in units_data:
+                unit_code = unit_data.get("unit", "")
+                unit_name = (
+                    unit_name_map.get(unit_code, unit_code)
+                    or unit_code
+                    or "Unknown Unit"
+                )
+                unit_total = unit_data.get("total_objects", 0)
+                unit_metrics = unit_data.get("metrics", {})
+
+                unit_stats.append(
+                    UnitStats(
+                        unit_code=unit_code,
+                        unit_name=unit_name,
+                        total_objects=unit_total,
+                        digitized_objects=(
+                            unit_total // 2 if unit_total else None
+                        ),  # Estimate
+                        cc0_objects=unit_metrics.get("CC0_records", 0),
+                        objects_with_images=unit_metrics.get(
+                            "CC0_records_with_CC0_media", 0
+                        ),
+                        objects_with_3d=None,  # Not available in stats
+                    )
+                )
+
+            return CollectionStats(
+                total_objects=total_objects,
+                total_digitized=(
+                    total_objects // 2 if total_objects else None
+                ),  # Estimate
+                total_cc0=total_cc0,
+                total_with_images=total_with_cc0_media,  # CC0 media count
+                total_with_3d=None,  # Not available
+                units=unit_stats,
+                last_updated=datetime.now(),
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to get collection stats from API: {e}")
+            # Fallback to basic search if stats endpoint fails
+            try:
+                filter_dict = {
+                    "query": "*",
+                    "limit": 0,
+                    "unit_code": None,
+                    "object_type": None,
+                    "date_start": None,
+                    "date_end": None,
+                    "maker": None,
+                    "material": None,
+                    "topic": None,
+                    "has_images": None,
+                    "has_3d": None,
+                    "is_cc0": None,
+                    "offset": 0,
+                }
+                filters = CollectionSearchFilter(**filter_dict)
+                search_result = await self.search_collections(filters)
+                total_objects = search_result.total_count
+
+                units = await self.get_units()
+                num_units = len(units)
+                unit_stats = [
+                    UnitStats(
+                        unit_code=unit.code,
+                        unit_name=unit.name,
+                        total_objects=total_objects // num_units,
+                        digitized_objects=(
+                            total_objects // num_units // 2 if total_objects else None
+                        ),
+                        cc0_objects=None,
+                        objects_with_images=None,
+                        objects_with_3d=None,
+                    )
+                    for unit in units
+                ]
+
+                return CollectionStats(
+                    total_objects=total_objects,
+                    total_digitized=total_objects // 2 if total_objects else None,
+                    total_cc0=None,
+                    total_with_images=None,
+                    total_with_3d=None,
+                    units=unit_stats,
+                    last_updated=datetime.now(),
+                )
+            except Exception as fallback_error:
+                logger.error(f"Fallback also failed: {fallback_error}")
+                raise APIError(
+                    error="stats_failed",
+                    message=f"Failed to retrieve collection statistics: {e}",
+                    status_code=None,
+                )
 
 
 # Utility function for creating client instance

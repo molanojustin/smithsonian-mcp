@@ -51,7 +51,21 @@ async def test_api_connection():
 
             # Test 2: Basic search
             print("Test 2: Basic collection search...")
-            filters = CollectionSearchFilter(query="pottery", limit=5)
+            filters = CollectionSearchFilter(
+                query="pottery",
+                limit=5,
+                unit_code=None,
+                object_type=None,
+                date_start=None,
+                date_end=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                has_3d=None,
+                is_cc0=None,
+                offset=0,
+            )
             results = await client.search_collections(filters)
             print(
                 f"✅ Search returned {results.returned_count} of {results.total_count} results"
@@ -71,8 +85,12 @@ async def test_api_connection():
 
                 if detailed_obj:
                     print(f"✅ Retrieved detailed info for: {detailed_obj.title}")
-                    print(f"   Images: {len(detailed_obj.images)} available")
-                    print(f"   3D Models: {len(detailed_obj.models_3d)} available")
+                    print(
+                        f"   Images: {len(detailed_obj.images) if detailed_obj.images else 0} available"
+                    )
+                    print(
+                        f"   3D Models: {len(detailed_obj.models_3d) if detailed_obj.models_3d else 0} available"
+                    )
                 else:
                     print("⚠️  Object details not found")
                 print()
@@ -82,8 +100,16 @@ async def test_api_connection():
             stats = await client.get_collection_stats()
             print(f"✅ Collection statistics:")
             print(f"   Total objects: {stats.total_objects:,}")
-            print(f"   CC0 licensed: {stats.total_cc0:,}")
-            print(f"   With images: {stats.total_with_images:,}")
+            print(
+                f"   CC0 licensed: {stats.total_cc0:,}"
+                if stats.total_cc0
+                else "   CC0 licensed: Not available from API"
+            )
+            print(
+                f"   With CC0 media: {stats.total_with_images:,}"
+                if stats.total_with_images
+                else "   With CC0 media: Not available from API"
+            )
             print()
 
         print("🎉 All tests passed! API connection is working.")
