@@ -193,7 +193,7 @@ mcpo --config mcpo-config.json --port 8001
 
 ### VS Code
 
-1. **Open Workspace**: `code smithsonian-mcp-workspace.code-workspace`
+1. **Open Workspace**: `code .vscode/smithsonian-mcp-workspace.code-workspace`
 2. **Run Tasks**: Debug, test, and develop the MCP server
 3. **Claude Code**: AI-assisted development with Smithsonian data
 

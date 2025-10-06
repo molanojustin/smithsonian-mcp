@@ -429,4 +429,5 @@ FodyWeavers.xsd
 
 # Additional
 .DS_Store
+AGENTS.md
 dev/
