@@ -132,7 +132,6 @@ class TestOnViewDataModels:
         assert obj.exhibition_title is None
 
 
-@pytest.mark.asyncio
 class TestOnViewAPIClient:
     """Test API client on-view functionality."""
 
@@ -293,6 +292,7 @@ class TestOnViewAPIClient:
 
         assert obj.is_on_view is False
 
+    @pytest.mark.asyncio
     @patch("smithsonian_mcp.api_client.httpx.AsyncClient")
     async def test_search_on_view_objects(self, mock_client_class):
         """Test searching for on-view objects."""
