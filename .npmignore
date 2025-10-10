@@ -65,7 +65,6 @@ claude-desktop-config.json
 !README.md
 !LICENSE.md
 !NPM_DEPLOYMENT_GUIDE.md
-!INTEGRATION_GUIDE.md
 
 # Test files
 tests/

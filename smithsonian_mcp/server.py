@@ -178,6 +178,359 @@ async def search_collections(
 
 
 @mcp.tool()
+async def simple_explore(
+    ctx: Context[ServerSession, ServerContext],
+    topic: str,
+    museum: Optional[str] = None,
+    max_samples: int = 50,
+) -> SearchResult:
+    """
+    Explore Smithsonian collections with diverse, representative results.
+
+    This provides a smarter search that samples across museums and object types to show you
+    the variety of what's available for your topic. Instead of just returning the 'first 50 results',
+    it tries to show representative examples from different museums.
+
+    Note: This will return up to max_samples objects, but there may be many more available.
+    Use 'search_collections' with pagination if you need systematic access to all results.
+
+    Args:
+        topic: What you want to explore (e.g., "dinosaurs", "computers", "space exploration")
+        museum: Optional museum or museum code to focus on
+        max_samples: How many diverse examples to return (default 50, max 200)
+
+    Returns:
+        A diverse sample of objects showing the range available for your topic
+    """
+    try:
+        # Validate inputs
+        max_samples = min(max(10, max_samples), 200)
+        if len(topic.strip()) < 2:
+            raise ValueError("Search topic must be at least 2 characters long")
+
+        # Map museum names to codes
+        museum_code = None
+        if museum:
+            museum_lower = museum.lower().strip()
+            museum_map = {
+                "american history": "NMAH", "natural history": "NMNH", "art": "SAAM",
+                "american indian": "NMAI", "air and space": "NASM", "asian art": "FSG"
+            }
+            if museum_lower in museum_map:
+                museum_code = museum_map[museum_lower]
+            elif museum_upper := museum.upper():
+                # Try to match codes directly
+                valid_codes = ["NMAH", "NMNH", "SAAM", "NMNH", "NASM", "NPG", "FSG", "HMSG", "NMAfA", "NMAI"]
+                if museum_upper in valid_codes:
+                    museum_code = museum_upper
+
+        api_client = await get_api_client(ctx)
+
+        # Strategy 1: If specific museum requested, get diverse samples from there
+        if museum_code:
+            # Get a broader set first to sample from
+            filters = CollectionSearchFilter(
+                query=topic, unit_code=museum_code, limit=min(max_samples * 2, 400),
+                offset=0, object_type=None, maker=None, material=None, topic=None,
+                has_images=None, has_3d=None, is_cc0=None, on_view=None,
+                date_start=None, date_end=None
+            )
+            results = await api_client.search_collections(filters)
+
+            # Sample for diversity in object types
+            collected_objects = []
+            type_groups = {}
+            for obj in results.objects:
+                obj_type = obj.object_type or "unknown"
+                if obj_type not in type_groups:
+                    type_groups[obj_type] = []
+                type_groups[obj_type].append(obj)
+
+            # Distribute samples across types to show variety
+            for obj_type, objects in type_groups.items():
+                if len(collected_objects) >= max_samples:
+                    break
+                available = min(len(objects), max(1, max_samples // max(len(type_groups), 1)))
+                collected_objects.extend(objects[:available])
+
+            # Fill remaining with more objects if needed and available
+            if len(collected_objects) < max_samples and len(results.objects) > len(collected_objects):
+                remaining = [obj for obj in results.objects if obj not in collected_objects]
+                needed = max_samples - len(collected_objects)
+                collected_objects.extend(remaining[:needed])
+
+            collected_objects = collected_objects[:max_samples]
+
+            return SearchResult(
+                objects=collected_objects,
+                total_count=max(len(results.objects), len(collected_objects)),
+                returned_count=len(collected_objects),
+                offset=0,
+                has_more=len(results.objects) > max_samples,
+                next_offset=max_samples if len(results.objects) > max_samples else None
+            )
+
+        else:
+            # Strategy 2: Sample across all museums for maximum diversity
+            # Get broader results first
+            filters = CollectionSearchFilter(
+                query=topic, unit_code=None, limit=min(max_samples * 3, 600),
+                offset=0, object_type=None, maker=None, material=None, topic=None,
+                has_images=None, has_3d=None, is_cc0=None, on_view=None,
+                date_start=None, date_end=None
+            )
+            broad_results = await api_client.search_collections(filters)
+
+            if not broad_results.objects:
+                # No results at all
+                return SearchResult(
+                    objects=[],
+                    total_count=0,
+                    returned_count=0,
+                    offset=0,
+                    has_more=False,
+                    next_offset=None
+                )
+
+            # Group by museum
+            by_museum = {}
+            for obj in broad_results.objects:
+                museum_key = obj.unit_code or "unknown"
+                if museum_key not in by_museum:
+                    by_museum[museum_key] = []
+                by_museum[museum_key].append(obj)
+
+            # Sample from each museum to show variety
+            collected_objects = []
+            samples_per_museum = max(1, max_samples // max(len(by_museum), 1))
+
+            for museum_code_key, objects in by_museum.items():
+                if len(collected_objects) >= max_samples:
+                    break
+
+                # Within each museum, try to get variety in object types
+                type_groups = {}
+                for obj in objects[:50]:  # Limit per museum for processing
+                    obj_type = obj.object_type or "unknown"
+                    if obj_type not in type_groups:
+                        type_groups[obj_type] = []
+                    type_groups[obj_type].append(obj)
+
+                # Take 1-2 samples from each type in this museum
+                museum_sample = []
+                for obj_type, type_objects in type_groups.items():
+                    samples_from_type = min(len(type_objects), max(1, samples_per_museum // max(len(type_groups), 2)))
+                    museum_sample.extend(type_objects[:samples_from_type])
+
+                collected_objects.extend(museum_sample[:samples_per_museum])
+
+            # Fill remaining slots with additional diverse objects
+            if len(collected_objects) < max_samples:
+                additional_candidates = [obj for obj in broad_results.objects
+                                       if obj not in collected_objects]
+                needed = max_samples - len(collected_objects)
+                collected_objects.extend(additional_candidates[:needed])
+
+            final_objects = collected_objects[:max_samples]
+
+            return SearchResult(
+                objects=final_objects,
+                total_count=broad_results.total_count,
+                returned_count=len(final_objects),
+                offset=0,
+                has_more=broad_results.total_count > max_samples,
+                next_offset=max_samples if broad_results.total_count > max_samples else None
+            )
+
+    except ValueError as ve:
+        logger.warning(f"Simple explore validation error: {ve}")
+        # Provide fallback
+        try:
+            filters = CollectionSearchFilter(
+                query=topic[:100], limit=min(max_samples, 100),
+                offset=0, unit_code=None, object_type=None, maker=None,
+                material=None, topic=None, has_images=None, has_3d=None,
+                is_cc0=None, on_view=None, date_start=None, date_end=None
+            )
+            api_client = await get_api_client(ctx)
+            results = await api_client.search_collections(filters)
+            return results
+        except Exception as e:
+            logger.error(f"Fallback also failed: {e}")
+            raise Exception(f"Exploration failed: {str(ve)}")
+
+    except Exception as e:
+        logger.error(f"Error in simple explore: {e}")
+        raise Exception(f"Exploration failed: {e}")
+
+
+@mcp.tool()
+async def continue_explore(
+    ctx: Context[ServerSession, ServerContext],
+    topic: str,
+    previously_seen_ids: List[str],
+    museum: Optional[str] = None,
+    max_samples: int = 50,
+) -> SearchResult:
+    """
+    Continue exploring a topic, avoiding objects you've already seen.
+
+    Use this when you want more results about the same topic but haven't seen everything yet.
+    This tool will try to find different objects than the ones you've already encountered.
+
+    Args:
+        topic: The same topic you explored before
+        previously_seen_ids: List of object IDs you've already seen (from previous results)
+        museum: Optional museum focus (same as before)
+        max_samples: How many new examples to return (default 50, max 200)
+
+    Returns:
+        More diverse samples from the same topic, excluding objects you've already seen
+    """
+    try:
+        # Reuse the same exploration logic but with seen items filtered out
+        max_samples = min(max(10, max_samples), 200)
+        if len(topic.strip()) < 2:
+            raise ValueError("Search topic must be at least 2 characters long")
+
+        # Map museum names to codes (same logic as simple_explore)
+        museum_code = None
+        if museum:
+            museum_lower = museum.lower().strip()
+            museum_map = {
+                "american history": "NMAH", "natural history": "NMNH", "art": "SAAM",
+                "american indian": "NMAI", "air and space": "NASM", "asian art": "FSG"
+            }
+            if museum_lower in museum_map:
+                museum_code = museum_map[museum_lower]
+            elif museum_upper := museum.upper():
+                valid_codes = ["NMAH", "NMNH", "SAAM", "NMNH", "NASM", "NPG", "FSG", "HMSG", "NMAfA", "NMAI"]
+                if museum_upper in valid_codes:
+                    museum_code = museum_upper
+
+        api_client = await get_api_client(ctx)
+        seen_ids = set(previously_seen_ids or [])
+
+        # Get broader results and filter out seen items
+        fetch_limit = min(max_samples * 4, 800) if museum_code else min(max_samples * 6, 1200)
+
+        filters = CollectionSearchFilter(
+            query=topic, unit_code=museum_code, limit=fetch_limit,
+            offset=0, object_type=None, maker=None, material=None, topic=None,
+            has_images=None, has_3d=None, is_cc0=None, on_view=None,
+            date_start=None, date_end=None
+        )
+        broad_results = await api_client.search_collections(filters)
+
+        # Filter out previously seen objects
+        new_objects = [obj for obj in broad_results.objects if obj.id not in seen_ids]
+
+        if not new_objects:
+            # No new objects found
+            return SearchResult(
+                objects=[],
+                total_count=broad_results.total_count,
+                returned_count=0,
+                offset=0,
+                has_more=len([obj for obj in broad_results.objects if obj.id not in seen_ids]) > max_samples,
+                next_offset=None
+            )
+
+        # Apply the same diversity sampling logic as simple_explore
+        collected_objects = []
+
+        if museum_code:
+            # Same museum - sample for type diversity
+            type_groups = {}
+            for obj in new_objects:
+                obj_type = obj.object_type or "unknown"
+                if obj_type not in type_groups:
+                    type_groups[obj_type] = []
+                type_groups[obj_type].append(obj)
+
+            for obj_type, objects in type_groups.items():
+                if len(collected_objects) >= max_samples:
+                    break
+                available = min(len(objects), max(1, max_samples // max(len(type_groups), 1)))
+                collected_objects.extend(objects[:available])
+
+            # Fill remaining
+            if len(collected_objects) < max_samples:
+                remaining = [obj for obj in new_objects if obj not in collected_objects]
+                needed = max_samples - len(collected_objects)
+                collected_objects.extend(remaining[:needed])
+        else:
+            # Cross-museum diversity sampling
+            by_museum = {}
+            for obj in new_objects:
+                museum_key = obj.unit_code or "unknown"
+                if museum_key not in by_museum:
+                    by_museum[museum_key] = []
+                by_museum[museum_key].append(obj)
+
+            if by_museum:
+                samples_per_museum = max(1, max_samples // max(len(by_museum), 1))
+
+                for museum_code_key, objects in by_museum.items():
+                    if len(collected_objects) >= max_samples:
+                        break
+
+                    # Sample variety within museum
+                    type_groups = {}
+                    for obj in objects[:50]:
+                        obj_type = obj.object_type or "unknown"
+                        if obj_type not in type_groups:
+                            type_groups[obj_type] = []
+                        type_groups[obj_type].append(obj)
+
+                    museum_sample = []
+                    for obj_type, type_objects in type_groups.items():
+                        samples_from_type = min(len(type_objects), max(1, samples_per_museum // max(len(type_groups), 2)))
+                        museum_sample.extend(type_objects[:samples_from_type])
+
+                    collected_objects.extend(museum_sample[:samples_per_museum])
+
+                # Fill remaining
+                if len(collected_objects) < max_samples:
+                    additional_candidates = [obj for obj in new_objects if obj not in collected_objects]
+                    needed = max_samples - len(collected_objects)
+                    collected_objects.extend(additional_candidates[:needed])
+
+        final_objects = collected_objects[:max_samples]
+
+        return SearchResult(
+            objects=final_objects,
+            total_count=broad_results.total_count,
+            returned_count=len(final_objects),
+            offset=0,
+            has_more=len(new_objects) > max_samples,
+            next_offset=max_samples if len(new_objects) > max_samples else None
+        )
+
+    except ValueError as ve:
+        logger.warning(f"Continue explore validation error: {ve}")
+        # Provide fallback
+        try:
+            filters = CollectionSearchFilter(
+                query=topic[:100], limit=min(max_samples, 100),
+                offset=len(previously_seen_ids or []),
+                unit_code=None, object_type=None, maker=None,
+                material=None, topic=None, has_images=None, has_3d=None,
+                is_cc0=None, on_view=None, date_start=None, date_end=None
+            )
+            api_client = await get_api_client(ctx)
+            results = await api_client.search_collections(filters)
+            return results
+        except Exception as e:
+            logger.error(f"Fallback also failed: {e}")
+            raise Exception(f"Continue exploration failed: {str(ve)}")
+
+    except Exception as e:
+        logger.error(f"Error in continue explore: {e}")
+        raise Exception(f"Continue exploration failed: {e}")
+
+
+@mcp.tool()
 async def get_object_details(
     ctx: Context[ServerSession, ServerContext], object_id: str
 ) -> Optional[SmithsonianObject]:

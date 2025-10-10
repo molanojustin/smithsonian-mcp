@@ -315,7 +315,7 @@ run_health_check() {
     if timeout 10s "$PYTHON_EXEC" -m smithsonian_mcp.server --test 2>/dev/null; then
         info "✓ MCP server startup test passed"
     else
-        warning "⚠ MCP server startup test inconclusive (this may be normal)"
+        warning "MCP server startup test inconclusive (this may be normal)"
     fi
     
     info "Health check completed."
@@ -420,13 +420,13 @@ if [[ ! "$run_check" =~ ^[Nn]$ ]]; then
 fi
 
 info ""
-info "🎉 Setup complete!"
+info "Setup complete!"
 info ""
 info "Next steps:"
 if [ -n "$api_key" ]; then
     info "✓ API key configured and validated"
 else
-    info "⚠ Edit .env and add your API key from https://api.data.gov/signup/"
+    info "Edit .env and add your API key from https://api.data.gov/signup/"
 fi
 info "✓ Dependencies installed"
 info "✓ Virtual environment created at $VENV_DIR"

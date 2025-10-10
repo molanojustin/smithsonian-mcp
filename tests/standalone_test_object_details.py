@@ -63,7 +63,7 @@ async def main():
 
     # Check API key
     if not Config.validate_api_key():
-        print("⚠ Warning: No API key configured. Tests may not work properly.")
+        print("Warning: No API key configured. Tests may not work properly.")
         print("  Set SMITHSONIAN_API_KEY environment variable for full testing.")
         return 1
 
@@ -71,10 +71,10 @@ async def main():
 
     print("\n" + "=" * 50)
     if success:
-        print("🎉 Object details error handling is working correctly!")
+        print("Object details error handling is working correctly!")
         print("404 errors will now return None instead of causing 500 server errors.")
     else:
-        print("❌ Tests failed. Please check the error above.")
+        print("Tests failed. Please check the error above.")
 
     return 0 if success else 1
 

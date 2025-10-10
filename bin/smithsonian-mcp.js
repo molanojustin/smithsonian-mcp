@@ -115,7 +115,7 @@ class SmithonianMCPServer {
     const apiKey = process.env.SMITHSONIAN_API_KEY;
     
     if (!apiKey) {
-      console.log('\n⚠️  Smithsonian API Key not found');
+      console.log('\nWarning: Smithsonian API Key not found');
       console.log('Get your free API key from: https://api.data.gov/signup/');
       console.log('Set it as environment variable: SMITHSONIAN_API_KEY=your_key_here');
       console.log('Or create a .env file with: SMITHSONIAN_API_KEY=your_key_here\n');
@@ -123,7 +123,7 @@ class SmithonianMCPServer {
     }
 
     if (apiKey.length < 20) {
-      console.log('\n⚠️  Invalid API key format');
+      console.log('\nWarning: Invalid API key format');
       console.log('API keys should be at least 20 characters long\n');
       return false;
     }
@@ -136,7 +136,7 @@ class SmithonianMCPServer {
    */
   async start(args = []) {
     try {
-      console.log('🏛️  Smithsonian Open Access MCP Server');
+      console.log('Smithsonian Open Access MCP Server');
       console.log('=====================================\n');
 
       // Find Python executable
@@ -201,7 +201,7 @@ class SmithonianMCPServer {
    */
   showHelp() {
     console.log(`
-🏛️  Smithsonian Open Access MCP Server
+Smithsonian Open Access MCP Server
 
 Usage:
   smithsonian-mcp [options]
@@ -257,7 +257,7 @@ For more information, visit: https://github.com/molanojustin/smithsonian-mcp
    */
   async runTest() {
     try {
-      console.log('🧪 Testing Smithsonian API connection...\n');
+      console.log('Testing Smithsonian API connection...\n');
 
       this.pythonExecutable = await this.findPython();
       await this.checkDependencies(this.pythonExecutable);
