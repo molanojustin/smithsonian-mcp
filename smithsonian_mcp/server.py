@@ -98,8 +98,8 @@ mcp = FastMCP(Config.SERVER_NAME, lifespan=server_lifespan)
 
 @mcp.tool()
 async def search_collections(
-    ctx: Context[ServerSession, ServerContext],
-    query: str,
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
     unit_code: Optional[str] = None,
     object_type: Optional[str] = None,
     maker: Optional[str] = None,
@@ -179,8 +179,8 @@ async def search_collections(
 
 @mcp.tool()
 async def simple_explore(
-    ctx: Context[ServerSession, ServerContext],
-    topic: str,
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    topic: str = "",
     museum: Optional[str] = None,
     max_samples: int = 50,
 ) -> SearchResult:
@@ -204,6 +204,8 @@ async def simple_explore(
     """
     try:
         # Validate inputs
+        if not topic or topic.strip() == "":
+            raise ValueError("Search topic cannot be empty")
         max_samples = min(max(10, max_samples), 200)
         if len(topic.strip()) < 2:
             raise ValueError("Search topic must be at least 2 characters long")
@@ -366,9 +368,9 @@ async def simple_explore(
 
 @mcp.tool()
 async def continue_explore(
-    ctx: Context[ServerSession, ServerContext],
-    topic: str,
-    previously_seen_ids: List[str],
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    topic: str = "",
+    previously_seen_ids: List[str] = None,
     museum: Optional[str] = None,
     max_samples: int = 50,
 ) -> SearchResult:
@@ -389,6 +391,10 @@ async def continue_explore(
     """
     try:
         # Reuse the same exploration logic but with seen items filtered out
+        if not topic or topic.strip() == "":
+            raise ValueError("Search topic cannot be empty")
+        if previously_seen_ids is None:
+            previously_seen_ids = []
         max_samples = min(max(10, max_samples), 200)
         if len(topic.strip()) < 2:
             raise ValueError("Search topic must be at least 2 characters long")
@@ -532,7 +538,7 @@ async def continue_explore(
 
 @mcp.tool()
 async def get_object_details(
-    ctx: Context[ServerSession, ServerContext], object_id: str
+    ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
 ) -> Optional[SmithsonianObject]:
     """
     Get detailed information about a specific Smithsonian collection object.
@@ -564,7 +570,7 @@ async def get_object_details(
 
 @mcp.tool()
 async def get_smithsonian_units(
-    ctx: Context[ServerSession, ServerContext],
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
 ) -> List[SmithsonianUnit]:
     """
     Get a list of all Smithsonian Institution museums and research centers.
@@ -589,7 +595,7 @@ async def get_smithsonian_units(
 
 @mcp.tool()
 async def get_collection_statistics(
-    ctx: Context[ServerSession, ServerContext],
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
 ) -> CollectionStats:
     """
     Get comprehensive statistics about the Smithsonian Open Access collections.
@@ -613,8 +619,8 @@ async def get_collection_statistics(
 
 @mcp.tool()
 async def search_by_unit(
-    ctx: Context[ServerSession, ServerContext],
-    unit_code: str,
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    unit_code: str = "",
     query: Optional[str] = None,
     limit: int = 500,
     offset: int = 0,
@@ -636,6 +642,8 @@ async def search_by_unit(
     """
     try:
         # Validate inputs
+        if not unit_code or unit_code.strip() == "":
+            raise ValueError("Unit code cannot be empty")
         if limit > 1000:
             limit = 1000
         if limit < 1:
@@ -676,7 +684,7 @@ async def search_by_unit(
 
 @mcp.tool()
 async def get_objects_on_view(
-    ctx: Context[ServerSession, ServerContext],
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
     unit_code: Optional[str] = None,
     limit: int = 500,
     offset: int = 0,
@@ -757,7 +765,7 @@ async def get_objects_on_view(
 
 @mcp.tool()
 async def check_object_on_view(
-    ctx: Context[ServerSession, ServerContext], object_id: str
+    ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
 ) -> Optional[SmithsonianObject]:
     """
     Check if a specific object is currently on physical exhibit.
@@ -791,8 +799,8 @@ async def check_object_on_view(
 
 @mcp.tool()
 async def find_on_view_items(
-    ctx: Context[ServerSession, ServerContext],
-    query: str,
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
     unit_code: Optional[str] = None,
     max_results: int = 1000,
 ) -> SearchResult:
@@ -820,6 +828,8 @@ async def find_on_view_items(
         find_on_view_items(query="Hokusai", unit_code="FSG")
     """
     try:
+        if not query or query.strip() == "":
+            raise ValueError("Search query cannot be empty")
         if max_results > 1000:
             max_results = 1000
         if max_results < 1:
@@ -876,7 +886,7 @@ async def find_on_view_items(
 
 @mcp.tool()
 async def get_search_context(
-    ctx: Context[ServerSession, ServerContext], query: str, limit: int = 10
+    ctx: Optional[Context[ServerSession, ServerContext]] = None, query: str = "", limit: int = 10
 ) -> str:
     """
     Get search results as context data for AI assistants.
@@ -924,7 +934,7 @@ async def get_search_context(
 
 @mcp.tool()
 async def get_object_context(
-    ctx: Context[ServerSession, ServerContext], object_id: str
+    ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
 ) -> str:
     """
     Get detailed object information as context data.
@@ -971,7 +981,7 @@ async def get_object_context(
 
 @mcp.tool()
 async def get_on_view_context(
-    ctx: Context[ServerSession, ServerContext],
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
     unit_code: Optional[str] = None,
     limit: int = 10,
 ) -> str:
@@ -1028,7 +1038,7 @@ async def get_on_view_context(
 
 
 @mcp.tool()
-async def get_units_context(ctx: Context[ServerSession, ServerContext]) -> str:
+async def get_units_context(ctx: Optional[Context[ServerSession, ServerContext]] = None) -> str:
     """
     Get a list of all Smithsonian units as context data.
 
@@ -1053,7 +1063,7 @@ async def get_units_context(ctx: Context[ServerSession, ServerContext]) -> str:
 
 
 @mcp.tool()
-async def get_stats_context(ctx: Context[ServerSession, ServerContext]) -> str:
+async def get_stats_context(ctx: Optional[Context[ServerSession, ServerContext]] = None) -> str:
     """
     Get collection statistics as context data.
 
