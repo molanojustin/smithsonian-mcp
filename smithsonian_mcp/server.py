@@ -128,9 +128,9 @@ async def search_collections(
         has_images: Filter objects that have associated images
         has_3d: Filter objects that have 3D models available
         is_cc0: Filter objects with CC0 (public domain) licensing
-        on_view: Filter objects currently on physical exhibit (NOTE: API filter is unreliable,
-                 returns many false positives. For accurate on-view results, search broadly
-                 with high limit and check is_on_view field in results)
+        on_view: Filter objects currently on physical exhibit (NOTE: API filter may have
+                 data quality issues. For most reliable on-view results, use get_objects_on_view
+                 or find_on_view_items tools instead)
         limit: Maximum number of results to return (default: 500, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
@@ -692,16 +692,11 @@ async def get_objects_on_view(
     """
     Get objects that are currently on physical exhibit at Smithsonian museums.
 
-    This tool specifically finds objects that are marked as being on display
-    for the public, which is useful for planning museum visits or finding
-    currently accessible objects.
+    This tool finds objects that are verified to be on display for the public,
+    which is useful for planning museum visits or finding currently accessible objects.
 
-    IMPORTANT: The Smithsonian API filter for on-view objects has data quality 
-    issues and often returns false positives. For best results:
-    1. Use high limit values (500-1000) to get more results
-    2. Specify a particular museum (unit_code) like "FSG", "SAAM", "NMAH"
-    3. Results are filtered to only include objects with verified exhibition data
-    4. Consider searching without on_view filter and filtering results manually
+    This tool searches through the collections and filters locally for objects with
+    verified exhibition status, ensuring reliable results.
 
     Args:
         unit_code: Optional filter by specific Smithsonian unit (e.g., "NMAH", "FSG", "SAAM")
@@ -718,11 +713,11 @@ async def get_objects_on_view(
         if limit < 1:
             limit = 1
 
-        # Create search filter for on-view objects
+        # Use the same reliable approach as find_on_view_items: search broadly then filter locally
         filters = CollectionSearchFilter(
             query="*",
             unit_code=unit_code,
-            on_view=True,
+            on_view=None,  # Don't use unreliable API filter
             limit=limit,
             offset=offset,
             object_type=None,
@@ -740,14 +735,14 @@ async def get_objects_on_view(
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
-        # Filter out false positives - API returns objects without actual exhibition data
+        # Filter for verified on-view objects
         verified_on_view = [obj for obj in results.objects if obj.is_on_view]
-        
+
         logger.info(
-            f"On-view search completed: {len(verified_on_view)} verified on-view out of {results.returned_count} returned ({results.total_count} total matches)"
+            f"On-view search completed: {len(verified_on_view)} verified on-view out of {results.returned_count} returned"
         )
 
-        # Return only verified on-view objects
+        # Return verified on-view objects
         from .models import SearchResult as SR
         return SR(
             objects=verified_on_view,
@@ -990,17 +985,19 @@ async def get_on_view_context(
 
     This tool provides information about objects currently on exhibit that
     can be used as context data without explicitly calling search tools.
+    The results are filtered to include only verified on-view objects.
 
     Args:
         unit_code: Optional filter by specific Smithsonian unit
         limit: Maximum number of results to return (default: 10)
     """
     try:
+        # Use reliable approach: search broadly then filter locally
         filters = CollectionSearchFilter(
             query="*",
-            limit=limit,
+            limit=min(limit * 5, 1000),  # Search more broadly to get verified on-view items
             unit_code=unit_code,
-            on_view=True,
+            on_view=None,  # Don't use unreliable API filter
             object_type=None,
             date_start=None,
             date_end=None,
@@ -1014,14 +1011,17 @@ async def get_on_view_context(
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
+        # Filter for verified on-view objects
+        verified_on_view = [obj for obj in results.objects if obj.is_on_view][:limit]
+
         unit_text = f" at {unit_code}" if unit_code else ""
         output = [f"Objects Currently On View{unit_text}:\n"]
 
-        if not results.objects:
+        if not verified_on_view:
             output.append("No objects are currently on view.")
             return "\n".join(output)
 
-        for obj in results.objects:
+        for obj in verified_on_view:
             output.append(f"• {obj.title}")
             if obj.unit_name:
                 output.append(f"  Museum: {obj.unit_name}")
