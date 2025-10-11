@@ -80,12 +80,13 @@ This is a **Model Context Protocol (MCP) server** for the **Smithsonian Institut
 ### Available MCP Tools
 - `simple_explore` - Smart diverse sampling across museums and object types (recommended for basic discovery)
 - `continue_explore` - Get more results about the same topic while avoiding duplicates
-- `search_collections`: Advanced search with filters (query, unit code, object type, materials, etc.)
+- `search_collections`: Advanced search with filters (query, unit code, object type, materials, etc.) - Returns max 1000 results per call
 - `get_object_details`: Full metadata for specific objects
-- `search_by_unit`: Museum-focused searches
+- `search_by_unit`: Museum-focused searches - Returns max 1000 results per call
 - `get_smithsonian_units`: List of all museums
 - `get_collection_statistics`: Overview metrics
-- `get_objects_on_view`: Currently exhibited objects
+- `get_objects_on_view`: Currently exhibited objects - Returns max 1000 results per call
+- `find_on_view_items`: Comprehensive on-view search with automatic pagination (searches up to 10,000 results across multiple API calls)
 - `check_object_on_view`: Individual object exhibition status
 - Context tools: `get_*_context` versions return formatted context strings for AI assistants
 
@@ -117,6 +118,7 @@ Set `LOG_LEVEL=DEBUG` in environment for verbose logging
 - Enable caching: `ENABLE_CACHE=true` (default)
 - Adjust rate limits via `DEFAULT_RATE_LIMIT` (default: 60/minute)
 - Consider object image file sizes (up to 50MB/server default)
+- Pagination limits: Most search tools return max 1000 results per call. Use `find_on_view_items` for comprehensive searches up to 10,000 results
 
 ### Model Compatibility
 For best results with less capable models:
@@ -157,9 +159,9 @@ For best results with less capable models:
 ## Future Development
 
 ### Priority Features (from codebase)
-- Enhanced on-view filtering reliability - The Smithsonian API's `onPhysicalExhibit` field has known data quality issues, often returning objects that aren't actually on display
 - Multi-modal content search (text, image, 3D) - Current search is text-only
 - Batch processing for large collections - Improve performance for bulk operations
+- Search result ranking improvements - Better relevancy scoring for complex queries
 
 ### Integration Improvements
 - Web dashboard for MCP server monitoring and administration

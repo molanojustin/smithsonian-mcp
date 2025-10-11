@@ -118,6 +118,11 @@ async def search_collections(
     This tool allows comprehensive searching across all Smithsonian museums and
     collections with various filters for object type, creator, materials, and more.
 
+    IMPORTANT: This tool returns a maximum of 1000 results per call. If you need to
+    search through more results (e.g., to find specific on-view items that may not
+    appear in the first 1000 results), use the find_on_view_items tool which
+    automatically paginates through up to 10,000 results.
+
     Args:
         query: General search terms (keywords, titles, descriptions)
         unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
@@ -135,7 +140,9 @@ async def search_collections(
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
-        Search results including objects, total count, and pagination info
+        Search results including objects, total count, and pagination info. Use the
+        has_more and next_offset fields to determine if there are additional results
+        beyond the returned set.
     """
     try:
         # Validate inputs
@@ -166,9 +173,15 @@ async def search_collections(
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
-        logger.info(
-            f"Search completed: '{query}' returned {results.returned_count} of {results.total_count} results"
-        )
+        if results.total_count > limit and limit >= 1000:
+            logger.warning(
+                f"Search completed: '{query}' returned {results.returned_count} of {results.total_count} results. "
+                f"Note: Only first {limit} results returned. Use find_on_view_items for comprehensive on-view searches."
+            )
+        else:
+            logger.info(
+                f"Search completed: '{query}' returned {results.returned_count} of {results.total_count} results"
+            )
 
         return results
 
@@ -215,14 +228,29 @@ async def simple_explore(
         if museum:
             museum_lower = museum.lower().strip()
             museum_map = {
-                "american history": "NMAH", "natural history": "NMNH", "art": "SAAM",
-                "american indian": "NMAI", "air and space": "NASM", "asian art": "FSG"
+                "american history": "NMAH",
+                "natural history": "NMNH",
+                "art": "SAAM",
+                "american indian": "NMAI",
+                "air and space": "NASM",
+                "asian art": "FSG",
             }
             if museum_lower in museum_map:
                 museum_code = museum_map[museum_lower]
             elif museum_upper := museum.upper():
                 # Try to match codes directly
-                valid_codes = ["NMAH", "NMNH", "SAAM", "NMNH", "NASM", "NPG", "FSG", "HMSG", "NMAfA", "NMAI"]
+                valid_codes = [
+                    "NMAH",
+                    "NMNH",
+                    "SAAM",
+                    "NMNH",
+                    "NASM",
+                    "NPG",
+                    "FSG",
+                    "HMSG",
+                    "NMAfA",
+                    "NMAI",
+                ]
                 if museum_upper in valid_codes:
                     museum_code = museum_upper
 
@@ -232,10 +260,20 @@ async def simple_explore(
         if museum_code:
             # Get a broader set first to sample from
             filters = CollectionSearchFilter(
-                query=topic, unit_code=museum_code, limit=min(max_samples * 2, 400),
-                offset=0, object_type=None, maker=None, material=None, topic=None,
-                has_images=None, has_3d=None, is_cc0=None, on_view=None,
-                date_start=None, date_end=None
+                query=topic,
+                unit_code=museum_code,
+                limit=min(max_samples * 2, 400),
+                offset=0,
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                has_3d=None,
+                is_cc0=None,
+                on_view=None,
+                date_start=None,
+                date_end=None,
             )
             results = await api_client.search_collections(filters)
 
@@ -252,12 +290,18 @@ async def simple_explore(
             for obj_type, objects in type_groups.items():
                 if len(collected_objects) >= max_samples:
                     break
-                available = min(len(objects), max(1, max_samples // max(len(type_groups), 1)))
+                available = min(
+                    len(objects), max(1, max_samples // max(len(type_groups), 1))
+                )
                 collected_objects.extend(objects[:available])
 
             # Fill remaining with more objects if needed and available
-            if len(collected_objects) < max_samples and len(results.objects) > len(collected_objects):
-                remaining = [obj for obj in results.objects if obj not in collected_objects]
+            if len(collected_objects) < max_samples and len(results.objects) > len(
+                collected_objects
+            ):
+                remaining = [
+                    obj for obj in results.objects if obj not in collected_objects
+                ]
                 needed = max_samples - len(collected_objects)
                 collected_objects.extend(remaining[:needed])
 
@@ -269,17 +313,27 @@ async def simple_explore(
                 returned_count=len(collected_objects),
                 offset=0,
                 has_more=len(results.objects) > max_samples,
-                next_offset=max_samples if len(results.objects) > max_samples else None
+                next_offset=max_samples if len(results.objects) > max_samples else None,
             )
 
         else:
             # Strategy 2: Sample across all museums for maximum diversity
             # Get broader results first
             filters = CollectionSearchFilter(
-                query=topic, unit_code=None, limit=min(max_samples * 3, 600),
-                offset=0, object_type=None, maker=None, material=None, topic=None,
-                has_images=None, has_3d=None, is_cc0=None, on_view=None,
-                date_start=None, date_end=None
+                query=topic,
+                unit_code=None,
+                limit=min(max_samples * 3, 600),
+                offset=0,
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                has_3d=None,
+                is_cc0=None,
+                on_view=None,
+                date_start=None,
+                date_end=None,
             )
             broad_results = await api_client.search_collections(filters)
 
@@ -291,7 +345,7 @@ async def simple_explore(
                     returned_count=0,
                     offset=0,
                     has_more=False,
-                    next_offset=None
+                    next_offset=None,
                 )
 
             # Group by museum
@@ -321,15 +375,19 @@ async def simple_explore(
                 # Take 1-2 samples from each type in this museum
                 museum_sample = []
                 for obj_type, type_objects in type_groups.items():
-                    samples_from_type = min(len(type_objects), max(1, samples_per_museum // max(len(type_groups), 2)))
+                    samples_from_type = min(
+                        len(type_objects),
+                        max(1, samples_per_museum // max(len(type_groups), 2)),
+                    )
                     museum_sample.extend(type_objects[:samples_from_type])
 
                 collected_objects.extend(museum_sample[:samples_per_museum])
 
             # Fill remaining slots with additional diverse objects
             if len(collected_objects) < max_samples:
-                additional_candidates = [obj for obj in broad_results.objects
-                                       if obj not in collected_objects]
+                additional_candidates = [
+                    obj for obj in broad_results.objects if obj not in collected_objects
+                ]
                 needed = max_samples - len(collected_objects)
                 collected_objects.extend(additional_candidates[:needed])
 
@@ -341,7 +399,9 @@ async def simple_explore(
                 returned_count=len(final_objects),
                 offset=0,
                 has_more=broad_results.total_count > max_samples,
-                next_offset=max_samples if broad_results.total_count > max_samples else None
+                next_offset=(
+                    max_samples if broad_results.total_count > max_samples else None
+                ),
             )
 
     except ValueError as ve:
@@ -349,10 +409,20 @@ async def simple_explore(
         # Provide fallback
         try:
             filters = CollectionSearchFilter(
-                query=topic[:100], limit=min(max_samples, 100),
-                offset=0, unit_code=None, object_type=None, maker=None,
-                material=None, topic=None, has_images=None, has_3d=None,
-                is_cc0=None, on_view=None, date_start=None, date_end=None
+                query=topic[:100],
+                limit=min(max_samples, 100),
+                offset=0,
+                unit_code=None,
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                has_3d=None,
+                is_cc0=None,
+                on_view=None,
+                date_start=None,
+                date_end=None,
             )
             api_client = await get_api_client(ctx)
             results = await api_client.search_collections(filters)
@@ -370,7 +440,7 @@ async def simple_explore(
 async def continue_explore(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     topic: str = "",
-    previously_seen_ids: List[str] = None,
+    previously_seen_ids: Optional[List[str]] = None,
     museum: Optional[str] = None,
     max_samples: int = 50,
 ) -> SearchResult:
@@ -404,13 +474,28 @@ async def continue_explore(
         if museum:
             museum_lower = museum.lower().strip()
             museum_map = {
-                "american history": "NMAH", "natural history": "NMNH", "art": "SAAM",
-                "american indian": "NMAI", "air and space": "NASM", "asian art": "FSG"
+                "american history": "NMAH",
+                "natural history": "NMNH",
+                "art": "SAAM",
+                "american indian": "NMAI",
+                "air and space": "NASM",
+                "asian art": "FSG",
             }
             if museum_lower in museum_map:
                 museum_code = museum_map[museum_lower]
             elif museum_upper := museum.upper():
-                valid_codes = ["NMAH", "NMNH", "SAAM", "NMNH", "NASM", "NPG", "FSG", "HMSG", "NMAfA", "NMAI"]
+                valid_codes = [
+                    "NMAH",
+                    "NMNH",
+                    "SAAM",
+                    "NMNH",
+                    "NASM",
+                    "NPG",
+                    "FSG",
+                    "HMSG",
+                    "NMAfA",
+                    "NMAI",
+                ]
                 if museum_upper in valid_codes:
                     museum_code = museum_upper
 
@@ -418,13 +503,25 @@ async def continue_explore(
         seen_ids = set(previously_seen_ids or [])
 
         # Get broader results and filter out seen items
-        fetch_limit = min(max_samples * 4, 800) if museum_code else min(max_samples * 6, 1200)
+        fetch_limit = (
+            min(max_samples * 4, 800) if museum_code else min(max_samples * 6, 1200)
+        )
 
         filters = CollectionSearchFilter(
-            query=topic, unit_code=museum_code, limit=fetch_limit,
-            offset=0, object_type=None, maker=None, material=None, topic=None,
-            has_images=None, has_3d=None, is_cc0=None, on_view=None,
-            date_start=None, date_end=None
+            query=topic,
+            unit_code=museum_code,
+            limit=fetch_limit,
+            offset=0,
+            object_type=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+            on_view=None,
+            date_start=None,
+            date_end=None,
         )
         broad_results = await api_client.search_collections(filters)
 
@@ -438,8 +535,11 @@ async def continue_explore(
                 total_count=broad_results.total_count,
                 returned_count=0,
                 offset=0,
-                has_more=len([obj for obj in broad_results.objects if obj.id not in seen_ids]) > max_samples,
-                next_offset=None
+                has_more=len(
+                    [obj for obj in broad_results.objects if obj.id not in seen_ids]
+                )
+                > max_samples,
+                next_offset=None,
             )
 
         # Apply the same diversity sampling logic as simple_explore
@@ -457,7 +557,9 @@ async def continue_explore(
             for obj_type, objects in type_groups.items():
                 if len(collected_objects) >= max_samples:
                     break
-                available = min(len(objects), max(1, max_samples // max(len(type_groups), 1)))
+                available = min(
+                    len(objects), max(1, max_samples // max(len(type_groups), 1))
+                )
                 collected_objects.extend(objects[:available])
 
             # Fill remaining
@@ -491,14 +593,19 @@ async def continue_explore(
 
                     museum_sample = []
                     for obj_type, type_objects in type_groups.items():
-                        samples_from_type = min(len(type_objects), max(1, samples_per_museum // max(len(type_groups), 2)))
+                        samples_from_type = min(
+                            len(type_objects),
+                            max(1, samples_per_museum // max(len(type_groups), 2)),
+                        )
                         museum_sample.extend(type_objects[:samples_from_type])
 
                     collected_objects.extend(museum_sample[:samples_per_museum])
 
                 # Fill remaining
                 if len(collected_objects) < max_samples:
-                    additional_candidates = [obj for obj in new_objects if obj not in collected_objects]
+                    additional_candidates = [
+                        obj for obj in new_objects if obj not in collected_objects
+                    ]
                     needed = max_samples - len(collected_objects)
                     collected_objects.extend(additional_candidates[:needed])
 
@@ -510,7 +617,7 @@ async def continue_explore(
             returned_count=len(final_objects),
             offset=0,
             has_more=len(new_objects) > max_samples,
-            next_offset=max_samples if len(new_objects) > max_samples else None
+            next_offset=max_samples if len(new_objects) > max_samples else None,
         )
 
     except ValueError as ve:
@@ -518,11 +625,20 @@ async def continue_explore(
         # Provide fallback
         try:
             filters = CollectionSearchFilter(
-                query=topic[:100], limit=min(max_samples, 100),
+                query=topic[:100],
+                limit=min(max_samples, 100),
                 offset=len(previously_seen_ids or []),
-                unit_code=None, object_type=None, maker=None,
-                material=None, topic=None, has_images=None, has_3d=None,
-                is_cc0=None, on_view=None, date_start=None, date_end=None
+                unit_code=None,
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                has_3d=None,
+                is_cc0=None,
+                on_view=None,
+                date_start=None,
+                date_end=None,
             )
             api_client = await get_api_client(ctx)
             results = await api_client.search_collections(filters)
@@ -631,10 +747,13 @@ async def search_by_unit(
     This tool focuses searches on a particular museum's collection, useful when
     you want to explore what's available at a specific institution.
 
+    IMPORTANT: This tool returns a maximum of 1000 results per call. For comprehensive
+    on-view searches that may require checking beyond 1000 results, use find_on_view_items.
+
     Args:
         unit_code: Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM", "NASM")
         query: Optional search terms within that unit's collection
-        limit: Maximum number of results (default: 20, max: 1000)
+        limit: Maximum number of results (default: 500, max: 1000)
         offset: Results offset for pagination (default: 0)
 
     Returns:
@@ -744,13 +863,14 @@ async def get_objects_on_view(
 
         # Return verified on-view objects
         from .models import SearchResult as SR
+
         return SR(
             objects=verified_on_view,
             total_count=len(verified_on_view),
             returned_count=len(verified_on_view),
             offset=offset,
             has_more=False,
-            next_offset=None
+            next_offset=None,
         )
 
     except Exception as e:
@@ -791,87 +911,117 @@ async def check_object_on_view(
         raise Exception(f"Failed to check object status: {e}")
 
 
-
 @mcp.tool()
 async def find_on_view_items(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     query: str = "",
     unit_code: Optional[str] = None,
-    max_results: int = 1000,
+    max_results: int = 5000,
 ) -> SearchResult:
     """
     Find ALL items currently on physical exhibit matching a search query.
-    
-    This tool automatically handles pagination to search through all matching items
-    and filters them to return only those with verified exhibition status. Use this
-    when you need to find all on-view items for a topic.
-    
-    Important: This tool searches up to max_results items and filters to only
-    those with verified exhibition data, which is more reliable than using the
-    on_view parameter in other search functions.
-    
+
+    This tool automatically handles pagination to search through large result sets
+    and filters them to return only those with verified exhibition status. Unlike
+    other search tools limited to 1000 results, this tool will paginate through
+    multiple API calls to search up to max_results items.
+
+    Important: This tool searches up to max_results items across multiple API calls
+    and filters to only those with verified exhibition data, which is more reliable
+    than using the on_view parameter in other search functions. This ensures items
+    like "Bert and Ernie" are found even if they appear beyond the first 1000 results.
+
     Args:
         query: Search terms (e.g., "muppet", "Hokusai", "dinosaur fossils")
         unit_code: Optional museum code (e.g., "NMAH", "FSG", "NMNH", "NASM")
-        max_results: Maximum items to search through (default: 1000, max: 1000)
-    
+        max_results: Maximum items to search through (default: 5000, max: 10000)
+
     Returns:
-        Search results with only verified on-view items, including exhibition details
-    
+        Search results with only verified on-view items, including exhibition details.
+        The total_count reflects how many on-view items were found, not the total
+        matching items in the database.
+
     Examples:
         find_on_view_items(query="muppet", unit_code="NMAH")
-        find_on_view_items(query="Hokusai", unit_code="FSG")
+        find_on_view_items(query="Hokusai", unit_code="FSG", max_results=10000)
     """
     try:
         if not query or query.strip() == "":
             raise ValueError("Search query cannot be empty")
-        if max_results > 1000:
-            max_results = 1000
+        if max_results > 10000:
+            max_results = 10000
         if max_results < 1:
             max_results = 1
-        
-        logger.info(f"Finding on-view items for '{query}' at {unit_code or 'all museums'}")
-        
-        filters = CollectionSearchFilter(
-            query=query,
-            unit_code=unit_code,
-            on_view=None,
-            limit=max_results,
-            offset=0,
-            object_type=None,
-            maker=None,
-            material=None,
-            topic=None,
-            has_images=None,
-            has_3d=None,
-            is_cc0=None,
-            date_start=None,
-            date_end=None,
-        )
-        
-        api_client = await get_api_client(ctx)
-        results = await api_client.search_collections(filters)
-        
-        on_view_items = [obj for obj in results.objects if obj.is_on_view]
-        
+
         logger.info(
-            f"Found {len(on_view_items)} verified on-view out of {results.returned_count} searched"
+            f"Finding on-view items for '{query}' at {unit_code or 'all museums'} (searching up to {max_results} items)"
         )
-        
+
+        api_client = await get_api_client(ctx)
+
+        batch_size = 1000
+        all_objects = []
+        offset = 0
+        total_available = None
+
+        while offset < max_results:
+            current_batch_size = min(batch_size, max_results - offset)
+
+            filters = CollectionSearchFilter(
+                query=query,
+                unit_code=unit_code,
+                on_view=None,
+                limit=current_batch_size,
+                offset=offset,
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                has_3d=None,
+                is_cc0=None,
+                date_start=None,
+                date_end=None,
+            )
+
+            batch_results = await api_client.search_collections(filters)
+            all_objects.extend(batch_results.objects)
+
+            if total_available is None:
+                total_available = batch_results.total_count
+
+            logger.info(
+                f"Fetched batch at offset {offset}: {len(batch_results.objects)} items "
+                f"(total searched so far: {len(all_objects)}/{total_available})"
+            )
+
+            if not batch_results.has_more:
+                logger.info(f"Reached end of available results at offset {offset}")
+                break
+
+            offset += current_batch_size
+
+        on_view_items = [obj for obj in all_objects if obj.is_on_view]
+
+        logger.info(
+            f"Found {len(on_view_items)} verified on-view items out of {len(all_objects)} total items searched "
+            f"({total_available} items available in database for this query)"
+        )
+
         from .models import SearchResult as SR
+
         return SR(
             objects=on_view_items,
             total_count=len(on_view_items),
             returned_count=len(on_view_items),
             offset=0,
             has_more=False,
-            next_offset=None
+            next_offset=None,
         )
-        
+
     except Exception as e:
         logger.error(f"Error finding on-view items: {e}")
         raise Exception(f"Failed to find on-view items: {e}")
-
 
 
 # ============================================================================
@@ -881,7 +1031,9 @@ async def find_on_view_items(
 
 @mcp.tool()
 async def get_search_context(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None, query: str = "", limit: int = 10
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    limit: int = 10,
 ) -> str:
     """
     Get search results as context data for AI assistants.
@@ -995,7 +1147,9 @@ async def get_on_view_context(
         # Use reliable approach: search broadly then filter locally
         filters = CollectionSearchFilter(
             query="*",
-            limit=min(limit * 5, 1000),  # Search more broadly to get verified on-view items
+            limit=min(
+                limit * 5, 1000
+            ),  # Search more broadly to get verified on-view items
             unit_code=unit_code,
             on_view=None,  # Don't use unreliable API filter
             object_type=None,
@@ -1038,7 +1192,9 @@ async def get_on_view_context(
 
 
 @mcp.tool()
-async def get_units_context(ctx: Optional[Context[ServerSession, ServerContext]] = None) -> str:
+async def get_units_context(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+) -> str:
     """
     Get a list of all Smithsonian units as context data.
 
@@ -1063,7 +1219,9 @@ async def get_units_context(ctx: Optional[Context[ServerSession, ServerContext]]
 
 
 @mcp.tool()
-async def get_stats_context(ctx: Optional[Context[ServerSession, ServerContext]] = None) -> str:
+async def get_stats_context(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+) -> str:
     """
     Get collection statistics as context data.
 

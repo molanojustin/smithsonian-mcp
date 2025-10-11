@@ -211,7 +211,7 @@ class SmithsonianAPIClient:
         on_exhibit = indexed_structured.get("onPhysicalExhibit", [])
         if not on_exhibit:
             return False
-        
+
         first_item = on_exhibit[0]
         if isinstance(first_item, str):
             return first_item == "Yes"
@@ -219,7 +219,9 @@ class SmithsonianAPIClient:
             return first_item.get("content") == "Yes"
         return False
 
-    def _parse_exhibition_title(self, indexed_structured: Dict[str, Any]) -> Optional[str]:
+    def _parse_exhibition_title(
+        self, indexed_structured: Dict[str, Any]
+    ) -> Optional[str]:
         """
         Parse exhibition title from the exhibition field.
         """
@@ -228,7 +230,9 @@ class SmithsonianAPIClient:
             return exhibitions[0].get("exhibitionTitle")
         return None
 
-    def _parse_exhibition_location(self, indexed_structured: Dict[str, Any]) -> Optional[str]:
+    def _parse_exhibition_location(
+        self, indexed_structured: Dict[str, Any]
+    ) -> Optional[str]:
         """
         Parse exhibition location from the exhibition field.
         """
