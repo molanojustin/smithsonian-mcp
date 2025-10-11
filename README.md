@@ -67,17 +67,18 @@ python scripts/verify-setup.py
 
 - **Search Collections**: 3+ million objects across 19 Smithsonian museums
 - **Object Details**: Complete metadata, descriptions, and provenance
-- **On-View Status**: ⭐ **NEW** - Find objects currently on physical exhibit
+- **On-View Status** - Find objects currently on physical exhibit
 - **Image Access**: High-resolution images (CC0 licensed when available)
 - **3D Models**: Interactive 3D content where available
 - **Museum Information**: Browse all Smithsonian institutions
 
 ### AI Integration
 
-- **12 MCP Tools**: Search, filter, retrieve collection data, check exhibition status, and get context
+- **14 MCP Tools**: Smart discovery, comprehensive search, museum-specific queries, exhibition status, and contextual data access
 - **Smart Context**: Contextual data sources for AI assistants
 - **Rich Metadata**: Complete object information and exhibition details
-- **Exhibition Planning**: ⭐ **NEW** - Tools to find and explore currently exhibited objects
+- **Exhibition Planning** - Tools to find and explore currently exhibited objects
+- **Multi-Model Compatible**: Works well with both advanced and simpler AI models through simplified tool interfaces
 
 ## Integration
 
@@ -274,11 +275,13 @@ mcpo --config mcpo-config.json --port 8001
 
 ### Search & Discovery
 
+- `simple_explore` - Smart diverse sampling across museums and object types (recommended for general discovery)
+- `continue_explore` - Get more results about the same topic while avoiding duplicates
 - `search_collections` - Advanced search with filters (now includes `on_view` parameter)
 - `get_object_details` - Detailed object information
 - `search_by_unit` - Museum-specific searches
-- ⭐ `get_objects_on_view` - **NEW** - Find objects currently on physical exhibit
-- ⭐ `check_object_on_view` - **NEW** - Check if a specific object is on display
+- `get_objects_on_view` - Find objects currently on physical exhibit
+- `check_object_on_view` - Check if a specific object is on display
 
 ### Information & Context
 
@@ -288,82 +291,7 @@ mcpo --config mcpo-config.json --port 8001
 - `get_object_context` - Get detailed object information as context
 - `get_units_context` - Get list of units as context data
 - `get_stats_context` - Get collection statistics as context
-- ⭐ `get_on_view_context` - **NEW** - Get currently exhibited objects as context
-
-## New: On-View Functionality 🎨
-
-### What's New in Phase 1
-
-The MCP server now includes comprehensive support for finding objects currently on physical exhibit at Smithsonian museums. This is a priority feature aligned with the Smithsonian's official API documentation.
-
-### Key Features
-
-- **Find Exhibited Objects**: Search for objects currently on display
-- **Check Exhibition Status**: Verify if specific objects are on view
-- **Filter by Museum**: Find what's on display at specific Smithsonian units
-- **Exhibition Details**: Access exhibition title and location information
-- **Combined Filters**: Mix on-view status with other search criteria
-
-### Usage Examples
-
-**Find all objects currently on view:**
-```python
-# Ask Claude:
-"What objects are currently on physical exhibit at the Smithsonian?"
-
-# Or with filters:
-"Show me paintings currently on display at the National Portrait Gallery"
-```
-
-**Check if a specific object is on view:**
-```python
-# Ask Claude:
-"Is object edanmdm-nmah_1234567 currently on display?"
-```
-
-**Combine with other filters:**
-```python
-# Ask Claude:
-"Find CC0 licensed objects currently on view with high-resolution images"
-```
-
-### Tool Details
-
-#### `get_objects_on_view`
-Find objects currently on physical exhibit.
-
-**Parameters:**
-- `unit_code` (optional): Filter by Smithsonian unit (e.g., "NMNH", "NPG")
-- `limit`: Maximum results (default: 20, max: 100)
-- `offset`: Pagination offset
-
-**Returns:** Search results containing objects currently on exhibit
-
-#### `check_object_on_view`
-Check if a specific object is currently on display.
-
-**Parameters:**
-- `object_id`: Unique identifier for the object
-
-**Returns:** Object details including exhibition status
-
-#### `search_collections` (enhanced)
-Now includes `on_view` parameter for filtering.
-
-**New Parameter:**
-- `on_view` (boolean): Filter objects by exhibition status
-  - `True`: Only objects currently on display
-  - `False`: Only objects not on display
-  - `None`: No filter (default)
-
-### Implementation Notes
-
-This feature is based on the Smithsonian's `onPhysicalExhibit` metadata field, which indicates whether an object is currently accessible to the public in a physical exhibition. The implementation includes:
-
-- Full API alignment with EDAN metadata model v1.09
-- Fielded search support using `onPhysicalExhibit:"Yes"` queries
-- Comprehensive test coverage (15 unit tests)
-- Exhibition metadata extraction (title, location)
+- `get_on_view_context` - Get currently exhibited objects as context
 
 ## Use Cases
 
@@ -376,8 +304,8 @@ This feature is based on the Smithsonian's `onPhysicalExhibit` metadata field, w
 ### Curation & Exhibition
 
 - **Exhibition Planning**: Thematic object selection and visitor planning
-- **Visit Planning**: ⭐ **NEW** - Find what's currently on display before visiting
-- **Exhibition Research**: ⭐ **NEW** - Study current exhibition trends and displays
+- **Visit Planning**: Find what's currently on display before visiting
+- **Exhibition Research**: Study current exhibition trends and displays
 - **Collection Development**: Gap analysis and acquisition
 - **Digital Humanities**: Large-scale analysis projects
 
@@ -519,15 +447,15 @@ Get-Service SmithsonianMCP
 ### Getting Help
 
 1. Run verification script: `python scripts/verify-setup.py`
-2. Check the [Integration Guide](INTEGRATION_GUIDE.md)
-3. Review [GitHub Issues](https://github.com/molanojustin/smithsonian-mcp/issues)
+2. Review [GitHub Issues](https://github.com/molanojustin/smithsonian-mcp/issues)
+3. Check the documentation files for detailed setup instructions
 
 ## Documentation
 
-- **Integration Guide**: Claude Desktop and VS Code setup
-- **API Reference**: Complete tool and resource documentation
+- **API Reference**: Complete tool and resource documentation in README
 - **Examples**: Real-world usage scenarios
 - **Deployment Guide**: Production deployment options
+- **CLAUDE.md**: Developer guidance for Claude Code integration
 
 ## Contributing
 

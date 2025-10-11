@@ -43,15 +43,15 @@ def success(message: str) -> None:
 
 
 def warning(message: str) -> None:
-    print(f"{Colors.YELLOW}⚠{Colors.END} {message}")
+    print(f"{Colors.YELLOW}!{Colors.END} {message}")
 
 
 def error(message: str) -> None:
-    print(f"{Colors.RED}❌{Colors.END} {message}")
+    print(f"{Colors.RED}X{Colors.END} {message}")
 
 
 def info(message: str) -> None:
-    print(f"{Colors.BLUE}ℹ{Colors.END} {message}")
+    print(f"{Colors.BLUE}i{Colors.END} {message}")
 
 
 def header(message: str) -> None:
@@ -526,7 +526,7 @@ def main():
     # Final summary
     header("Summary")
     if all_critical_ok:
-        success("🎉 All critical checks passed! Your setup should work correctly.")
+        success("All critical checks passed! Your setup should work correctly.")
         info("Next steps:")
         info("• Restart Claude Desktop if configured")
         info("• Test by asking Claude: 'What Smithsonian museums are available?'")

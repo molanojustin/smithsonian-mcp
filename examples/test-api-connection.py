@@ -34,7 +34,7 @@ async def test_api_connection():
         print("3. Or create .env file with: SMITHSONIAN_API_KEY=your_key")
         return False
 
-    print("🏛️ Testing Smithsonian MCP Server API Connection")
+    print("Testing Smithsonian MCP Server API Connection")
     print("=" * 60)
     print()
 
@@ -92,7 +92,7 @@ async def test_api_connection():
                         f"   3D Models: {len(detailed_obj.models_3d) if detailed_obj.models_3d else 0} available"
                     )
                 else:
-                    print("⚠️  Object details not found")
+                    print("Warning: Object details not found")
                 print()
 
             # Test 4: Collection statistics
@@ -112,7 +112,7 @@ async def test_api_connection():
             )
             print()
 
-        print("🎉 All tests passed! API connection is working.")
+        print("All tests passed! API connection is working.")
         print()
         print("Next steps:")
         print("1. Configure Claude Desktop with the MCP server")

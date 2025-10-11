@@ -490,7 +490,7 @@ function Start-Installation {
         }
 
         Write-Host ""
-        Write-Host "🎉 Setup Complete!" -ForegroundColor Green
+        Write-Host "Setup Complete!" -ForegroundColor Green
         Write-Host ""
         if ($apiKey) {
             Write-Success "✓ API key configured and validated"
