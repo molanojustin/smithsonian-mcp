@@ -24,7 +24,7 @@ try:
 except ImportError as e:
     print(f"❌ Failed to import Smithsonian MCP modules: {e}")
     print("   Make sure you're running this script from the project root directory")
-    print("   and that dependencies are installed: pip install -r requirements.txt")
+    print("   and that dependencies are installed: uv pip install -r config/requirements.txt")
     sys.exit(1)
 
 
@@ -76,7 +76,7 @@ def check_virtual_environment() -> Tuple[bool, str]:
 
 def check_dependencies() -> Tuple[bool, List[str]]:
     """Check if required dependencies are installed"""
-    requirements_file = project_root / "requirements.txt"
+    requirements_file = project_root / "config/requirements.txt"
     if not requirements_file.exists():
         return False, ["requirements.txt not found"]
 
@@ -260,7 +260,7 @@ def check_mcpo_installation() -> Tuple[bool, str]:
             else:
                 return False, "mcpo not available via uvx"
         except FileNotFoundError:
-            return False, "mcpo not found (install with: pip install mcpo)"
+            return False, "mcpo not found (install with: uvx mcpo)"
     except subprocess.TimeoutExpired:
         return False, "mcpo command timed out"
     except Exception as e:
@@ -464,7 +464,7 @@ def provide_suggestions(diagnostics: Dict[str, Tuple[bool, str]]) -> None:
         info("• Activate virtual environment: source .venv/bin/activate (Linux/macOS) or .\\venv\\Scripts\\Activate.ps1 (Windows)")
     
     if not diagnostics["dependencies"][0]:
-        info("• Install dependencies: pip install -r requirements.txt")
+        info("• Install dependencies: uv pip install -r config/requirements.txt")
     
     if not diagnostics["api_key"][0]:
         info("• Get API key from https://api.data.gov/signup/")
@@ -488,7 +488,7 @@ def provide_suggestions(diagnostics: Dict[str, Tuple[bool, str]]) -> None:
         info("• Or start manually: python -m smithsonian_mcp.server")
     
     if not diagnostics["mcpo_installation"][0]:
-        info("• Install mcpo: pip install mcpo")
+        info("• Install mcpo: uvx mcpo")
         info("• Or use uvx: uvx mcpo --help")
     
     if not diagnostics["mcpo_config"][0]:

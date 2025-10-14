@@ -51,7 +51,8 @@ bld/
 # Ignore bin directories except for our specific bin/ directory
 **/bin/*
 !bin/
-!bin/**
+# Only track files directly in bin/, ignore subdirectories
+bin/**/*
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

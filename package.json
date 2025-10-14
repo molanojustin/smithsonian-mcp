@@ -59,6 +59,7 @@
   "files": [
     "bin/",
     "README.md",
+    "TROUBLESHOOTING.md",
     "LICENSE.md",
     "pyproject.toml",
     "uv.lock",
