@@ -1,0 +1,4 @@
+- name: Submit Python dependencies
+  uses: actions/dependency-review-action@v4
+  with:
+    manifest-paths: pyproject.toml,uv.lock,config/requirements.txt
