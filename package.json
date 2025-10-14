@@ -9,10 +9,15 @@
   "scripts": {
     "start": "node bin/smithsonian-mcp.js",
     "test": "node bin/smithsonian-mcp.js --test",
-    "prepublishOnly": "npm test",
+    "check-version": "node -e \"const pkg=require('./package.json'); const fs=require('fs'); const toml=fs.readFileSync('pyproject.toml','utf8'); const match=toml.match(/^version\\s*=\\s*\\\"([^\\\"]+)\\\"/m); if(!match||pkg.version!==match[1]){console.error('❌ Version mismatch: package.json='+pkg.version+', pyproject.toml='+(match?match[1]:'not found')); process.exit(1);} console.log('✅ Versions match: '+pkg.version);\"",
+    "prepublishOnly": "npm run check-version && npm test",
     "preversion": "npm test",
     "version": "git add -A .",
-    "postversion": "git push && git push --tags"
+    "postversion": "git push && git push --tags",
+    "bump:patch": "npm version patch && node -e \"const fs=require('fs'); const pkg=require('./package.json'); const toml=fs.readFileSync('pyproject.toml','utf8'); fs.writeFileSync('pyproject.toml', toml.replace(/^version\\s*=\\s*\\\"[^\\\"]+\\\"/m, 'version = \\\"'+pkg.version+'\\\"')); require('child_process').execSync('uv lock')\" && git add pyproject.toml uv.lock && git commit --amend --no-edit",
+    "bump:minor": "npm version minor && node -e \"const fs=require('fs'); const pkg=require('./package.json'); const toml=fs.readFileSync('pyproject.toml','utf8'); fs.writeFileSync('pyproject.toml', toml.replace(/^version\\s*=\\s*\\\"[^\\\"]+\\\"/m, 'version = \\\"'+pkg.version+'\\\"')); require('child_process').execSync('uv lock')\" && git add pyproject.toml uv.lock && git commit --amend --no-edit",
+    "bump:major": "npm version major && node -e \"const fs=require('fs'); const pkg=require('./package.json'); const toml=fs.readFileSync('pyproject.toml','utf8'); fs.writeFileSync('pyproject.toml', toml.replace(/^version\\s*=\\s*\\\"[^\\\"]+\\\"/m, 'version = \\\"'+pkg.version+'\\\"')); require('child_process').execSync('uv lock')\" && git add pyproject.toml uv.lock && git commit --amend --no-edit",
+    "release": "npm run check-version && npm test && npm publish && git push --follow-tags"
   },
   "keywords": [
     "mcp",
@@ -55,7 +60,9 @@
     "bin/",
     "README.md",
     "LICENSE.md",
-    "requirements.txt",
+    "pyproject.toml",
+    "uv.lock",
+    ".python-version",
     "smithsonian_mcp/",
     "scripts/",
     "examples/",
