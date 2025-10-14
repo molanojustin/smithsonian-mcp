@@ -430,9 +430,10 @@ FodyWeavers.xsd
 
 # Additional
 .DS_Store
-AGENTS.md
-PAGINATION_FIX_SUMMARY.md
-CLAUDE.md
+*.md
+!LICENSE.md
+!README.md
+!TROUBLESHOOTING.md
 smithsonian-mcp-workspace.code-workspace
 
 # Ignore everything in /dev/
