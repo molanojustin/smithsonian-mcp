@@ -5,6 +5,7 @@ This shows that the tool now searches beyond the first 1000 results.
 
 import asyncio
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -12,7 +13,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from smithsonian_mcp.api_client import create_client
 from smithsonian_mcp.models import CollectionSearchFilter
 
+pytest.importorskip("pytest_asyncio")
 
+
+@pytest.mark.asyncio
 async def test_pagination():
     """Demonstrate pagination working correctly."""
     print("=" * 80)
@@ -133,6 +137,11 @@ async def test_pagination():
             if ernie_puppet:
                 print(f"    - {ernie_puppet[0].title}")
                 print(f"      Location: {ernie_puppet[0].exhibition_location}")
+
+        # Test assertions for validation
+        assert len(all_objects) > 1000, "Should have searched more than 1000 items"
+        assert len(on_view_items) >= 0, "Should have found some on-view items"
+        assert results.total_count > 0, "Should have found results in database"
 
         print(f"\n{'=' * 80}")
         print("CONCLUSION:")
