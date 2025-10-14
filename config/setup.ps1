@@ -10,6 +10,10 @@ param(
 # Error handling
 $ErrorActionPreference = "Stop"
 
+# Change to project root directory (parent of this script's directory)
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $scriptDir\..
+
 # Colors for output
 function Write-Success { param([string]$Message) Write-Host "✓ $Message" -ForegroundColor Green }
 function Write-Warning { param([string]$Message) Write-Host "⚠ $Message" -ForegroundColor Yellow }
@@ -80,7 +84,7 @@ function Install-Dependencies {
     Write-Info "Installing Python dependencies..."
 
     python -m pip install --upgrade pip
-    python -m pip install -r requirements.txt
+    python -m pip install -r config/requirements.txt
 
     Write-Success "Dependencies installed"
 }
@@ -329,14 +333,13 @@ function Set-McpoConfig {
 
     Write-Info "Setting up mcpo configuration..."
 
-    if (-not (Test-Path "mcpo-config.example.json")) {
-        Write-Warning "mcpo-config.example.json not found. Skipping mcpo setup."
+    if (-not (Test-Path "examples/mcpo-config.json")) {
+        Write-Warning "mcpo-config.json not found in examples/. Skipping mcpo setup."
         return $false
     }
 
-    # Create mcpo config from example
-    $configFile = "mcpo-config.json"
-    Copy-Item "mcpo-config.example.json" $configFile
+    # Use existing mcpo config
+    $configFile = "examples/mcpo-config.json"
 
     # Get absolute paths
     $projectDir = Get-Location
@@ -422,8 +425,8 @@ function Start-Installation {
         Write-Host ""
 
         # Check if we're in the right directory
-        if (-not (Test-Path "requirements.txt")) {
-            Write-Error "requirements.txt not found. Please run this script from the project root directory."
+        if (-not (Test-Path "config/requirements.txt")) {
+            Write-Error "config/requirements.txt not found. Please run this script from the project root directory."
             exit 1
         }
 
@@ -466,7 +469,7 @@ function Start-Installation {
                 Set-McpoConfig -ApiKey $apiKey
             }
         } else {
-            Write-Info "mcpo not found. For multi-MCP orchestration, install with: pip install mcpo"
+            Write-Info "mcpo not found. For multi-MCP orchestration, install with: uvx mcpo"
         }
 
         # Setup Windows service
