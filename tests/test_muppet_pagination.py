@@ -5,6 +5,7 @@ This tests whether pagination would help or if they simply don't match 'muppet' 
 
 import asyncio
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -12,7 +13,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from smithsonian_mcp.api_client import create_client
 from smithsonian_mcp.models import CollectionSearchFilter
 
+pytest.importorskip("pytest_asyncio")
 
+
+@pytest.mark.asyncio
 async def test_search_terms():
     """Test different search approaches."""
     print("=" * 80)
@@ -96,6 +100,9 @@ async def test_search_terms():
 
         print(f"   Found 'Bert Puppet' on view: {len(bert_puppet) > 0}")
         print(f"   Found 'Ernie Puppet' on view: {len(ernie_puppet) > 0}")
+
+        # Test assertions
+        assert results.total_count > 0, "Should find at least some results"
 
         print("\n" + "=" * 80)
         print("CONCLUSION:")

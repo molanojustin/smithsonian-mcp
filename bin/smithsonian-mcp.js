@@ -4,13 +4,12 @@
  * Smithsonian Open Access MCP Server - Node.js Wrapper
  * 
  * This script provides a Node.js entry point for the Python-based MCP server,
- * enabling npm/npx installation and execution.
+ * enabling npm/npx installation and execution with uv for dependency management.
  */
 
 const { spawn } = require('cross-spawn');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 
 // Load environment variables from .env file if it exists
 require('dotenv').config();
@@ -19,91 +18,59 @@ class SmithonianMCPServer {
   constructor() {
     this.packagePath = path.resolve(__dirname, '..');
     this.pythonModule = 'smithsonian_mcp.server';
-    this.pythonExecutable = null;
     this.process = null;
   }
 
   /**
-   * Find Python executable
+   * Check if uv is installed
    */
-  async findPython() {
-    const possibleExecutables = [
-      'python3',
-      'python',
-      'python3.11',
-      'python3.10',
-      'python3.12'
-    ];
-
-    for (const executable of possibleExecutables) {
-      try {
-        const result = spawn.sync(executable, ['--version'], { 
-          stdio: 'pipe',
-          shell: true 
-        });
-        
-        if (result.status === 0) {
-          const version = result.stdout.toString() || result.stderr.toString();
-          console.log(`Found Python: ${executable} (${version.trim()})`);
-          return executable;
-        }
-      } catch (error) {
-        // Continue to next executable
-      }
-    }
-
-    throw new Error('Python 3.10+ not found. Please install Python 3.10 or higher.');
-  }
-
-  /**
-   * Check if Python dependencies are installed
-   */
-  async checkDependencies(pythonExecutable) {
-    const requirementsPath = path.join(this.packagePath, 'requirements.txt');
-    
-    if (!fs.existsSync(requirementsPath)) {
-      throw new Error('requirements.txt not found');
-    }
-
+  async checkUv() {
     try {
-      // Check if smithsonian_mcp module can be imported
-      const result = spawn.sync(pythonExecutable, ['-c', 'import smithsonian_mcp; print("OK")'], {
+      const result = spawn.sync('uv', ['--version'], { 
         stdio: 'pipe',
-        cwd: this.packagePath
+        shell: true 
       });
-
-      if (result.status !== 0) {
-        console.log('Python dependencies not found. Installing...');
-        await this.installDependencies(pythonExecutable);
+      
+      if (result.status === 0) {
+        const version = result.stdout.toString().trim();
+        console.log(`Found uv: ${version}`);
+        return true;
       }
     } catch (error) {
-      console.log('Error checking dependencies, installing...');
-      await this.installDependencies(pythonExecutable);
+      // uv not found
     }
+
+    throw new Error(
+      'uv not found. Please install uv first:\n' +
+      '  macOS/Linux: curl -LsSf https://astral.sh/uv/install.sh | sh\n' +
+      '  Windows: powershell -c "irm https://astral.sh/uv/install.ps1 | iex"\n' +
+      '  Or visit: https://docs.astral.sh/uv/getting-started/installation/'
+    );
   }
 
   /**
-   * Install Python dependencies
+   * Ensure dependencies are synced
    */
-  async installDependencies(pythonExecutable) {
+  async syncDependencies() {
     return new Promise((resolve, reject) => {
-      const requirementsPath = path.join(this.packagePath, 'requirements.txt');
-      const pip = spawn(pythonExecutable, ['-m', 'pip', 'install', '-r', requirementsPath], {
+      console.log('Syncing dependencies with uv...');
+      
+      const sync = spawn('uv', ['sync'], {
         stdio: 'inherit',
         cwd: this.packagePath
       });
 
-      pip.on('close', (code) => {
+      sync.on('close', (code) => {
         if (code === 0) {
-          console.log('Dependencies installed successfully');
+          console.log('Dependencies synced successfully');
           resolve();
         } else {
-          reject(new Error(`Failed to install dependencies (exit code: ${code})`));
+          reject(new Error(`Failed to sync dependencies (exit code: ${code})`));
         }
       });
 
-      pip.on('error', (error) => {
-        reject(new Error(`Failed to install dependencies: ${error.message}`));
+      sync.on('error', (error) => {
+        reject(new Error(`Failed to sync dependencies: ${error.message}`));
       });
     });
   }
@@ -139,30 +106,25 @@ class SmithonianMCPServer {
       console.log('Smithsonian Open Access MCP Server');
       console.log('=====================================\n');
 
-      // Find Python executable
-      this.pythonExecutable = await this.findPython();
+      // Check if uv is installed
+      await this.checkUv();
 
-      // Check and install dependencies
-      await this.checkDependencies(this.pythonExecutable);
+      // Sync dependencies (uv will handle Python version and virtual environment)
+      await this.syncDependencies();
 
       // Validate API key
       if (!this.validateApiKey()) {
         process.exit(1);
       }
 
-      // Set up environment
-      const env = {
-        ...process.env,
-        PYTHONPATH: this.packagePath
-      };
-
       console.log('Starting MCP server...\n');
 
-      // Start the Python MCP server
-      this.process = spawn(this.pythonExecutable, ['-m', this.pythonModule, ...args], {
+      // Start the Python MCP server using uv run
+      // uv run will automatically use the project's Python version and virtual environment
+      this.process = spawn('uv', ['run', 'python', '-m', this.pythonModule, ...args], {
         stdio: 'inherit',
         cwd: this.packagePath,
-        env: env
+        env: process.env
       });
 
       this.process.on('close', (code) => {
@@ -210,6 +172,10 @@ Options:
   --help, -h     Show this help message
   --version, -v  Show version information
   --test         Run API connection test
+
+Requirements:
+  uv             Fast Python package manager (https://docs.astral.sh/uv/)
+                 Install with: curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Environment Variables:
   SMITHSONIAN_API_KEY    Your Smithsonian API key (required)
@@ -259,8 +225,8 @@ For more information, visit: https://github.com/molanojustin/smithsonian-mcp
     try {
       console.log('Testing Smithsonian API connection...\n');
 
-      this.pythonExecutable = await this.findPython();
-      await this.checkDependencies(this.pythonExecutable);
+      await this.checkUv();
+      await this.syncDependencies();
 
       if (!this.validateApiKey()) {
         process.exit(1);
@@ -269,10 +235,11 @@ For more information, visit: https://github.com/molanojustin/smithsonian-mcp
       const testScript = path.join(this.packagePath, 'examples', 'test-api-connection.py');
       
       if (fs.existsSync(testScript)) {
-        const testProcess = spawn(this.pythonExecutable, [testScript], {
+        // Use uv run to execute the test script
+        const testProcess = spawn('uv', ['run', 'python', testScript], {
           stdio: 'inherit',
           cwd: this.packagePath,
-          env: { ...process.env, PYTHONPATH: this.packagePath }
+          env: process.env
         });
 
         testProcess.on('close', (code) => {

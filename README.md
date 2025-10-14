@@ -36,20 +36,20 @@ The enhanced setup script now includes:
 **macOS/Linux:**
 
 ```bash
-chmod +x setup.sh
-./setup.sh
+chmod +x config/setup.sh
+config/setup.sh
 ```
 
 **Windows:**
 
 ```powershell
-.\setup.ps1
+config\setup.ps1
 ```
 
 ### Option 3: Manual Setup
 
 1. **Get API Key**: [api.data.gov/signup](https://api.data.gov/signup/) (free)
-2. **Install**: `pip install -r requirements.txt`
+2. **Install**: `uv pip install -r config/requirements.txt`
 3. **Configure**: Copy `.env.example` to `.env` and set your API key
 4. **Test**: `python examples/test-api-connection.py`
 
@@ -120,7 +120,7 @@ python scripts/verify-setup.py
 }
 ```
 
-_Or copy the provided `claude-desktop-config.json` and update the API key_
+_Or copy the provided `examples/claude-desktop-config.json` and update the API key_
 
 2. **Test**: Ask Claude "What Smithsonian museums are available?"
 
@@ -132,7 +132,7 @@ _Or copy the provided `claude-desktop-config.json` and update the API key_
 
 ```bash
 # Install mcpo
-pip install mcpo
+uvx mcpo
 
 # Or using uvx
 uvx mcpo --help
@@ -140,7 +140,7 @@ uvx mcpo --help
 
 #### Configuration
 
-Create a `mcpo-config.json` file:
+Create a `examples/mcpo-config.json` file:
 
 ```json
 {
@@ -168,10 +168,10 @@ Create a `mcpo-config.json` file:
 
 ```bash
 # Start mcpo with hot-reload
-mcpo --config mcpo-config.json --port 8000 --hot-reload
+mcpo --config examples/mcpo-config.json --port 8000 --hot-reload
 
 # With API key authentication
-mcpo --config mcpo-config.json --port 8000 --api-key "your_secret_key"
+mcpo --config examples/mcpo-config.json --port 8000 --api-key "your_secret_key"
 
 # Access endpoints:
 # - Smithsonian: http://localhost:8000/smithsonian_open_access
@@ -194,7 +194,7 @@ Type=simple
 User=your-user
 WorkingDirectory=/path/to/your/config
 Environment=PATH=/path/to/venv/bin
-ExecStart=/path/to/venv/bin/mcpo --config mcpo-config.json --port 8000
+ExecStart=/path/to/venv/bin/mcpo --config examples/mcpo-config.json --port 8000
 Restart=always
 RestartSec=10
 
@@ -211,50 +211,11 @@ sudo systemctl status mcpo
 
 #### Troubleshooting mcpo
 
-**"ModuleNotFoundError: No module named 'smithsonian_mcp'"**
-This occurs when mcpo can't find the Smithsonian MCP module. Fix by:
-
-1. **Use absolute Python path** in your mcpo config:
-
-```json
-{
-  "command": "/full/path/to/your/project/.venv/bin/python",
-  "env": {
-    "PYTHONPATH": "/full/path/to/your/project"
-  }
-}
-```
-
-2. **Verify paths**:
-
-```bash
-# Check Python executable exists
-ls -la /path/to/your/project/.venv/bin/python
-
-# Test module import
-/path/to/your/project/.venv/bin/python -c "import smithsonian_mcp; print('OK')"
-```
-
-3. **Regenerate config** with setup script:
-
-```bash
-./setup.sh  # Will create mcpo-config.json with correct paths
-```
-
-**"Connection closed" errors**
-
-- Ensure API key is valid and set in environment
-- Check that the virtual environment has all dependencies installed
-- Verify the MCP server can start manually: `python -m smithsonian_mcp.server --test`
-
-**"Port 8000 already in use"**
-
-```bash
-# Check what's using the port
-lsof -i :8000
-# Or use different port
-mcpo --config mcpo-config.json --port 8001
-```
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed mcpo troubleshooting, including:
+- ModuleNotFoundError solutions
+- Connection closed errors
+- Port conflicts
+- Path configuration issues
 
 ### VS Code
 
@@ -419,43 +380,29 @@ Get-Service SmithsonianMCP
 
 ## Troubleshooting
 
-### Common Issues
+For detailed troubleshooting guidance, including:
+- Common setup issues
+- Service startup problems
+- API key validation
+- Claude Desktop connection issues
+- Module import errors
+- Platform-specific problems
 
-**"API key validation failed"**
-
-- Get a free key from [api.data.gov/signup](https://api.data.gov/signup/)
-- Ensure no extra spaces in your API key
-- Check that `.env` file contains: `SMITHSONIAN_API_KEY=your_key_here`
-
-**"Service failed to start"**
-
-- Run `python scripts/verify-setup.py` for diagnostics
-- Check logs: `journalctl --user -u smithsonian-mcp` (Linux) or `~/Library/Logs/com.smithsonian.mcp.log` (macOS)
-- Ensure virtual environment is activated
-
-**"Claude Desktop not connecting"**
-
-- Restart Claude Desktop after configuration
-- Check Claude Desktop config file exists and contains correct paths
-- Verify MCP server is running: `python -m smithsonian_mcp.server`
-
-**"Module import errors"**
-
-- Activate virtual environment: `source .venv/bin/activate` (Linux/macOS) or `.\venv\Scripts\Activate.ps1` (Windows)
-- Reinstall dependencies: `pip install -r requirements.txt`
-
-### Getting Help
-
-1. Run verification script: `python scripts/verify-setup.py`
-2. Review [GitHub Issues](https://github.com/molanojustin/smithsonian-mcp/issues)
-3. Check the documentation files for detailed setup instructions
+Please refer to [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Documentation
 
-- **API Reference**: Complete tool and resource documentation in README
-- **Examples**: Real-world usage scenarios
-- **Deployment Guide**: Production deployment options
-- **CLAUDE.md**: Developer guidance for Claude Code integration
+### Available Documentation
+
+- **[README.md](README.md)** - Main setup and usage guide (this file)
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Comprehensive troubleshooting and common issues
+- **Examples** - Real-world usage scenarios in `examples/` directory
+- **Scripts** - Setup and utility scripts in `scripts/` directory
+
+### Key Reference
+- **API Reference**: Complete tool and resource documentation in this README
+- **Deployment Guide**: Production deployment options included in setup instructions
+- **Integration Guide**: Claude Desktop and mcpo setup instructions in this README
 
 ## Contributing
 

@@ -51,7 +51,8 @@ bld/
 # Ignore bin directories except for our specific bin/ directory
 **/bin/*
 !bin/
-!bin/**
+# Only track files directly in bin/, ignore subdirectories
+bin/**/*
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
@@ -429,8 +430,10 @@ FodyWeavers.xsd
 
 # Additional
 .DS_Store
-AGENTS.md
-PAGINATION_FIX_SUMMARY.md
+*.md
+!LICENSE.md
+!README.md
+!TROUBLESHOOTING.md
 smithsonian-mcp-workspace.code-workspace
 
 # Ignore everything in /dev/

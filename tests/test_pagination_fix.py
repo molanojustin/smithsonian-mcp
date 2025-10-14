@@ -9,10 +9,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import pytest
 from smithsonian_mcp.api_client import create_client
 from smithsonian_mcp.models import CollectionSearchFilter
 
 
+pytest.importorskip("pytest_asyncio")
+
+
+@pytest.mark.asyncio
 async def test_muppet_search():
     """Test that we can find Bert and Ernie by searching through pagination."""
     print("=" * 80)

@@ -4,13 +4,16 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
+# Change to project root directory (parent of this script's directory)
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+PROJECT_DIR="$(pwd)"
+
 # --- Constants ---
 VENV_DIR=".venv"
 PYTHON_EXEC="$VENV_DIR/bin/python"
 PIP_EXEC="$VENV_DIR/bin/pip"
-REQUIREMENTS_FILE="requirements.txt"
+REQUIREMENTS_FILE="config/requirements.txt"
 SERVICE_NAME="smithsonian-mcp"
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Functions ---
 
@@ -50,14 +53,20 @@ setup_mcpo_config() {
     local api_key="$1"
     info "Setting up mcpo configuration..."
     
-    if [ ! -f "mcpo-config.example.json" ]; then
-        warning "mcpo-config.example.json not found. Skipping mcpo setup."
-        return 1
+    if [ ! -f "examples/mcpo-config.json" ]; then
+        # Look for the original file to create from example
+        if [ -f "examples/mcpo-config.json" ]; then
+            warning "mcpo-config.json found but no example file. Using existing config."
+            return 1
+        else
+            warning "mcpo-config.json not found in examples/. Skipping mcpo setup."
+            return 1
+        fi
     fi
     
     # Create mcpo config from example
-    local config_file="mcpo-config.json"
-    cp "mcpo-config.example.json" "$config_file"
+    local config_file="examples/mcpo-config.json"
+    # We already have the config file, just update it if needed
     
     # Replace paths and API key in config
     local python_path="$PROJECT_DIR/$VENV_DIR/bin/python"
@@ -390,7 +399,7 @@ if check_mcpo; then
         setup_mcpo_config "$api_key"
     fi
 else
-    info "mcpo not found. For multi-MCP orchestration, install with: pip install mcpo"
+    info "mcpo not found. For multi-MCP orchestration, install with: uvx mcpo"
 fi
 
 # 6. Setup service
