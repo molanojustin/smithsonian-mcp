@@ -1,4 +1,4 @@
-# Released under MIT License
+MIT License
 
 Copyright (c) 2025 Justin Molano.
 
