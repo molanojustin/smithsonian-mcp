@@ -1,0 +1,175 @@
+name: Security Scanning
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'requirements*.txt'
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'requirements*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  python-security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv and Python dependencies
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uv sync --dev
+
+    - name: Run pip-audit (Python vulnerability scan)
+      run: |
+        uv run pip-audit --venv .venv --format=json --output=pip-audit-results.json || true
+
+    - name: Run safety check (Python dependency security)
+      run: |
+        uv run safety check --json --output safety-results.json || true
+      continue-on-error: true
+
+    - name: Run bandit security scan (Python code)
+      run: |
+        uv run bandit -r smithsonian_mcp/ -f json -o bandit-results.json || true
+      continue-on-error: true
+
+    - name: Upload Python security results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: python-security-results
+        path: |
+          pip-audit-results.json
+          safety-results.json
+          bandit-results.json
+
+  npm-security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install NPM dependencies
+      run: npm ci
+
+    - name: Run npm audit
+      run: |
+        npm audit --audit-level=moderate --json > npm-audit-results.json || true
+
+    - name: Upload NPM security results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: npm-security-results
+        path: npm-audit-results.json
+
+  codeql-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: python, javascript
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python dependencies
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uv sync
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install Node.js dependencies
+      run: npm ci
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: high
+        allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD
+
+  secrets-scanning:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: TruffleHog OSS
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+
+  security-report:
+    if: always()
+    needs: [python-security-scan, npm-security-scan, codeql-analysis, dependency-review, secrets-scanning]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Security Scan Summary
+      run: |
+        echo "### Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "- Python Security Scan: ${{ needs.python-security-scan.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- NPM Security Scan: ${{ needs.npm-security-scan.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- CodeQL Analysis: ${{ needs.codeql-analysis.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Dependency Review: ${{ needs.dependency-review.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Secrets Scanning: ${{ needs.secrets-scanning.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "⚠️ Note: Some security scans are set to continue-on-error to provide visibility into issues without blocking the workflow." >> $GITHUB_STEP_SUMMARY
