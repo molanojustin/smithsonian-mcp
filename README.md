@@ -120,8 +120,6 @@ python scripts/verify-setup.py
 }
 ```
 
-_Or copy the provided `examples/claude-desktop-config.json` and update the API key_
-
 2. **Test**: Ask Claude "What Smithsonian museums are available?"
 
 ### mcpo Integration (MCP Orchestrator)
