@@ -64,7 +64,6 @@
     "LICENSE.md",
     "pyproject.toml",
     "uv.lock",
-    ".python-version",
     "smithsonian_mcp/",
     "scripts/",
     "examples/",
