@@ -230,10 +230,23 @@ async def simple_explore(
             museum_map = {
                 "american history": "NMAH",
                 "natural history": "NMNH",
-                "art": "SAAM",
+                "american art": "SAAM",
                 "american indian": "NMAI",
                 "air and space": "NASM",
                 "asian art": "FSG",
+                "portrait gallery": "NPG",
+                "african art": "NMAfA",
+                "hirshhorn": "HMSG",
+                "cooper hewitt": "CHNDM",
+                "african american history": "NMAAHC",
+                "freer": "FSG",
+                "sackler": "FSG",
+                "renwick": "SAAM",
+                "postal": "NPM",
+                "zoo": "NZP",
+                "smithsonian archives": "SIA",
+                "anacostia": "ACM",
+                "american art archives": "AAA",
             }
             if museum_lower in museum_map:
                 museum_code = museum_map[museum_lower]
@@ -243,13 +256,19 @@ async def simple_explore(
                     "NMAH",
                     "NMNH",
                     "SAAM",
-                    "NMNH",
                     "NASM",
                     "NPG",
                     "FSG",
                     "HMSG",
                     "NMAfA",
                     "NMAI",
+                    "ACM",
+                    "NMAAHC",
+                    "SIA",
+                    "NPM",
+                    "NZP",
+                    "CHNDM",
+                    "AAA"
                 ]
                 if museum_upper in valid_codes:
                     museum_code = museum_upper
@@ -476,10 +495,23 @@ async def continue_explore(
             museum_map = {
                 "american history": "NMAH",
                 "natural history": "NMNH",
-                "art": "SAAM",
+                "american art": "SAAM",
                 "american indian": "NMAI",
                 "air and space": "NASM",
                 "asian art": "FSG",
+                "portrait gallery": "NPG",
+                "african art": "NMAfA",
+                "hirshhorn": "HMSG",
+                "cooper hewitt": "CHNDM",
+                "african american history": "NMAAHC",
+                "freer": "FSG",
+                "sackler": "FSG",
+                "renwick": "SAAM",
+                "postal": "NPM",
+                "zoo": "NZP",
+                "smithsonian archives": "SIA",
+                "anacostia": "ACM",
+                "american art archives": "AAA",
             }
             if museum_lower in museum_map:
                 museum_code = museum_map[museum_lower]
@@ -488,13 +520,19 @@ async def continue_explore(
                     "NMAH",
                     "NMNH",
                     "SAAM",
-                    "NMNH",
                     "NASM",
                     "NPG",
                     "FSG",
                     "HMSG",
                     "NMAfA",
                     "NMAI",
+                    "ACM",
+                    "NMAAHC",
+                    "SIA",
+                    "NPM",
+                    "NZP",
+                    "CHNDM",
+                    "AAA"
                 ]
                 if museum_upper in valid_codes:
                     museum_code = museum_upper
