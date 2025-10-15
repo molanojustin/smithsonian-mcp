@@ -771,15 +771,6 @@ wheels = [
 ]
 
 [[package]]
-name = "mcp-inspector"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/96/ec/abb96ee13f2dfafe1063fbdc6e2db7fc0fe4021bf5f1fd6faa2d5b147c26/mcp_inspector-0.1.0.tar.gz", hash = "sha256:b80a7f7538cc6df2f5f492cbd80f0b1db30b4be19917bd0831f9b76a06d010b2", size = 1366, upload-time = "2025-09-29T14:58:22.291Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/41/7b/6f18587822c3b211d8a9848592cd91941cec4edaffd71bf6f9e848c111a9/mcp_inspector-0.1.0-py3-none-any.whl", hash = "sha256:0c4339f71eeb028d6b2755559d8ad2b86beb494acf8d96aef160a46af4fb1074", size = 1532, upload-time = "2025-09-29T14:58:21.037Z" },
-]
-
-[[package]]
 name = "mdurl"
 version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1494,7 +1485,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "black" },
-    { name = "mcp-inspector" },
     { name = "pylint" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1511,7 +1501,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "black", specifier = ">=23.0.0" },
-    { name = "mcp-inspector", specifier = ">=0.1.0" },
     { name = "pylint", specifier = ">=2.17.0" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.21.0" },
