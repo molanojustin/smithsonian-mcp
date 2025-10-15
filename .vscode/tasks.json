@@ -68,7 +68,7 @@
       "command": "bash",
       "args": [
         "-c",
-        "set -a && source .env && set +a && .venv/bin/mcp-inspector smithsonian_mcp.server"
+        "set -a && source .env && set +a && npx @modelcontextprotocol/inspector .venv/bin/python -m smithsonian_mcp.server"
       ],
       "group": "test"
     }
