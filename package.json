@@ -1,6 +1,6 @@
 {
   "name": "@molanojustin/smithsonian-mcp",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Model Context Protocol (MCP) server for Smithsonian Open Access collections",
   "main": "bin/smithsonian-mcp.js",
   "bin": {
@@ -15,9 +15,9 @@
     "preversion": "npm test",
     "version": "node -e \"const fs=require('fs'); const pkg=require('./package.json'); const toml=fs.readFileSync('pyproject.toml','utf8'); fs.writeFileSync('pyproject.toml', toml.replace(/^version\\s*=\\s*\\\"[^\\\"]+\\\"/m, 'version = \\\"'+pkg.version+'\\\"')); require('child_process').execSync('uv lock')\" && npm run sync-requirements && git add pyproject.toml uv.lock config/requirements.txt package.json package-lock.json",
     "postversion": "git push && git push --tags",
-    "bump:patch": "npm --no-git-tag-version version patch && git commit -m \"chore(release): $(node -p \\\"require('./package.json').version\\\")\" && git tag -a v$(node -p \\\"require('./package.json').version\\\") -m \"$(node -p \\\"require('./package.json').version\\\")\"",
-    "bump:minor": "npm --no-git-tag-version version minor && git commit -m \"feat(release): $(node -p \\\"require('./package.json').version\\\")\" && git tag -a v$(node -p \\\"require('./package.json').version\\\") -m \"$(node -p \\\"require('./package.json').version\\\")\"",
-    "bump:major": "npm --no-git-tag-version version major && git commit -m \"feat(release): $(node -p \\\"require('./package.json').version\\\")\" && git tag -a v$(node -p \\\"require('./package.json').version\\\") -m \"$(node -p \\\"require('./package.json').version\\\")\"",
+    "bump:patch": "npm version patch -m \"chore(release): %s\" --tag-version-prefix=\"v\"",
+    "bump:minor": "npm version minor -m \"feat(release): %s\" --tag-version-prefix=\"v\"",
+    "bump:major": "npm version major -m \"feat(release): %s\" --tag-version-prefix=\"v\"",
     "release": "npm run check-version && npm test && npm publish && git push --follow-tags"
   },
   "keywords": [
