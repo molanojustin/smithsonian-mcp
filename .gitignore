@@ -436,6 +436,7 @@ FodyWeavers.xsd
 !README.md
 !TROUBLESHOOTING.md
 smithsonian-mcp-workspace.code-workspace
+.vscode/settings.json
 
 # Ignore everything in /dev/
 dev/*

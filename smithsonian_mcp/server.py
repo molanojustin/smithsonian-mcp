@@ -5,9 +5,8 @@ This MCP server provides AI assistants with access to the Smithsonian's
 Open Access collections through a standardized interface.
 """
 
-import asyncio
 import logging
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -25,9 +24,9 @@ from .models import (
     CollectionSearchFilter,
     SmithsonianUnit,
     CollectionStats,
-    ImageData,
-    APIError,
 )
+from .constants import MUSEUM_MAP, VALID_MUSEUM_CODES
+from .prompts import exhibition_planning_message
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, Config.LOG_LEVEL))
@@ -77,9 +76,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
     _global_api_client = api_client  # Set global reference for mcpo compatibility
 
     try:
-        logger.info(
-            f"Server initialized: {Config.SERVER_NAME} v{Config.SERVER_VERSION}"
-        )
+        logger.info("Server initialized: %s v%s", Config.SERVER_NAME, Config.SERVER_VERSION)
         yield ServerContext(api_client=api_client)
     finally:
         logger.info("Shutting down Smithsonian MCP Server...")
@@ -175,19 +172,28 @@ async def search_collections(
 
         if results.total_count > limit and limit >= 1000:
             logger.warning(
-                f"Search completed: '{query}' returned {results.returned_count} of {results.total_count} results. "
-                f"Note: Only first {limit} results returned. Use find_on_view_items for comprehensive on-view searches."
+                "Search completed: '%s' returned %d of %d results; only first %d returned.",
+                query,
+                results.returned_count,
+                results.total_count,
+                limit,
+            )
+            logger.warning(
+                "Use find_on_view_items for comprehensive on-view searches."
             )
         else:
             logger.info(
-                f"Search completed: '{query}' returned {results.returned_count} of {results.total_count} results"
+                "Search completed: '%s' returned %d of %d results",
+                query,
+                results.returned_count,
+                results.total_count,
             )
 
         return results
 
     except Exception as e:
-        logger.error(f"API error during search: {e}")
-        raise Exception(f"Search failed: {e}")
+        logger.error("API error during search: %s", e)
+        raise Exception(f"Search failed: {e}") from e
 
 
 @mcp.tool()
@@ -201,7 +207,8 @@ async def simple_explore(
     Explore Smithsonian collections with diverse, representative results.
 
     This provides a smarter search that samples across museums and object types to show you
-    the variety of what's available for your topic. Instead of just returning the 'first 50 results',
+    the variety of what's available for your topic. Instead of just returning the
+    'first 50 results',
     it tries to show representative examples from different museums.
 
     Note: This will return up to max_samples objects, but there may be many more available.
@@ -227,50 +234,11 @@ async def simple_explore(
         museum_code = None
         if museum:
             museum_lower = museum.lower().strip()
-            museum_map = {
-                "american history": "NMAH",
-                "natural history": "NMNH",
-                "american art": "SAAM",
-                "american indian": "NMAI",
-                "air and space": "NASM",
-                "asian art": "FSG",
-                "portrait gallery": "NPG",
-                "african art": "NMAfA",
-                "hirshhorn": "HMSG",
-                "cooper hewitt": "CHNDM",
-                "african american history": "NMAAHC",
-                "freer": "FSG",
-                "sackler": "FSG",
-                "renwick": "SAAM",
-                "postal": "NPM",
-                "zoo": "NZP",
-                "smithsonian archives": "SIA",
-                "anacostia": "ACM",
-                "american art archives": "AAA",
-            }
-            if museum_lower in museum_map:
-                museum_code = museum_map[museum_lower]
+            if museum_lower in MUSEUM_MAP:
+                museum_code = MUSEUM_MAP[museum_lower]
             elif museum_upper := museum.upper():
                 # Try to match codes directly
-                valid_codes = [
-                    "NMAH",
-                    "NMNH",
-                    "SAAM",
-                    "NASM",
-                    "NPG",
-                    "FSG",
-                    "HMSG",
-                    "NMAfA",
-                    "NMAI",
-                    "ACM",
-                    "NMAAHC",
-                    "SIA",
-                    "NPM",
-                    "NZP",
-                    "CHNDM",
-                    "AAA"
-                ]
-                if museum_upper in valid_codes:
+                if museum_upper in VALID_MUSEUM_CODES:
                     museum_code = museum_upper
 
         api_client = await get_api_client(ctx)
@@ -424,7 +392,7 @@ async def simple_explore(
             )
 
     except ValueError as ve:
-        logger.warning(f"Simple explore validation error: {ve}")
+        logger.warning("Simple explore validation error: %s", ve)
         # Provide fallback
         try:
             filters = CollectionSearchFilter(
@@ -447,12 +415,12 @@ async def simple_explore(
             results = await api_client.search_collections(filters)
             return results
         except Exception as e:
-            logger.error(f"Fallback also failed: {e}")
-            raise Exception(f"Exploration failed: {str(ve)}")
+            logger.error("Fallback also failed: %s", e)
+            raise Exception(f"Exploration failed: {str(ve)}") from e
 
     except Exception as e:
-        logger.error(f"Error in simple explore: {e}")
-        raise Exception(f"Exploration failed: {e}")
+        logger.error("Error in simple explore: %s", e)
+        raise Exception(f"Exploration failed: {e}") from e
 
 
 @mcp.tool()
@@ -492,49 +460,10 @@ async def continue_explore(
         museum_code = None
         if museum:
             museum_lower = museum.lower().strip()
-            museum_map = {
-                "american history": "NMAH",
-                "natural history": "NMNH",
-                "american art": "SAAM",
-                "american indian": "NMAI",
-                "air and space": "NASM",
-                "asian art": "FSG",
-                "portrait gallery": "NPG",
-                "african art": "NMAfA",
-                "hirshhorn": "HMSG",
-                "cooper hewitt": "CHNDM",
-                "african american history": "NMAAHC",
-                "freer": "FSG",
-                "sackler": "FSG",
-                "renwick": "SAAM",
-                "postal": "NPM",
-                "zoo": "NZP",
-                "smithsonian archives": "SIA",
-                "anacostia": "ACM",
-                "american art archives": "AAA",
-            }
-            if museum_lower in museum_map:
-                museum_code = museum_map[museum_lower]
+            if museum_lower in MUSEUM_MAP:
+                museum_code = MUSEUM_MAP[museum_lower]
             elif museum_upper := museum.upper():
-                valid_codes = [
-                    "NMAH",
-                    "NMNH",
-                    "SAAM",
-                    "NASM",
-                    "NPG",
-                    "FSG",
-                    "HMSG",
-                    "NMAfA",
-                    "NMAI",
-                    "ACM",
-                    "NMAAHC",
-                    "SIA",
-                    "NPM",
-                    "NZP",
-                    "CHNDM",
-                    "AAA"
-                ]
-                if museum_upper in valid_codes:
+                if museum_upper in VALID_MUSEUM_CODES:
                     museum_code = museum_upper
 
         api_client = await get_api_client(ctx)
@@ -659,7 +588,7 @@ async def continue_explore(
         )
 
     except ValueError as ve:
-        logger.warning(f"Continue explore validation error: {ve}")
+        logger.warning("Continue explore validation error: %s", ve)
         # Provide fallback
         try:
             filters = CollectionSearchFilter(
@@ -682,12 +611,12 @@ async def continue_explore(
             results = await api_client.search_collections(filters)
             return results
         except Exception as e:
-            logger.error(f"Fallback also failed: {e}")
-            raise Exception(f"Continue exploration failed: {str(ve)}")
+            logger.error("Fallback also failed: %s", e)
+            raise Exception(f"Continue exploration failed: {str(ve)}") from e
 
     except Exception as e:
-        logger.error(f"Error in continue explore: {e}")
-        raise Exception(f"Continue exploration failed: {e}")
+        logger.error("Error in continue explore: %s", e)
+        raise Exception(f"Continue exploration failed: {e}") from e
 
 
 @mcp.tool()
@@ -711,15 +640,15 @@ async def get_object_details(
         result = await api_client.get_object_by_id(object_id)
 
         if result:
-            logger.info(f"Retrieved object details: {object_id}")
+            logger.info("Retrieved object details: %s", object_id)
         else:
-            logger.warning(f"Object not found: {object_id}")
+            logger.warning("Object not found: %s", object_id)
 
         return result
 
     except Exception as e:
-        logger.error(f"API error retrieving object {object_id}: {e}")
-        raise Exception(f"Failed to retrieve object {e}")
+        logger.error("API error retrieving object %s: %s", object_id, e)
+        raise Exception(f"Failed to retrieve object: {e}") from e
 
 
 @mcp.tool()
@@ -739,12 +668,12 @@ async def get_smithsonian_units(
     try:
         api_client = await get_api_client(ctx)
         units = await api_client.get_units()
-        logger.info(f"Retrieved {len(units)} Smithsonian units")
+        logger.info("Retrieved %d Smithsonian units", len(units))
         return units
 
     except Exception as e:
-        logger.error(f"Error retrieving Smithsonian units: {str(e)}")
-        raise Exception(f"Failed to retrieve units: {str(e)}")
+        logger.error("Error retrieving Smithsonian units: %s", str(e))
+        raise Exception(f"Failed to retrieve units: {str(e)}") from e
 
 
 @mcp.tool()
@@ -767,8 +696,8 @@ async def get_collection_statistics(
         return stats
 
     except Exception as e:
-        logger.error(f"Error retrieving collection statistics: {str(e)}")
-        raise Exception(f"Failed to retrieve statistics: {str(e)}")
+        logger.error("Error retrieving collection statistics: %s", str(e))
+        raise Exception(f"Failed to retrieve statistics: {str(e)}") from e
 
 
 @mcp.tool()
@@ -829,14 +758,18 @@ async def search_by_unit(
         results = await api_client.search_collections(filters)
 
         logger.info(
-            f"Search by unit '{unit_code}' completed: '{query}' returned {results.returned_count} of {results.total_count} results"
+            "Search by unit '%s' completed: '%s' returned %d of %d results",
+            unit_code,
+            query,
+            results.returned_count,
+            results.total_count,
         )
 
         return results
 
     except Exception as e:
-        logger.error(f"Unexpected error during search by unit: {str(e)}")
-        raise Exception(f"Search by unit failed: {str(e)}")
+        logger.error("Unexpected error during search by unit: %s", str(e))
+        raise Exception(f"Search by unit failed: {str(e)}") from e
 
 
 @mcp.tool()
@@ -896,13 +829,13 @@ async def get_objects_on_view(
         verified_on_view = [obj for obj in results.objects if obj.is_on_view]
 
         logger.info(
-            f"On-view search completed: {len(verified_on_view)} verified on-view out of {results.returned_count} returned"
+            "On-view search completed: %d verified on-view out of %d returned",
+            len(verified_on_view),
+            results.returned_count,
         )
 
         # Return verified on-view objects
-        from .models import SearchResult as SR
-
-        return SR(
+        return SearchResult(
             objects=verified_on_view,
             total_count=len(verified_on_view),
             returned_count=len(verified_on_view),
@@ -912,8 +845,8 @@ async def get_objects_on_view(
         )
 
     except Exception as e:
-        logger.error(f"API error during on-view search: {e}")
-        raise Exception(f"On-view search failed: {e}")
+        logger.error("API error during on-view search: %s", e)
+        raise Exception(f"On-view search failed: {e}") from e
 
 
 @mcp.tool()
@@ -938,15 +871,15 @@ async def check_object_on_view(
 
         if result:
             status = "on view" if result.is_on_view else "not on view"
-            logger.info(f"Object {object_id} is {status}")
+            logger.info("Object %s is %s", object_id, status)
         else:
-            logger.warning(f"Object not found: {object_id}")
+            logger.warning("Object not found: %s", object_id)
 
         return result
 
     except Exception as e:
-        logger.error(f"API error checking object {object_id}: {e}")
-        raise Exception(f"Failed to check object status: {e}")
+        logger.error("API error checking object %s: %s", object_id, e)
+        raise Exception(f"Failed to check object status: {e}") from e
 
 
 @mcp.tool()
@@ -992,7 +925,10 @@ async def find_on_view_items(
             max_results = 1
 
         logger.info(
-            f"Finding on-view items for '{query}' at {unit_code or 'all museums'} (searching up to {max_results} items)"
+            "Finding on-view items for '%s' at %s (searching up to %d items)",
+            query,
+            unit_code or "all museums",
+            max_results,
         )
 
         api_client = await get_api_client(ctx)
@@ -1029,12 +965,15 @@ async def find_on_view_items(
                 total_available = batch_results.total_count
 
             logger.info(
-                f"Fetched batch at offset {offset}: {len(batch_results.objects)} items "
-                f"(total searched so far: {len(all_objects)}/{total_available})"
+                "Fetched batch at offset %d: %d items (total searched so far: %d/%s)",
+                offset,
+                len(batch_results.objects),
+                len(all_objects),
+                str(total_available),
             )
 
             if not batch_results.has_more:
-                logger.info(f"Reached end of available results at offset {offset}")
+                logger.info("Reached end of available results at offset %d", offset)
                 break
 
             offset += current_batch_size
@@ -1042,13 +981,16 @@ async def find_on_view_items(
         on_view_items = [obj for obj in all_objects if obj.is_on_view]
 
         logger.info(
-            f"Found {len(on_view_items)} verified on-view items out of {len(all_objects)} total items searched "
-            f"({total_available} items available in database for this query)"
+            "Found %d verified on-view items out of %d total items searched",
+            len(on_view_items),
+            len(all_objects),
+        )
+        logger.info(
+            "%s items available in database for this query",
+            str(total_available),
         )
 
-        from .models import SearchResult as SR
-
-        return SR(
+        return SearchResult(
             objects=on_view_items,
             total_count=len(on_view_items),
             returned_count=len(on_view_items),
@@ -1058,8 +1000,8 @@ async def find_on_view_items(
         )
 
     except Exception as e:
-        logger.error(f"Error finding on-view items: {e}")
-        raise Exception(f"Failed to find on-view items: {e}")
+        logger.error("Error finding on-view items: %s", e)
+        raise Exception(f"Failed to find on-view items: {e}") from e
 
 
 # ============================================================================
@@ -1107,8 +1049,8 @@ async def get_search_context(
         for obj in results.objects:
             output.append(f"• {obj.title}")
             if obj.unit_name:
-                output.append(f"  Museum: {obj.unit_name}")
-            output.append(f"  ID: {obj.id}")
+                output.append("  Museum: %s" % obj.unit_name)
+            output.append("  ID: %s" % obj.id)
             output.append("")
 
         return "\n".join(output)
@@ -1371,30 +1313,7 @@ def exhibition_planning_prompt(
         target_audience: Intended audience (e.g., "children", "scholars", "general public")
         size: Exhibition size ("small", "medium", "large")
     """
-    size_guidelines = {
-        "small": "15-25 objects",
-        "medium": "30-50 objects",
-        "large": "60+ objects",
-    }
-
-    return [
-        base.Message(
-            role="user",
-            content=f"Help me plan a {size} exhibition on '{exhibition_theme}' "
-            f"for {target_audience}. I need approximately {size_guidelines.get(size, '30-50')} objects. "
-            f"Please:\n\n"
-            f"1. Search for relevant objects across different Smithsonian museums\n"
-            f"2. Organize findings into thematic sections or galleries\n"
-            f"3. Prioritize objects with high-quality images for exhibition materials\n"
-            f"4. Include diverse perspectives and representations when possible\n"
-            f"5. Suggest a logical flow or narrative structure\n"
-            f"6. Note any objects that could serve as highlights or centerpieces\n"
-            f"7. Consider educational value appropriate for the target audience\n"
-            f"8. Identify objects that are CC0 licensed for marketing materials\n\n"
-            f"Provide detailed information about key objects and explain why "
-            f"they would be effective for this exhibition concept.",
-        )
-    ]
+    return exhibition_planning_message(exhibition_theme, target_audience, size)
 
 
 @mcp.prompt(title="Educational Content")
@@ -1445,7 +1364,7 @@ def educational_content_prompt(
 if __name__ == "__main__":
     import sys
 
-    logger.info(f"Starting {Config.SERVER_NAME} v{Config.SERVER_VERSION}")
+    logger.info("Starting %s v%s", Config.SERVER_NAME, Config.SERVER_VERSION)
 
     # Check for API key
     if not Config.validate_api_key():
