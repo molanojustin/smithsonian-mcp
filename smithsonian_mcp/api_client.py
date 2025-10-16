@@ -24,6 +24,8 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+BASE_URL = "https://api.si.edu/openaccess/api/v1.0/"
+
 
 class SmithsonianAPIClient:
     """
@@ -41,7 +43,7 @@ class SmithsonianAPIClient:
             api_key: Optional API key. If not provided, uses Config.API_KEY
         """
         self.api_key = api_key or Config.API_KEY
-        self.base_url = "https://api.si.edu/openaccess/api/v1.0/"
+        self.base_url = BASE_URL
         self.session: Optional[httpx.AsyncClient] = None
 
         if not self.api_key:

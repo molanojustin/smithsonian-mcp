@@ -1,7 +1,5 @@
 """
 Constants and static mappings used by the MCP server.
-
-Move low-risk, static data out of `server.py` to keep that module smaller.
 """
 from typing import Dict, List
 
