@@ -1,6 +1,6 @@
 {
   "name": "@molanojustin/smithsonian-mcp",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Model Context Protocol (MCP) server for Smithsonian Open Access collections",
   "main": "bin/smithsonian-mcp.js",
   "bin": {
