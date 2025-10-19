@@ -28,9 +28,8 @@ from .config import Config
 from .models import SmithsonianObject, SearchResult, CollectionSearchFilter
 from .api_client import SmithsonianAPIClient, create_client
 from . import server, tools, resources, prompts, context, main
+from ._version import __version__
 
-# TODO: Make version align with package version
-__version__ = "0.1.0"
 __author__ = "Justin Molano"
 __email__ = "justinmolano2@gmail.com"
 
