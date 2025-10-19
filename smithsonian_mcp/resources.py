@@ -13,6 +13,10 @@ from .models import CollectionSearchFilter, APIError
 logger = logging.getLogger(__name__)
 
 
+def _format_optional_number(value: Optional[int]) -> str:
+    """Format optional integer values for human-readable stats output."""
+    return f"{value:,}" if value is not None else "Unavailable"
+
 @mcp.tool()
 async def get_search_context(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
@@ -222,16 +226,18 @@ async def get_stats_context(
         output = [
             "Smithsonian Open Access Collection Statistics:\n",
             f"Total Objects: {stats.total_objects:,}",
-            f"Digitized Objects: {stats.total_digitized:,}",
-            f"CC0 Licensed Objects: {stats.total_cc0:,}",
-            f"Objects with Images: {stats.total_with_images:,}",
-            f"Objects with 3D Models: {stats.total_with_3d:,}",
+            f"Digitized Objects: {_format_optional_number(stats.total_digitized)}",
+            f"CC0 Licensed Objects: {_format_optional_number(stats.total_cc0)}",
+            f"Objects with Images: {_format_optional_number(stats.total_with_images)}",
+            f"Objects with 3D Models: {_format_optional_number(stats.total_with_3d)}",
             f"\nLast Updated: {stats.last_updated}\n",
             "By Museum:",
         ]
 
         for unit in stats.units:
-            output.append(f"  {unit.unit_code}: {unit.total_objects:,}")
+            output.append(
+                f"  {unit.unit_code}: {_format_optional_number(unit.total_objects)}"
+            )
 
         return "\n".join(output)
 
