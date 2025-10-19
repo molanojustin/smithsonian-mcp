@@ -532,7 +532,7 @@ class SmithsonianAPIClient:
 
         return known_units
 
-    async def get_collection_stats(self) -> CollectionStats:
+    async def get_collection_stats(self) -> CollectionStats: # pylint: disable=too-many-locals
         """
         Get overall collection statistics.
 

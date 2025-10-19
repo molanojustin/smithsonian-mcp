@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
-async def search_collections(
+async def search_collections( #pylint: disable=too-many-arguments, too-many-locals, too-many-positional-arguments
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     query: str = "",
     unit_code: Optional[str] = None,
@@ -122,7 +122,7 @@ async def search_collections(
 
 
 @mcp.tool()
-async def simple_explore(
+async def simple_explore( #pylint: disable=too-many-locals, too-many-branches, too-many-statements
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     topic: str = "",
     museum: Optional[str] = None,
@@ -351,7 +351,7 @@ async def simple_explore(
 
 
 @mcp.tool()
-async def continue_explore(
+async def continue_explore( #pylint: disable=too-many-locals, too-many-branches, too-many-statements
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     topic: str = "",
     previously_seen_ids: Optional[List[str]] = None,
@@ -373,7 +373,7 @@ async def continue_explore(
     Returns:
         More diverse samples from the same topic, excluding objects you've already seen
     """
-    try:
+    try: # pylint: disable=too-many-nested-blocks
         # Reuse the same exploration logic but with seen items filtered out
         if not topic or topic.strip() == "":
             raise ValueError("Search topic cannot be empty")
