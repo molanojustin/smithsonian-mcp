@@ -117,7 +117,7 @@ async def search_collections(
 
     except Exception as e:
         logger.error("API error during search: %s", e)
-        raise Exception(f"Search failed: {e}") from e
+        raise RuntimeError(f"Search failed: {e}") from e
 
 
 @mcp.tool()
@@ -340,11 +340,11 @@ async def simple_explore(
             return results
         except Exception as e:
             logger.error("Fallback also failed: %s", e)
-            raise Exception(f"Exploration failed: {str(ve)}") from e
+            raise RuntimeError(f"Exploration failed: {str(ve)}") from e
 
     except Exception as e:
         logger.error("Error in simple explore: %s", e)
-        raise Exception(f"Exploration failed: {e}") from e
+        raise RuntimeError(f"Exploration failed: {e}") from e
 
 
 @mcp.tool()
@@ -536,11 +536,11 @@ async def continue_explore(
             return results
         except Exception as e:
             logger.error("Fallback also failed: %s", e)
-            raise Exception(f"Continue exploration failed: {str(ve)}") from e
+            raise RuntimeError(f"Continue exploration failed: {str(ve)}") from e
 
     except Exception as e:
         logger.error("Error in continue explore: %s", e)
-        raise Exception(f"Continue exploration failed: {e}") from e
+        raise RuntimeError(f"Continue exploration failed: {e}") from e
 
 
 @mcp.tool()
@@ -572,7 +572,7 @@ async def get_object_details(
 
     except Exception as e:
         logger.error("API error retrieving object %s: %s", object_id, e)
-        raise Exception(f"Failed to retrieve object: {e}") from e
+        raise RuntimeError(f"Failed to retrieve object: {e}") from e
 
 
 @mcp.tool()
@@ -597,7 +597,7 @@ async def get_smithsonian_units(
 
     except Exception as e:
         logger.error("Error retrieving Smithsonian units: %s", str(e))
-        raise Exception(f"Failed to retrieve units: {str(e)}") from e
+        raise RuntimeError(f"Failed to retrieve units: {str(e)}") from e
 
 
 @mcp.tool()
@@ -621,7 +621,7 @@ async def get_collection_statistics(
 
     except Exception as e:
         logger.error("Error retrieving collection statistics: %s", str(e))
-        raise Exception(f"Failed to retrieve statistics: {str(e)}") from e
+        raise RuntimeError(f"Failed to retrieve statistics: {str(e)}") from e
 
 
 @mcp.tool()
@@ -688,7 +688,7 @@ async def search_by_unit(
 
     except Exception as e:
         logger.error("Unexpected error during search by unit: %s", str(e))
-        raise Exception(f"Search by unit failed: {str(e)}") from e
+        raise RuntimeError(f"Search by unit failed: {str(e)}") from e
 
 
 @mcp.tool()
@@ -762,7 +762,7 @@ async def get_objects_on_view(
 
     except Exception as e:
         logger.error("API error during on-view search: %s", e)
-        raise Exception(f"On-view search failed: {e}") from e
+        raise RuntimeError(f"On-view search failed: {e}") from e
 
 
 @mcp.tool()
@@ -795,7 +795,7 @@ async def check_object_on_view(
 
     except Exception as e:
         logger.error("API error checking object %s: %s", object_id, e)
-        raise Exception(f"Failed to check object status: {e}") from e
+        raise RuntimeError(f"Failed to check object status: {e}") from e
 
 
 @mcp.tool()
@@ -914,4 +914,4 @@ async def find_on_view_items(
 
     except Exception as e:
         logger.error("Error finding on-view items: %s", e)
-        raise Exception(f"Failed to find on-view items: {e}") from e
+        raise RuntimeError(f"Failed to find on-view items: {e}") from e
