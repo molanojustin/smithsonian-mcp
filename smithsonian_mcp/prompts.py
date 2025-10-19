@@ -29,7 +29,8 @@ I need approximately {size_guideline} objects. Please:\n\n
 6. Note any objects that could serve as highlights or centerpieces\n
 7. Consider educational value appropriate for the target audience\n
 8. Identify objects that are CC0 licensed for marketing materials\n\n
-Provide detailed information about key objects and explain why they would be effective for this exhibition concept."""
+Provide detailed information about key objects and explain why they 
+would be effective for this exhibition concept."""
 
     return [base.Message(role="user", content=content)]
 

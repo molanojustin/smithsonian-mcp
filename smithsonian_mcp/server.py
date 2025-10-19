@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:  # pylint: disable=unused-argument
     """Manage server lifecycle with API client initialization."""
-    global _global_api_client
+    global _global_api_client # pylint: disable=global-variable-undefined
     logger.info("Initializing Smithsonian MCP Server...")
 
     # Validate configuration

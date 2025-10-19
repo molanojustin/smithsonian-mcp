@@ -293,7 +293,9 @@ async def simple_explore(
                     len(type_objects),
                     max(1, samples_per_museum // max(len(type_groups), 2)),
                 )
-                collected_objects.extend(museum_sample[:samples_per_museum])
+                museum_sample.extend(type_objects[:samples_from_type])
+
+            collected_objects.extend(museum_sample)
 
         # Fill remaining slots with additional diverse objects
         if len(collected_objects) < max_samples:
@@ -486,7 +488,9 @@ async def continue_explore(
 
                     museum_sample = []
                     for _, type_objects in type_groups.items():
-                        museum_sample.extend(type_objects[:max(1, samples_per_museum // max(len(type_groups), 2))])
+                        museum_sample.extend(
+                            type_objects[:max(1, samples_per_museum // max(len(type_groups), 2))]
+                        )
                     collected_objects.extend(museum_sample[:samples_per_museum])
 
                 # Fill remaining
