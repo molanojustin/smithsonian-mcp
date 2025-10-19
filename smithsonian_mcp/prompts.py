@@ -4,6 +4,7 @@ Prompt templates for MCP tools.
 Keep prompt text and message construction centralized so `server.py` stays focused
 on tool logic.
 """
+
 from typing import List, Optional
 
 from mcp.server.fastmcp.prompts import base

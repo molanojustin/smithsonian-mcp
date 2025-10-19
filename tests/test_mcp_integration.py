@@ -57,16 +57,18 @@ class TestMCPProtocolAdherence:
 
             # Verify tool has proper signature
             sig = inspect.signature(actual_func)
-            assert 'ctx' in sig.parameters, f"Tool {tool_name} missing ctx parameter"
-            assert sig.parameters['ctx'].default is None, f"Tool {tool_name} ctx parameter should default to None"
+            assert "ctx" in sig.parameters, f"Tool {tool_name} missing ctx parameter"
+            assert (
+                sig.parameters["ctx"].default is None
+            ), f"Tool {tool_name} ctx parameter should default to None"
 
     @pytest.mark.asyncio
     async def test_tool_return_types(self):
         """Test that tools return expected types."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import tools as tools_module
@@ -82,7 +84,9 @@ class TestMCPProtocolAdherence:
                 )
 
                 result = await tools_module.search_collections.fn(query="test")
-                assert isinstance(result, SearchResult), "search_collections should return SearchResult"
+                assert isinstance(
+                    result, SearchResult
+                ), "search_collections should return SearchResult"
 
                 # Test get_smithsonian_units returns list
                 mock_client_instance.get_units.return_value = [
@@ -90,20 +94,26 @@ class TestMCPProtocolAdherence:
                     SmithsonianUnit(code="NMNH", name="Natural History Museum"),
                 ]
                 result = await tools_module.get_smithsonian_units.fn()
-                assert isinstance(result, list), "get_smithsonian_units should return list"
+                assert isinstance(
+                    result, list
+                ), "get_smithsonian_units should return list"
 
                 # Test get_collection_statistics returns CollectionStats
-                mock_client_instance.get_collection_stats.return_value = CollectionStats(
-                    total_objects=1000,
-                    total_digitized=500,
-                    total_cc0=200,
-                    total_with_images=400,
-                    total_with_3d=50,
-                    last_updated="2024-01-01",
-                    units=[],
+                mock_client_instance.get_collection_stats.return_value = (
+                    CollectionStats(
+                        total_objects=1000,
+                        total_digitized=500,
+                        total_cc0=200,
+                        total_with_images=400,
+                        total_with_3d=50,
+                        last_updated="2024-01-01",
+                        units=[],
+                    )
                 )
                 result = await tools_module.get_collection_statistics.fn()
-                assert isinstance(result, CollectionStats), "get_collection_statistics should return CollectionStats"
+                assert isinstance(
+                    result, CollectionStats
+                ), "get_collection_statistics should return CollectionStats"
 
 
 class TestEndToEndMCPWorkflows:
@@ -114,11 +124,14 @@ class TestEndToEndMCPWorkflows:
         """Test complete discovery workflow: explore -> search -> details -> context."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
-                from smithsonian_mcp import tools as tools_module, resources as resources_module
+                from smithsonian_mcp import (
+                    tools as tools_module,
+                    resources as resources_module,
+                )
 
                 # Step 1: Simple exploration
                 mock_client_instance.search_collections.return_value = SearchResult(
@@ -152,11 +165,15 @@ class TestEndToEndMCPWorkflows:
                     images=[{"url": "http://example.com/image.jpg"}],
                 )
 
-                detail_result = await tools_module.get_object_details.fn(object_id=object_id)
+                detail_result = await tools_module.get_object_details.fn(
+                    object_id=object_id
+                )
                 assert detail_result.id == object_id
 
                 # Step 3: Get object context
-                context_result = await resources_module.get_object_context.fn(object_id=object_id)
+                context_result = await resources_module.get_object_context.fn(
+                    object_id=object_id
+                )
                 assert "Detailed Test Object" in context_result
                 assert "Images: 1 available" in context_result
 
@@ -165,11 +182,14 @@ class TestEndToEndMCPWorkflows:
         """Test exhibition planning workflow: units -> on-view -> search -> context."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
-                from smithsonian_mcp import tools as tools_module, resources as resources_module
+                from smithsonian_mcp import (
+                    tools as tools_module,
+                    resources as resources_module,
+                )
 
                 # Step 1: Get available museums
                 mock_client_instance.get_units.return_value = [
@@ -198,12 +218,16 @@ class TestEndToEndMCPWorkflows:
                     next_offset=None,
                 )
 
-                on_view_result = await tools_module.get_objects_on_view.fn(unit_code="NMAH")
+                on_view_result = await tools_module.get_objects_on_view.fn(
+                    unit_code="NMAH"
+                )
                 assert on_view_result.objects
                 assert all(obj.is_on_view for obj in on_view_result.objects)
 
                 # Step 3: Get on-view context
-                context_result = await resources_module.get_on_view_context.fn(unit_code="NMAH")
+                context_result = await resources_module.get_on_view_context.fn(
+                    unit_code="NMAH"
+                )
                 assert "Currently on exhibit" in context_result
 
     @pytest.mark.asyncio
@@ -211,8 +235,8 @@ class TestEndToEndMCPWorkflows:
         """Test research workflow with pagination: search -> continue -> details."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import tools as tools_module
@@ -223,7 +247,9 @@ class TestEndToEndMCPWorkflows:
                 # Mock first batch of results
                 mock_client_instance.search_collections.return_value = SearchResult(
                     objects=[
-                        SmithsonianObject(id=f"obj-{i}", title=f"Object {i}", unit_code="NMNH")
+                        SmithsonianObject(
+                            id=f"obj-{i}", title=f"Object {i}", unit_code="NMNH"
+                        )
                         for i in range(5)
                     ],
                     total_count=20,
@@ -233,14 +259,18 @@ class TestEndToEndMCPWorkflows:
                     next_offset=5,
                 )
 
-                first_result = await tools_module.simple_explore.fn(topic="fossils", max_samples=5)
+                first_result = await tools_module.simple_explore.fn(
+                    topic="fossils", max_samples=5
+                )
                 assert len(first_result.objects) == 5
                 seen_ids.extend([obj.id for obj in first_result.objects])
 
                 # Continue exploration with deduplication
                 mock_client_instance.search_collections.return_value = SearchResult(
                     objects=[
-                        SmithsonianObject(id=f"obj-{i+10}", title=f"Object {i+10}", unit_code="NMNH")
+                        SmithsonianObject(
+                            id=f"obj-{i+10}", title=f"Object {i+10}", unit_code="NMNH"
+                        )
                         for i in range(5)
                     ],
                     total_count=20,
@@ -251,14 +281,14 @@ class TestEndToEndMCPWorkflows:
                 )
 
                 continue_result = await tools_module.continue_explore.fn(
-                    topic="fossils",
-                    previously_seen_ids=seen_ids,
-                    max_samples=5
+                    topic="fossils", previously_seen_ids=seen_ids, max_samples=5
                 )
 
                 # Verify no duplicates
                 new_ids = [obj.id for obj in continue_result.objects]
-                assert not any(obj_id in seen_ids for obj_id in new_ids), "Continue explore should not return duplicate objects"
+                assert not any(
+                    obj_id in seen_ids for obj_id in new_ids
+                ), "Continue explore should not return duplicate objects"
 
 
 class TestCrossToolDependencies:
@@ -269,8 +299,8 @@ class TestCrossToolDependencies:
         """Test that search results can be used with get_object_details."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import tools as tools_module
@@ -291,7 +321,9 @@ class TestCrossToolDependencies:
                     next_offset=None,
                 )
 
-                search_result = await tools_module.search_collections.fn(query="technology")
+                search_result = await tools_module.search_collections.fn(
+                    query="technology"
+                )
                 assert search_result.objects
 
                 # Get details for search result object
@@ -303,7 +335,9 @@ class TestCrossToolDependencies:
                     images=[{"url": "http://example.com/image.jpg"}],
                 )
 
-                detail_result = await tools_module.get_object_details.fn(object_id="interconnected-123")
+                detail_result = await tools_module.get_object_details.fn(
+                    object_id="interconnected-123"
+                )
                 assert detail_result.id == "interconnected-123"
                 assert "detailed description" in detail_result.description
 
@@ -312,15 +346,17 @@ class TestCrossToolDependencies:
         """Test integration between get_smithsonian_units and search_by_unit."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import tools as tools_module
 
                 # Get units first
                 mock_client_instance.get_units.return_value = [
-                    SmithsonianUnit(code="SAAM", name="Smithsonian American Art Museum"),
+                    SmithsonianUnit(
+                        code="SAAM", name="Smithsonian American Art Museum"
+                    ),
                     SmithsonianUnit(code="NPG", name="National Portrait Gallery"),
                 ]
 
@@ -344,25 +380,33 @@ class TestCrossToolDependencies:
                     next_offset=None,
                 )
 
-                unit_search_result = await tools_module.search_by_unit.fn(unit_code="SAAM", query="painting")
+                unit_search_result = await tools_module.search_by_unit.fn(
+                    unit_code="SAAM", query="painting"
+                )
                 assert unit_search_result.objects
-                assert all(obj.unit_code == "SAAM" for obj in unit_search_result.objects)
+                assert all(
+                    obj.unit_code == "SAAM" for obj in unit_search_result.objects
+                )
 
     @pytest.mark.asyncio
     async def test_on_view_search_reliability(self):
         """Test that find_on_view_items provides more reliable results than basic on_view filter."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import tools as tools_module
 
                 # Mock reliable local filtering results
                 mock_reliable_objects = [
-                    SmithsonianObject(id="reliable-1", title="Reliable On-View Item", is_on_view=True),
-                    SmithsonianObject(id="reliable-2", title="Another On-View Item", is_on_view=True),
+                    SmithsonianObject(
+                        id="reliable-1", title="Reliable On-View Item", is_on_view=True
+                    ),
+                    SmithsonianObject(
+                        id="reliable-2", title="Another On-View Item", is_on_view=True
+                    ),
                 ]
 
                 mock_client_instance.search_collections.return_value = SearchResult(
@@ -375,7 +419,9 @@ class TestCrossToolDependencies:
                 )
 
                 # Test find_on_view_items (reliable approach)
-                reliable_result = await tools_module.find_on_view_items.fn(query="exhibition")
+                reliable_result = await tools_module.find_on_view_items.fn(
+                    query="exhibition"
+                )
                 assert all(obj.is_on_view for obj in reliable_result.objects)
                 assert len(reliable_result.objects) == 2
 
@@ -388,8 +434,8 @@ class TestErrorHandlingAndEdgeCases:
         """Test handling of empty search results across tools."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import tools as tools_module
@@ -406,11 +452,15 @@ class TestErrorHandlingAndEdgeCases:
                 mock_client_instance.search_collections.return_value = empty_result
 
                 # Test various tools with empty results
-                search_result = await tools_module.search_collections.fn(query="nonexistenttopic12345")
+                search_result = await tools_module.search_collections.fn(
+                    query="nonexistenttopic12345"
+                )
                 assert search_result.objects == []
                 assert search_result.total_count == 0
 
-                explore_result = await tools_module.simple_explore.fn(topic="nonexistenttopic12345")
+                explore_result = await tools_module.simple_explore.fn(
+                    topic="nonexistenttopic12345"
+                )
                 assert explore_result.objects == []
 
                 on_view_result = await tools_module.get_objects_on_view.fn()
@@ -421,19 +471,26 @@ class TestErrorHandlingAndEdgeCases:
         """Test handling of invalid object IDs."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
-                from smithsonian_mcp import tools as tools_module, resources as resources_module
+                from smithsonian_mcp import (
+                    tools as tools_module,
+                    resources as resources_module,
+                )
 
                 # Mock not found result
                 mock_client_instance.get_object_by_id.return_value = None
 
-                result = await tools_module.get_object_details.fn(object_id="invalid-id-12345")
+                result = await tools_module.get_object_details.fn(
+                    object_id="invalid-id-12345"
+                )
                 assert result is None
 
-                context_result = await resources_module.get_object_context.fn(object_id="invalid-id-12345")
+                context_result = await resources_module.get_object_context.fn(
+                    object_id="invalid-id-12345"
+                )
                 assert "not found" in context_result.lower()
 
     @pytest.mark.asyncio
@@ -441,14 +498,16 @@ class TestErrorHandlingAndEdgeCases:
         """Test behavior under simulated rate limiting conditions."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import tools as tools_module
 
                 # Simulate rate limit error
-                mock_client_instance.search_collections.side_effect = Exception("Rate limit exceeded")
+                mock_client_instance.search_collections.side_effect = Exception(
+                    "Rate limit exceeded"
+                )
 
                 with pytest.raises(Exception) as exc_info:
                     await tools_module.search_collections.fn(query="test")
@@ -463,8 +522,8 @@ class TestMCPContextTools:
         """Test that context tools return properly formatted strings."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import resources as resources_module
@@ -485,17 +544,23 @@ class TestMCPContextTools:
                     has_more=False,
                     next_offset=None,
                 )
-                mock_client_instance.search_collections.return_value = mock_search_result
+                mock_client_instance.search_collections.return_value = (
+                    mock_search_result
+                )
 
                 # Test search context formatting
-                search_context = await resources_module.get_search_context.fn(query="test")
+                search_context = await resources_module.get_search_context.fn(
+                    query="test"
+                )
                 assert "Search Results for 'test'" in search_context
                 assert "Context Test Object" in search_context
                 assert "Test Museum" in search_context
 
                 # Test units context formatting
                 mock_units = [
-                    SmithsonianUnit(code="TEST", name="Test Museum", description="A test museum"),
+                    SmithsonianUnit(
+                        code="TEST", name="Test Museum", description="A test museum"
+                    ),
                 ]
                 mock_client_instance.get_units.return_value = mock_units
 
@@ -507,8 +572,8 @@ class TestMCPContextTools:
         """Test that on_view_context properly filters and formats on-view objects."""
         mock_client_instance = AsyncMock(spec=SmithsonianAPIClient)
 
-        with patch('smithsonian_mcp.context._global_api_client', None):
-            with patch('smithsonian_mcp.context.create_client') as mock_create_client:
+        with patch("smithsonian_mcp.context._global_api_client", None):
+            with patch("smithsonian_mcp.context.create_client") as mock_create_client:
                 mock_create_client.return_value = mock_client_instance
 
                 from smithsonian_mcp import resources as resources_module

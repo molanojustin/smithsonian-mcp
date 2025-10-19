@@ -134,8 +134,7 @@ async def get_on_view_context(
         filters = CollectionSearchFilter(
             query="*",
             limit=min(
-                limit * 5,
-                1000
+                limit * 5, 1000
             ),  # Search more broadly to get verified on-view items
             unit_code=unit_code,
             on_view=None,  # Don't use unreliable API filter

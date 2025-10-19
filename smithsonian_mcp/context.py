@@ -24,10 +24,12 @@ class ServerContext:
 
 
 async def get_api_client(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,  # pylint: disable=unused-argument
+    ctx: Optional[ # pylint: disable=unused-argument
+        Context[ServerSession, ServerContext]
+    ] = None,
 ) -> SmithsonianAPIClient:
     """Get API client from global instance for mcpo compatibility."""
-    global _global_api_client # pylint: disable=global-statement
+    global _global_api_client  # pylint: disable=global-statement
 
     # Always use global client to avoid context access issues
     # This works for both normal MCP and mcpo scenarios

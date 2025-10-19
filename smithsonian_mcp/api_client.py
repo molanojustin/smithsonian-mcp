@@ -411,7 +411,9 @@ class SmithsonianAPIClient:
                 obj = self._parse_object_data(row)
                 objects.append(obj)
             except APIError as e:
-                logger.warning("Failed to parse object data for row %s: %s", row.get("id"), e)
+                logger.warning(
+                    "Failed to parse object data for row %s: %s", row.get("id"), e
+                )
                 # Debug: print the problematic row structure
                 logger.debug("Row data: %s", row)
                 continue
@@ -447,7 +449,9 @@ class SmithsonianAPIClient:
             # The content endpoint response is nested under 'response'
             if "response" in response_data:
                 return self._parse_object_data(response_data["response"])
-            logger.warning("Malformed response for object %s: %s", object_id, response_data)
+            logger.warning(
+                "Malformed response for object %s: %s", object_id, response_data
+            )
             return None
         except APIError as e:
             if e.error == "not_found" or e.status_code == 404:
@@ -532,7 +536,9 @@ class SmithsonianAPIClient:
 
         return known_units
 
-    async def get_collection_stats(self) -> CollectionStats: # pylint: disable=too-many-locals
+    async def get_collection_stats( # pylint: disable=too-many-locals
+        self,
+    ) -> CollectionStats:
         """
         Get overall collection statistics.
 

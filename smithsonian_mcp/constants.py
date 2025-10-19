@@ -1,6 +1,7 @@
 """
 Constants and static mappings used by the MCP server.
 """
+
 from typing import Dict, List
 
 MUSEUM_MAP: Dict[str, str] = {

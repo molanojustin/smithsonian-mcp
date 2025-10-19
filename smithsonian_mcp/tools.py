@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
-async def search_collections( #pylint: disable=too-many-arguments, too-many-locals, too-many-positional-arguments
+async def search_collections(  # pylint: disable=too-many-arguments, too-many-locals, too-many-positional-arguments
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     query: str = "",
     unit_code: Optional[str] = None,
@@ -103,9 +103,7 @@ async def search_collections( #pylint: disable=too-many-arguments, too-many-loca
                 results.total_count,
                 limit,
             )
-            logger.warning(
-                "Use find_on_view_items for comprehensive on-view searches."
-            )
+            logger.warning("Use find_on_view_items for comprehensive on-view searches.")
         else:
             logger.info(
                 "Search completed: '%s' returned %d of %d results",
@@ -122,7 +120,7 @@ async def search_collections( #pylint: disable=too-many-arguments, too-many-loca
 
 
 @mcp.tool()
-async def simple_explore( #pylint: disable=too-many-locals, too-many-branches, too-many-statements
+async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     topic: str = "",
     museum: Optional[str] = None,
@@ -351,7 +349,7 @@ async def simple_explore( #pylint: disable=too-many-locals, too-many-branches, t
 
 
 @mcp.tool()
-async def continue_explore( #pylint: disable=too-many-locals, too-many-branches, too-many-statements
+async def continue_explore(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     topic: str = "",
     previously_seen_ids: Optional[List[str]] = None,
@@ -373,7 +371,7 @@ async def continue_explore( #pylint: disable=too-many-locals, too-many-branches,
     Returns:
         More diverse samples from the same topic, excluding objects you've already seen
     """
-    try: # pylint: disable=too-many-nested-blocks
+    try:  # pylint: disable=too-many-nested-blocks
         # Reuse the same exploration logic but with seen items filtered out
         if not topic or topic.strip() == "":
             raise ValueError("Search topic cannot be empty")
@@ -489,7 +487,9 @@ async def continue_explore( #pylint: disable=too-many-locals, too-many-branches,
                     museum_sample = []
                     for _, type_objects in type_groups.items():
                         museum_sample.extend(
-                            type_objects[:max(1, samples_per_museum // max(len(type_groups), 2))]
+                            type_objects[
+                                : max(1, samples_per_museum // max(len(type_groups), 2))
+                            ]
                         )
                     collected_objects.extend(museum_sample[:samples_per_museum])
 

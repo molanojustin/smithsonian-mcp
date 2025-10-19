@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:  # pylint: disable=unused-argument
+async def server_lifespan(
+    server: FastMCP, # pylint: disable=unused-argument
+) -> AsyncIterator[ServerContext]:
     """Manage server lifecycle with API client initialization."""
-    global _global_api_client # pylint: disable=global-variable-undefined
+    global _global_api_client  # pylint: disable=global-variable-undefined
     logger.info("Initializing Smithsonian MCP Server...")
 
     # Validate configuration
@@ -36,7 +38,9 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:  # p
     _global_api_client = api_client  # Set global reference for mcpo compatibility
 
     try:
-        logger.info("Server initialized: %s v%s", Config.SERVER_NAME, Config.SERVER_VERSION)
+        logger.info(
+            "Server initialized: %s v%s", Config.SERVER_NAME, Config.SERVER_VERSION
+        )
         yield ServerContext(api_client=api_client)
     finally:
         logger.info("Shutting down Smithsonian MCP Server...")
