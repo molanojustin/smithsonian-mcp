@@ -13,13 +13,13 @@ from fastmcp import FastMCP
 
 from .config import Config
 from .api_client import create_client
-from .context import ServerContext, _global_api_client
+from .context import ServerContext
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
+async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:  # pylint: disable=unused-argument
     """Manage server lifecycle with API client initialization."""
     global _global_api_client
     logger.info("Initializing Smithsonian MCP Server...")

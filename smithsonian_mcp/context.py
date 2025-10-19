@@ -24,7 +24,7 @@ class ServerContext:
 
 
 async def get_api_client(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,  # pylint: disable=unused-argument
 ) -> SmithsonianAPIClient:
     """Get API client from global instance for mcpo compatibility."""
     global _global_api_client

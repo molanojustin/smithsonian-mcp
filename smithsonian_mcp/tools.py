@@ -71,11 +71,6 @@ async def search_collections(
         beyond the returned set.
     """
     try:
-        # Validate inputs
-        if limit > 1000:
-            limit = 1000
-        if limit < 1:
-            limit = 1
 
         # Create search filter
         filters = CollectionSearchFilter(
@@ -99,7 +94,7 @@ async def search_collections(
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
-        if results.total_count > limit and limit >= 1000:
+        if 1000 <= limit < results.total_count:
             logger.warning(
                 "Search completed: '%s' returned %d of %d results; only first %d returned.",
                 query,
@@ -170,6 +165,23 @@ async def simple_explore(
                 if museum_upper in VALID_MUSEUM_CODES:
                     museum_code = museum_upper
 
+        filters = CollectionSearchFilter(
+            query=topic,
+            unit_code=museum_code,
+            limit=min(max_samples * 2, 400),
+            offset=0,
+            object_type=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+            on_view=None,
+            date_start=None,
+            date_end=None,
+        )
+
         api_client = await get_api_client(ctx)
 
         # Strategy 1: If specific museum requested, get diverse samples from there
@@ -225,52 +237,35 @@ async def simple_explore(
 
             return SearchResult(
                 objects=collected_objects,
-                total_count=max(len(results.objects), len(collected_objects)),
+                total_count=max(results.total_count, len(collected_objects)),
                 returned_count=len(collected_objects),
                 offset=0,
                 has_more=len(results.objects) > max_samples,
                 next_offset=max_samples if len(results.objects) > max_samples else None,
             )
 
-        else:
-            # Strategy 2: Sample across all museums for maximum diversity
-            # Get broader results first
-            filters = CollectionSearchFilter(
-                query=topic,
-                unit_code=None,
-                limit=min(max_samples * 3, 600),
+        # Strategy 2: Sample across all museums for maximum diversity
+        # Get broader results first
+        broad_results = await api_client.search_collections(filters)
+
+        if not broad_results.objects:
+            # No results at all
+            return SearchResult(
+                objects=[],
+                total_count=0,
+                returned_count=0,
                 offset=0,
-                object_type=None,
-                maker=None,
-                material=None,
-                topic=None,
-                has_images=None,
-                has_3d=None,
-                is_cc0=None,
-                on_view=None,
-                date_start=None,
-                date_end=None,
+                has_more=False,
+                next_offset=None,
             )
-            broad_results = await api_client.search_collections(filters)
 
-            if not broad_results.objects:
-                # No results at all
-                return SearchResult(
-                    objects=[],
-                    total_count=0,
-                    returned_count=0,
-                    offset=0,
-                    has_more=False,
-                    next_offset=None,
-                )
-
-            # Group by museum
-            by_museum = {}
-            for obj in broad_results.objects:
-                museum_key = obj.unit_code or "unknown"
-                if museum_key not in by_museum:
-                    by_museum[museum_key] = []
-                by_museum[museum_key].append(obj)
+        # Group by museum
+        by_museum = {}
+        for obj in broad_results.objects:
+            museum_key = obj.unit_code or "unknown"
+            if museum_key not in by_museum:
+                by_museum[museum_key] = []
+            by_museum[museum_key].append(obj)
 
             # Sample from each museum to show variety
             collected_objects = []
@@ -657,12 +652,7 @@ async def search_by_unit(
     """
     try:
         # Validate inputs
-        if not unit_code or unit_code.strip() == "":
-            raise ValueError("Unit code cannot be empty")
-        if limit > 1000:
-            limit = 1000
-        if limit < 1:
-            limit = 1
+        limit = max(1, min(limit, 1000))
 
         # Create search filter
         filters = CollectionSearchFilter(
@@ -727,10 +717,7 @@ async def get_objects_on_view(
     """
     try:
         # Validate inputs
-        if limit > 1000:
-            limit = 1000
-        if limit < 1:
-            limit = 1
+        limit = max(1, min(limit, 1000))
 
         # Use the same reliable approach as find_on_view_items: search broadly then filter locally
         filters = CollectionSearchFilter(
@@ -848,10 +835,7 @@ async def find_on_view_items(
     try:
         if not query or query.strip() == "":
             raise ValueError("Search query cannot be empty")
-        if max_results > 10000:
-            max_results = 10000
-        if max_results < 1:
-            max_results = 1
+        max_results = max(1, min(max_results, 10000))
 
         logger.info(
             "Finding on-view items for '%s' at %s (searching up to %d items)",

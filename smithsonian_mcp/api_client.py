@@ -215,7 +215,7 @@ class SmithsonianAPIClient:
         first_item = on_exhibit[0]
         if isinstance(first_item, str):
             return first_item == "Yes"
-        elif isinstance(first_item, dict):
+        if isinstance(first_item, dict):
             return first_item.get("content") == "Yes"
         return False
 
@@ -242,9 +242,9 @@ class SmithsonianAPIClient:
             room = exhibitions[0].get("room", "")
             if building and room:
                 return f"{building}, {room}"
-            elif building:
+            if building:
                 return building
-            elif room:
+            if room:
                 return room
         return None
 
@@ -447,9 +447,8 @@ class SmithsonianAPIClient:
             # The content endpoint response is nested under 'response'
             if "response" in response_data:
                 return self._parse_object_data(response_data["response"])
-            else:
-                logger.warning("Malformed response for object %s: %s", object_id, response_data)
-                return None
+            logger.warning("Malformed response for object %s: %s", object_id, response_data)
+            return None
         except APIError as e:
             if e.error == "not_found" or e.status_code == 404:
                 logger.info("Object %s not found in Smithsonian collection", object_id)

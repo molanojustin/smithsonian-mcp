@@ -53,8 +53,8 @@ async def get_search_context(
         for obj in results.objects:
             output.append(f"• {obj.title}")
             if obj.unit_name:
-                output.append(f"  Museum: %s" % obj.unit_name)
-            output.append(f"  ID: %s" % obj.id)
+                output.append(f"  Museum: {obj.unit_name}")
+            output.append(f"  ID: {obj.id}")
             output.append("")
 
         return "\n".join(output)
