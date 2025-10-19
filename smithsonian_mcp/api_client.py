@@ -185,14 +185,14 @@ class SmithsonianAPIClient:
                     message="Resource not found",
                     status_code=status_code,
                     details={"url": url},
-                )
+                ) from e
             logger.error(error_msg)
             raise APIError(
                 error="http_error",
                 message=error_msg,
                 status_code=status_code,
                 details={"url": url},
-            )
+            ) from e
         except Exception as e:
             error_msg = f"Request failed: {str(e)}"
             logger.error(error_msg)
@@ -202,7 +202,7 @@ class SmithsonianAPIClient:
                 message=error_msg,
                 status_code=None,
                 details={"exception_type": type(e).__name__},
-            )
+            ) from e
 
     def _parse_on_view_status(self, indexed_structured: Dict[str, Any]) -> bool:
         """
@@ -256,9 +256,9 @@ class SmithsonianAPIClient:
         if isinstance(raw_data, str):
             try:
                 raw_data = json.loads(raw_data)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as exc:
                 logger.error("Failed to parse raw_data as JSON: %s", raw_data)
-                raise ValueError("raw_data is not valid JSON or dict")
+                raise ValueError("raw_data is not valid JSON or dict") from exc
 
         if not isinstance(raw_data, dict):
             logger.error("raw_data is not a dict or JSON string: %s", type(raw_data))
@@ -660,7 +660,7 @@ class SmithsonianAPIClient:
                     error="stats_failed",
                     message=f"Failed to retrieve collection statistics: {e}",
                     status_code=None,
-                )
+                ) from fallback_error
 
 
 # Utility function for creating client instance
