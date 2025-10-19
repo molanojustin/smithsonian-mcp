@@ -73,6 +73,7 @@ async def search_collections(
     try:
 
         # Create search filter
+        # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
             query=query,
             unit_code=unit_code,
@@ -165,6 +166,7 @@ async def simple_explore(
                 if museum_upper in VALID_MUSEUM_CODES:
                     museum_code = museum_upper
 
+        # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
             query=topic,
             unit_code=museum_code,
@@ -187,6 +189,7 @@ async def simple_explore(
         # Strategy 1: If specific museum requested, get diverse samples from there
         if museum_code:
             # Get a broader set first to sample from
+            # pylint: disable=duplicate-code
             filters = CollectionSearchFilter(
                 query=topic,
                 unit_code=museum_code,
@@ -267,53 +270,51 @@ async def simple_explore(
                 by_museum[museum_key] = []
             by_museum[museum_key].append(obj)
 
-            # Sample from each museum to show variety
-            collected_objects = []
-            samples_per_museum = max(1, max_samples // max(len(by_museum), 1))
+        # Sample from each museum to show variety
+        collected_objects = []
+        samples_per_museum = max(1, max_samples // max(len(by_museum), 1))
 
-            for _, objects in by_museum.items():
-                if len(collected_objects) >= max_samples:
-                    break
+        for _, objects in by_museum.items():
+            if len(collected_objects) >= max_samples:
+                break
 
-                # Within each museum, try to get variety in object types
-                type_groups = {}
-                for obj in objects[:50]:  # Limit per museum for processing
-                    obj_type = obj.object_type or "unknown"
-                    if obj_type not in type_groups:
-                        type_groups[obj_type] = []
-                    type_groups[obj_type].append(obj)
+            # Within each museum, try to get variety in object types
+            type_groups = {}
+            for obj in objects[:50]:  # Limit per museum for processing
+                obj_type = obj.object_type or "unknown"
+                if obj_type not in type_groups:
+                    type_groups[obj_type] = []
+                type_groups[obj_type].append(obj)
 
-                # Take 1-2 samples from each type in this museum
-                museum_sample = []
-                for obj_type, type_objects in type_groups.items():
-                    samples_from_type = min(
-                        len(type_objects),
-                        max(1, samples_per_museum // max(len(type_groups), 2)),
-                    )
-                    museum_sample.extend(type_objects[:samples_from_type])
-
+            # Take 1-2 samples from each type in this museum
+            museum_sample = []
+            for obj_type, type_objects in type_groups.items():
+                samples_from_type = min(
+                    len(type_objects),
+                    max(1, samples_per_museum // max(len(type_groups), 2)),
+                )
                 collected_objects.extend(museum_sample[:samples_per_museum])
 
-            # Fill remaining slots with additional diverse objects
-            if len(collected_objects) < max_samples:
-                additional_candidates = [
-                    obj for obj in broad_results.objects if obj not in collected_objects
-                ]
-                needed = max_samples - len(collected_objects)
-                collected_objects.extend(additional_candidates[:needed])
+        # Fill remaining slots with additional diverse objects
+        if len(collected_objects) < max_samples:
+            additional_candidates = [
+                obj for obj in broad_results.objects if obj not in collected_objects
+            ]
+            needed = max_samples - len(collected_objects)
+            collected_objects.extend(additional_candidates[:needed])
 
-            final_objects = collected_objects[:max_samples]
+        final_objects = collected_objects[:max_samples]
 
-            return SearchResult(
-                objects=final_objects,
-                total_count=broad_results.total_count,
-                returned_count=len(final_objects),
-                offset=0,
-                has_more=broad_results.total_count > max_samples,
-                next_offset=(
-                    max_samples if broad_results.total_count > max_samples else None
-                ),
-            )
+        return SearchResult(
+            objects=final_objects,
+            total_count=broad_results.total_count,
+            returned_count=len(final_objects),
+            offset=0,
+            has_more=broad_results.total_count > max_samples,
+            next_offset=(
+                max_samples if broad_results.total_count > max_samples else None
+            ),
+        )
 
     except ValueError as ve:
         logger.warning("Simple explore validation error: %s", ve)
@@ -398,6 +399,7 @@ async def continue_explore(
             min(max_samples * 4, 800) if museum_code else min(max_samples * 6, 1200)
         )
 
+        # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
             query=topic,
             unit_code=museum_code,
@@ -483,13 +485,8 @@ async def continue_explore(
                         type_groups[obj_type].append(obj)
 
                     museum_sample = []
-                    for obj_type, type_objects in type_groups.items():
-                        samples_from_type = min(
-                            len(type_objects),
-                            max(1, samples_per_museum // max(len(type_groups), 2)),
-                        )
-                        museum_sample.extend(type_objects[:samples_from_type])
-
+                    for _, type_objects in type_groups.items():
+                        museum_sample.extend(type_objects[:max(1, samples_per_museum // max(len(type_groups), 2))])
                     collected_objects.extend(museum_sample[:samples_per_museum])
 
                 # Fill remaining
@@ -655,6 +652,7 @@ async def search_by_unit(
         limit = max(1, min(limit, 1000))
 
         # Create search filter
+        # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
             query=query or "*",
             unit_code=unit_code,
@@ -720,6 +718,7 @@ async def get_objects_on_view(
         limit = max(1, min(limit, 1000))
 
         # Use the same reliable approach as find_on_view_items: search broadly then filter locally
+        # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
             query="*",
             unit_code=unit_code,
@@ -854,6 +853,7 @@ async def find_on_view_items(
         while offset < max_results:
             current_batch_size = min(batch_size, max_results - offset)
 
+            # pylint: disable=duplicate-code
             filters = CollectionSearchFilter(
                 query=query,
                 unit_code=unit_code,

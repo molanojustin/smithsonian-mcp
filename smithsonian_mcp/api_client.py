@@ -410,7 +410,7 @@ class SmithsonianAPIClient:
             try:
                 obj = self._parse_object_data(row)
                 objects.append(obj)
-            except Exception as e:
+            except APIError as e:
                 logger.warning("Failed to parse object data for row %s: %s", row.get("id"), e)
                 # Debug: print the problematic row structure
                 logger.debug("Row data: %s", row)
@@ -605,7 +605,7 @@ class SmithsonianAPIClient:
                 last_updated=datetime.now(),
             )
 
-        except Exception as e:
+        except APIError as e:
             logger.error("Failed to get collection stats from API: %s", e)
             # Fallback to basic search if stats endpoint fails
             try:

@@ -8,7 +8,7 @@ from mcp.server.session import ServerSession
 
 from .app import mcp
 from .context import ServerContext, get_api_client
-from .models import CollectionSearchFilter
+from .models import CollectionSearchFilter, APIError
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ async def get_search_context(
         limit: Maximum number of results to return (default: 10)
     """
     try:
+        # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
             query=query,
             limit=limit,
@@ -59,7 +60,7 @@ async def get_search_context(
 
         return "\n".join(output)
 
-    except Exception as e:
+    except (APIError, ValueError) as e:
         return f"Error searching collections: {str(e)}"
 
 
@@ -106,7 +107,7 @@ async def get_object_context(
 
         return "\n".join(output)
 
-    except Exception as e:
+    except (APIError, ValueError) as e:
         return f"Error retrieving object details: {str(e)}"
 
 
@@ -129,6 +130,7 @@ async def get_on_view_context(
     """
     try:
         # Use reliable approach: search broadly then filter locally
+        # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
             query="*",
             limit=min(
@@ -153,8 +155,10 @@ async def get_on_view_context(
         # Filter for verified on-view objects
         verified_on_view = [obj for obj in results.objects if obj.is_on_view][:limit]
 
-        unit_text = f" at {unit_code}" if unit_code else ""
-        output = [f"Objects Currently On View{unit_text}:\n"]
+        if unit_code:
+            output = [f"Objects Currently On View at {unit_code}:\n"]
+        else:
+            output = ["Objects Currently On View:\n"]
 
         if not verified_on_view:
             output.append("No objects are currently on view.")
@@ -167,12 +171,12 @@ async def get_on_view_context(
             if obj.object_type:
                 output.append(f"  Type: {obj.object_type}")
             output.append(f"  ID: {obj.id}")
-            output.append(f"  Status: Currently on exhibit ✓")
+            output.append("  Status: Currently on exhibit ✓")
             output.append("")
 
         return "\n".join(output)
 
-    except Exception as e:
+    except (APIError, ValueError) as e:
         return f"Error retrieving on-view objects: {str(e)}"
 
 
@@ -199,7 +203,7 @@ async def get_units_context(
 
         return "\n".join(output)
 
-    except Exception as e:
+    except (APIError, ValueError) as e:
         return f"Error retrieving units list: {str(e)}"
 
 
@@ -232,5 +236,5 @@ async def get_stats_context(
 
         return "\n".join(output)
 
-    except Exception as e:
+    except (APIError, ValueError) as e:
         return f"Error retrieving collection statistics: {str(e)}"
