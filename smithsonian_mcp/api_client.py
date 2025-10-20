@@ -99,8 +99,8 @@ class SmithsonianAPIClient:
             filter_queries.append(f'content_type:"{filters.object_type}"')
 
         if filters.maker:
-            # Assuming maker is part of the indexData
-            filter_queries.append(f'indexed_structured_data.name:"{filters.maker}"')
+            # Makers are indexed under indexedStructured.name in the public API
+            filter_queries.append(f'indexedStructured.name:"{filters.maker}"')
 
         if filters.topic:
             filter_queries.append(f'topic:"{filters.topic}"')

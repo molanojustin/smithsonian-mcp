@@ -183,6 +183,29 @@ class TestOnViewAPIClient:
         assert "fq" in params
         assert 'onPhysicalExhibit:"No"' in params["fq"]
 
+    def test_build_search_params_with_maker(self):
+        """Ensure maker filter maps to the indexedStructured.name facet."""
+        client = SmithsonianAPIClient(api_key="test_key")
+
+        filters = CollectionSearchFilter(
+            query=None,
+            on_view=None,
+            unit_code=None,
+            object_type=None,
+            date_start=None,
+            date_end=None,
+            maker="Alma Thomas",
+            material=None,
+            topic=None,
+            has_images=None,
+            has_3d=None,
+            is_cc0=None,
+        )
+
+        params = client._build_search_params(filters)
+
+        assert params["fq"] == 'indexedStructured.name:"Alma Thomas"'
+
     def test_build_search_params_on_view_with_unit(self):
         """Test building search params with on_view and unit_code."""
         client = SmithsonianAPIClient(api_key="test_key")

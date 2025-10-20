@@ -18,6 +18,15 @@ This guide covers common issues and solutions for the Smithsonian Open Access MC
 3. Copy the API key exactly as provided
 4. Add it to your `.env` file without quotes or spaces
 
+### Search Filter Errors
+
+**"HTTP 400 error ... indexed_structured_data.name"**
+
+- Older builds sent maker filters to a non-existent field (`indexed_structured_data.name`)
+- The Smithsonian API expects maker facets under `indexedStructured.name`
+- Upgrade to the latest server build so the corrected facet name is used automatically
+- Re-run your maker search; the API should now accept the corrected filter
+
 ### Service Startup Issues
 
 **"Service failed to start"**
