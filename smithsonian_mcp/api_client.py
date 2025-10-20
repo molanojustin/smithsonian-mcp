@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 import httpx
+from pydantic import HttpUrl
 
 from .config import Config
 from .models import (
@@ -40,14 +41,14 @@ class SmithsonianAPIClient:
         Initialize the API client.
 
         Args:
-            api_key: Optional API key. If not provided, uses Config.API_KEY
+            api_key: API key. If not provided, it will be read from `Config.API_KEY`.
         """
         self.api_key = api_key or Config.API_KEY
         self.base_url = BASE_URL
         self.session: Optional[httpx.AsyncClient] = None
 
         if not self.api_key:
-            logger.warning("No API key configured. Rate limits will be lower.")
+            raise ValueError("API key is required. Please provide one or set it in the config.")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -110,7 +111,7 @@ class SmithsonianAPIClient:
             filter_queries.append("online_media_type:Images")
 
         if filters.has_3d:
-            filter_queries.append("online_media_type:3D")
+            filter_queries.append("online_media_type:\"3D Models\"")
 
         if filters.is_cc0:
             filter_queries.append("usage_rights:CC0")
@@ -313,7 +314,7 @@ class SmithsonianAPIClient:
         return SmithsonianObject(
             id=obj_id,
             title=title,
-            url=None,  # raw_data.get("url") is an internal ID, not a URL
+            url=descriptive_non_repeating.get("record_link"),
             unit_code=unit_code,
             unit_name=(
                 indexed_structured.get("unit_name", [{}])[0].get("content")
@@ -473,140 +474,248 @@ class SmithsonianAPIClient:
                 code="NMNH",
                 name="National Museum of Natural History",
                 description="Natural history museum",
-                website=None,
+                website=HttpUrl("https://naturalhistory.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NPG",
                 name="National Portrait Gallery",
                 description="Portrait art museum",
-                website=None,
+                website=HttpUrl("https://npg.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="SAAM",
                 name="Smithsonian American Art Museum",
                 description="American art museum",
-                website=None,
+                website=HttpUrl("https://americanart.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="HMSG",
                 name="Hirshhorn Museum and Sculpture Garden",
                 description="Modern and contemporary art",
-                website=None,
+                website=HttpUrl("https://hirshhorn.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="FSG",
                 name="Freer and Sackler Galleries",
                 description="Asian art museum",
-                website=None,
+                website=HttpUrl("https://www.asia.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAfA",
                 name="National Museum of African Art",
                 description="African art museum",
-                website=None,
+                website=HttpUrl("https://africa.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAI",
                 name="National Museum of the American Indian",
                 description="Native American art and culture",
-                website=None,
+                website=HttpUrl("https://americanindian.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NASM",
                 name="National Air and Space Museum",
                 description="Air and space museum",
-                website=None,
+                website=HttpUrl("https://airandspace.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAH",
                 name="National Museum of American History",
                 description="American history museum",
-                website=None,
+                website=HttpUrl("https://americanhistory.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="SAAM",
+                name="Smithsonian American Art Museum",
+                description="American art museum",
+                website=HttpUrl("https://americanart.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="CHNDM",
+                name="Cooper Hewitt, Smithsonian Design Museum",
+                description="Design museum",
+                website=HttpUrl("https://cooperhewitt.org/"),
+                location="New York, NY",
+            ),
+            SmithsonianUnit(
+                code="NMAAHC",
+                name="National Museum of African American History and Culture",
+                description="African American history and culture museum",
+                website=HttpUrl("https://nmaahc.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="SIA",
+                name="Smithsonian Institution Archives",
+                description="Archives of the Smithsonian Institution",
+                website=HttpUrl("https://siarchives.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="NPM",
+                name="National Postal Museum",
+                description="Postal history museum",
+                website=HttpUrl("https://postalmuseum.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="NZP",
+                name="National Zoo and Conservation Biology Institute",
+                description="National Zoo",
+                website=HttpUrl("https://nationalzoo.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="AAA",
+                name="Archives of American Art",
+                description="Archives of American Art",
+                website=HttpUrl("https://aaa.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="ACM",
+                name="Anacostia Community Museum",
+                description="Anacostia",
+                website=HttpUrl("https://anacostia.si.edu/"),
                 location="Washington, DC",
             ),
         ]
 
         return known_units
 
-    async def get_collection_stats( # pylint: disable=too-many-locals
-        self,
-    ) -> CollectionStats:
+    async def get_collection_stats(self) -> CollectionStats: # pylint: disable=too-many-locals
         """
-        Get overall collection statistics.
-
-        Returns:
-            Collection statistics
+        Get overall collection statistics, augmenting CC0 stats with search queries
+        for more comprehensive data.
         """
-
         try:
-            # Use the dedicated stats endpoint for accurate data
-            response = await self._make_request("stats")
-            stats_data = response.get("response", {})
-
+            # Get base stats (total objects, CC0 metrics) from the stats endpoint
+            stats_response = await self._make_request("stats")
+            stats_data = stats_response.get("response", {})
             total_objects = stats_data.get("total_objects", 0)
             metrics = stats_data.get("metrics", {})
-
             total_cc0 = metrics.get("CC0_records", 0)
-            total_with_cc0_media = metrics.get("CC0_records_with_CC0_media", 0)
-            total_cc0_media = metrics.get("CC0_media", 0)
 
-            logger.info(
-                "Stats from API - Total: %s, CC0: %s, CC0 Media: %s",
-                f"{total_objects:,}",
-                f"{total_cc0:,}",
-                f"{total_cc0_media:,}",
-            )
+            # Get more comprehensive stats via search
+            total_with_images = (
+                await self.search_collections(
+                    CollectionSearchFilter(
+                        query="*",
+                        limit=0,
+                        offset=0,
+                        unit_code=None,
+                        object_type=None,
+                        date_start=None,
+                        date_end=None,
+                        maker=None,
+                        material=None,
+                        topic=None,
+                        has_images=True,
+                        has_3d=None,
+                        is_cc0=None,
+                        on_view=None,
+                    )
+                )
+            ).total_count
+            total_with_3d = (
+                await self.search_collections(
+                    CollectionSearchFilter(
+                        query="*",
+                        limit=0,
+                        offset=0,
+                        unit_code=None,
+                        object_type=None,
+                        date_start=None,
+                        date_end=None,
+                        maker=None,
+                        material=None,
+                        topic=None,
+                        has_images=None,
+                        has_3d=True,
+                        is_cc0=None,
+                        on_view=None,
+                    )
+                )
+            ).total_count
 
-            # Build unit statistics from the API response
+            # Build unit statistics
             unit_stats = []
             units_data = stats_data.get("units", [])
-
-            # Get unit names from the units endpoint to match codes with names
-            units_info = await self.get_units()
-            unit_name_map = {unit.code: unit.name for unit in units_info}
+            unit_name_map = {unit.code: unit.name for unit in await self.get_units()}
 
             for unit_data in units_data:
                 unit_code = unit_data.get("unit", "")
-                unit_name = (
-                    unit_name_map.get(unit_code, unit_code)
-                    or unit_code
-                    or "Unknown Unit"
-                )
-                unit_total = unit_data.get("total_objects", 0)
                 unit_metrics = unit_data.get("metrics", {})
+                unit_with_images = (
+                    await self.search_collections(
+                        CollectionSearchFilter(
+                            query="*",
+                            limit=0,
+                            offset=0,
+                            unit_code=unit_code,
+                            object_type=None,
+                            date_start=None,
+                            date_end=None,
+                            maker=None,
+                            material=None,
+                            topic=None,
+                            has_images=True,
+                            has_3d=None,
+                            is_cc0=None,
+                            on_view=None,
+                        )
+                    )
+                ).total_count
+                unit_with_3d = (
+                    await self.search_collections(
+                        CollectionSearchFilter(
+                            query="*",
+                            limit=0,
+                            offset=0,
+                            unit_code=unit_code,
+                            object_type=None,
+                            date_start=None,
+                            date_end=None,
+                            maker=None,
+                            material=None,
+                            topic=None,
+                            has_images=None,
+                            has_3d=True,
+                            is_cc0=None,
+                            on_view=None,
+                        )
+                    )
+                ).total_count
 
                 unit_stats.append(
                     UnitStats(
                         unit_code=unit_code,
-                        unit_name=unit_name,
-                        total_objects=unit_total,
-                        digitized_objects=(
-                            unit_total // 2 if unit_total else None
-                        ),  # Estimate
+                        unit_name=unit_name_map.get(unit_code, unit_code)
+                        or "Unknown Unit",
+                        total_objects=unit_data.get("total_objects", 0),
+                        digitized_objects=unit_with_images,
                         cc0_objects=unit_metrics.get("CC0_records", 0),
-                        objects_with_images=unit_metrics.get(
-                            "CC0_records_with_CC0_media", 0
-                        ),
-                        objects_with_3d=None,  # Not available in stats
+                        objects_with_images=unit_with_images,
+                        objects_with_3d=unit_with_3d,
                     )
                 )
 
             return CollectionStats(
                 total_objects=total_objects,
-                total_digitized=(
-                    total_objects // 2 if total_objects else None
-                ),  # Estimate
+                total_digitized=total_with_images,
                 total_cc0=total_cc0,
-                total_with_images=total_with_cc0_media,  # CC0 media count
-                total_with_3d=None,  # Not available
+                total_with_images=total_with_images,
+                total_with_3d=total_with_3d,
                 units=unit_stats,
                 last_updated=datetime.now(),
             )
@@ -615,48 +724,189 @@ class SmithsonianAPIClient:
             logger.error("Failed to get collection stats from API: %s", e)
             # Fallback to basic search if stats endpoint fails
             try:
-                filter_dict = {
-                    "query": "*",
-                    "limit": 0,
-                    "unit_code": None,
-                    "object_type": None,
-                    "date_start": None,
-                    "date_end": None,
-                    "maker": None,
-                    "material": None,
-                    "topic": None,
-                    "has_images": None,
-                    "has_3d": None,
-                    "is_cc0": None,
-                    "offset": 0,
-                }
-                filters = CollectionSearchFilter(**filter_dict)
-                search_result = await self.search_collections(filters)
-                total_objects = search_result.total_count
+                total_objects = (
+                    await self.search_collections(
+                        CollectionSearchFilter(
+                            query="*",
+                            limit=0,
+                            offset=0,
+                            unit_code=None,
+                            object_type=None,
+                            date_start=None,
+                            date_end=None,
+                            maker=None,
+                            material=None,
+                            topic=None,
+                            has_images=None,
+                            has_3d=None,
+                            is_cc0=None,
+                            on_view=None,
+                        )
+                    )
+                ).total_count
+                total_with_images = (
+                    await self.search_collections(
+                        CollectionSearchFilter(
+                            query="*",
+                            limit=0,
+                            offset=0,
+                            unit_code=None,
+                            object_type=None,
+                            date_start=None,
+                            date_end=None,
+                            maker=None,
+                            material=None,
+                            topic=None,
+                            has_images=True,
+                            has_3d=None,
+                            is_cc0=None,
+                            on_view=None,
+                        )
+                    )
+                ).total_count
+                total_with_3d = (
+                    await self.search_collections(
+                        CollectionSearchFilter(
+                            query="*",
+                            limit=0,
+                            offset=0,
+                            unit_code=None,
+                            object_type=None,
+                            date_start=None,
+                            date_end=None,
+                            maker=None,
+                            material=None,
+                            topic=None,
+                            has_images=None,
+                            has_3d=True,
+                            is_cc0=None,
+                            on_view=None,
+                        )
+                    )
+                ).total_count
+                total_cc0 = (
+                    await self.search_collections(
+                        CollectionSearchFilter(
+                            query="*",
+                            limit=0,
+                            offset=0,
+                            unit_code=None,
+                            object_type=None,
+                            date_start=None,
+                            date_end=None,
+                            maker=None,
+                            material=None,
+                            topic=None,
+                            has_images=None,
+                            has_3d=None,
+                            is_cc0=True,
+                            on_view=None,
+                        )
+                    )
+                ).total_count
 
                 units = await self.get_units()
-                num_units = len(units)
-                unit_stats = [
-                    UnitStats(
-                        unit_code=unit.code,
-                        unit_name=unit.name,
-                        total_objects=total_objects // num_units,
-                        digitized_objects=(
-                            total_objects // num_units // 2 if total_objects else None
-                        ),
-                        cc0_objects=None,
-                        objects_with_images=None,
-                        objects_with_3d=None,
+                unit_stats = []
+                for unit in units:
+                    unit_total = (
+                        await self.search_collections(
+                            CollectionSearchFilter(
+                                query="*",
+                                limit=0,
+                                offset=0,
+                                unit_code=unit.code,
+                                object_type=None,
+                                date_start=None,
+                                date_end=None,
+                                maker=None,
+                                material=None,
+                                topic=None,
+                                has_images=None,
+                                has_3d=None,
+                                is_cc0=None,
+                                on_view=None,
+                            )
+                        )
+                    ).total_count
+                    unit_images = (
+                        await self.search_collections(
+                            CollectionSearchFilter(
+                                query="*",
+                                limit=0,
+                                offset=0,
+                                unit_code=unit.code,
+                                object_type=None,
+                                date_start=None,
+                                date_end=None,
+                                maker=None,
+                                material=None,
+                                topic=None,
+                                has_images=True,
+                                has_3d=None,
+                                is_cc0=None,
+                                on_view=None,
+                            )
+                        )
+                    ).total_count
+                    unit_3d = (
+                        await self.search_collections(
+                            CollectionSearchFilter(
+                                query="*",
+                                limit=0,
+                                offset=0,
+                                unit_code=unit.code,
+                                object_type=None,
+                                date_start=None,
+                                date_end=None,
+                                maker=None,
+                                material=None,
+                                topic=None,
+                                has_images=None,
+                                has_3d=True,
+                                is_cc0=None,
+                                on_view=None,
+                            )
+                        )
+                    ).total_count
+                    unit_cc0 = (
+                        await self.search_collections(
+                            CollectionSearchFilter(
+                                query="*",
+                                limit=0,
+                                offset=0,
+                                unit_code=unit.code,
+                                object_type=None,
+                                date_start=None,
+                                date_end=None,
+                                maker=None,
+                                material=None,
+                                topic=None,
+                                has_images=None,
+                                has_3d=None,
+                                is_cc0=True,
+                                on_view=None,
+                            )
+                        )
+                    ).total_count
+
+                    unit_stats.append(
+                        UnitStats(
+                            unit_code=unit.code,
+                            unit_name=unit.name,
+                            total_objects=unit_total,
+                            digitized_objects=unit_images,
+                            cc0_objects=unit_cc0,
+                            objects_with_images=unit_images,
+                            objects_with_3d=unit_3d,
+                        )
                     )
-                    for unit in units
-                ]
 
                 return CollectionStats(
                     total_objects=total_objects,
-                    total_digitized=total_objects // 2 if total_objects else None,
-                    total_cc0=None,
-                    total_with_images=None,
-                    total_with_3d=None,
+                    total_digitized=total_with_images,
+                    total_cc0=total_cc0,
+                    total_with_images=total_with_images,
+                    total_with_3d=total_with_3d,
                     units=unit_stats,
                     last_updated=datetime.now(),
                 )
@@ -675,7 +925,7 @@ async def create_client(api_key: Optional[str] = None) -> SmithsonianAPIClient:
     Create and initialize an API client.
 
     Args:
-        api_key: Optional API key
+        api_key: Optional API key. If not provided, it will be read from `Config.API_KEY`.
 
     Returns:
         Initialized API client

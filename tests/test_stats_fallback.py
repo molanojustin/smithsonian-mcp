@@ -56,13 +56,13 @@ async def test_get_stats_context_handles_stats_endpoint_failure(monkeypatch):
     result = await resources_module.get_stats_context.fn()
 
     assert "Total Objects: 120" in result
-    assert "Digitized Objects: 60" in result
-    assert "CC0 Licensed Objects: Unavailable" in result
-    assert "Objects with Images: Unavailable" in result
-    assert "Objects with 3D Models: Unavailable" in result
-    assert "  NMAH: 60" in result
-    assert "  NMNH: 60" in result
+    assert "Digitized Objects: 120" in result
+    assert "CC0 Licensed Objects: 120" in result
+    assert "Objects with Images: 120" in result
+    assert "Objects with 3D Models: 120" in result
+    assert "  NMAH: 120" in result
+    assert "  NMNH: 120" in result
 
     stats_failure.assert_awaited_once()
-    client.search_collections.assert_awaited_once()
+    assert client.search_collections.call_count == 12
     client.get_units.assert_awaited_once()
