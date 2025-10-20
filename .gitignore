@@ -49,6 +49,7 @@ bld/
 [Ll]ogs/
 
 _version.py
+!smithsonian_mcp/_version.py
 
 # Build results on 'Bin' directories (but not our bin/ directory)
 # Ignore bin directories except for our specific bin/ directory
