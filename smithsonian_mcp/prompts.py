@@ -12,7 +12,7 @@ from mcp.server.fastmcp.prompts import base
 from .app import mcp
 from .constants import SIZE_GUIDELINES
 
-
+# TODO: Ensure questions posed are open ended
 def exhibition_planning_message(
     exhibition_theme: str, target_audience: str = "general public", size: str = "medium"
 ) -> List[base.Message]:
