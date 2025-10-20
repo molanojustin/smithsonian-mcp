@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 import httpx
+from pydantic import HttpUrl
 
 from .config import Config
 from .models import (
@@ -468,76 +469,131 @@ class SmithsonianAPIClient:
         """
         # The Smithsonian API doesn't have a dedicated endpoint for units.
         # Return a hardcoded list of known units based on documentation
-        # TODO: Update units to include all museums.
         known_units = [
             SmithsonianUnit(
                 code="NMNH",
                 name="National Museum of Natural History",
                 description="Natural history museum",
-                website=None,  # TODO: Add urls
+                website=HttpUrl("https://naturalhistory.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NPG",
                 name="National Portrait Gallery",
                 description="Portrait art museum",
-                website=None, # TODO: Add urls
+                website=HttpUrl("https://npg.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="SAAM",
                 name="Smithsonian American Art Museum",
                 description="American art museum",
-                website=None, # TODO: Add urls
+                website=HttpUrl("https://americanart.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="HMSG",
                 name="Hirshhorn Museum and Sculpture Garden",
                 description="Modern and contemporary art",
-                website=None, # TODO: Add urls
+                website=HttpUrl("https://hirshhorn.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="FSG", # TODO: Find a way to ensure the name is Freer and Sackler instead of Freer|Sackler
+                code="FSG",
                 name="Freer and Sackler Galleries",
                 description="Asian art museum",
-                website=None, # TODO: Add urls
+                website=HttpUrl("https://www.asia.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAfA",
                 name="National Museum of African Art",
                 description="African art museum",
-                website=None, # TODO: Add urls
+                website=HttpUrl("https://africa.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAI",
                 name="National Museum of the American Indian",
                 description="Native American art and culture",
-                website=None, # TODO: Add urls
+                website=HttpUrl("https://americanindian.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NASM",
                 name="National Air and Space Museum",
                 description="Air and space museum",
-                website=None, # TODO: Add urls
+                website=HttpUrl("https://airandspace.si.edu/"),
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAH",
                 name="National Museum of American History",
                 description="American history museum",
-                website=None, # TODO: Add urls
+                website=HttpUrl("https://americanhistory.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="SAAM",
+                name="Smithsonian American Art Museum",
+                description="American art museum",
+                website=HttpUrl("https://americanart.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="CHNDM",
+                name="Cooper Hewitt, Smithsonian Design Museum",
+                description="Design museum",
+                website=HttpUrl("https://cooperhewitt.org/"),
+                location="New York, NY",
+            ),
+            SmithsonianUnit(
+                code="NMAAHC",
+                name="National Museum of African American History and Culture",
+                description="African American history and culture museum",
+                website=HttpUrl("https://nmaahc.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="SIA",
+                name="Smithsonian Institution Archives",
+                description="Archives of the Smithsonian Institution",
+                website=HttpUrl("https://siarchives.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="NPM",
+                name="National Postal Museum",
+                description="Postal history museum",
+                website=HttpUrl("https://postalmuseum.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="NZP",
+                name="National Zoo and Conservation Biology Institute",
+                description="National Zoo",
+                website=HttpUrl("https://nationalzoo.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="AAA",
+                name="Archives of American Art",
+                description="Archives of American Art",
+                website=HttpUrl("https://aaa.si.edu/"),
+                location="Washington, DC",
+            ),
+            SmithsonianUnit(
+                code="ACM",
+                name="Anacostia Community Museum",
+                description="Anacostia",
+                website=HttpUrl("https://anacostia.si.edu/"),
                 location="Washington, DC",
             ),
         ]
 
         return known_units
 
-    async def get_collection_stats(self) -> CollectionStats:
+    async def get_collection_stats(self) -> CollectionStats: # pylint: disable=too-many-locals
         """
         Get overall collection statistics, augmenting CC0 stats with search queries
         for more comprehensive data.
