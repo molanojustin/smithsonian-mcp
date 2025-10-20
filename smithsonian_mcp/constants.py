@@ -48,7 +48,7 @@ VALID_MUSEUM_CODES: List[str] = [
     "AAA",
 ]
 
-SIZE_GUIDELINES: Dict[str, str] = { # TODO: Try to align with guidelines.
+SIZE_GUIDELINES: Dict[str, str] = {
     "small": "15-25 objects",
     "medium": "30-50 objects",
     "large": "60+ objects",
