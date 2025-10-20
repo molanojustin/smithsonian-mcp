@@ -28,7 +28,7 @@ async def server_lifespan(
 
     # Validate configuration
     if not Config.validate_api_key():
-        logger.warning( # TODO: Update to raise exception and quit if no API key is provided.
+        raise ValueError(
             "No API key configured. "
             "Set SMITHSONIAN_API_KEY environment variable for access."
         )

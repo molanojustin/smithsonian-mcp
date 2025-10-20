@@ -448,3 +448,5 @@ dev/*
 !dev/documentation/
 !dev/documentation/**
 check_bert_*
+
+bugs_to_fix.txt

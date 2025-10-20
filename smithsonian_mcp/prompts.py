@@ -12,7 +12,6 @@ from mcp.server.fastmcp.prompts import base
 from .app import mcp
 from .constants import SIZE_GUIDELINES
 
-
 def exhibition_planning_message(
     exhibition_theme: str, target_audience: str = "general public", size: str = "medium"
 ) -> List[base.Message]:
@@ -144,13 +143,12 @@ def educational_content_prompt(
             f"for {grade_level} students using Smithsonian collections.{goals_text}\n\n"
             f"Please:\n\n"
             f"1. Find age-appropriate objects that illustrate key concepts\n"
-            f"2. Suggest hands-on activities or discussion questions\n"
+            f"2. Suggest hands-on activities or open-ended discussion questions\n"
             f"3. Provide historical context suitable for the grade level\n"
             f"4. Include objects with clear, high-quality images for visual learning\n"
             f"5. Consider diverse perspectives and inclusive representation\n"
             f"6. Suggest cross-curricular connections when relevant\n"
-            f"7. Identify objects that could inspire creative projects\n"
-            f"8. Note any 3D models that could enhance digital learning\n\n"
+            f"7. Identify objects that could inspire creative projects\n\n"
             f"Structure this as a practical lesson plan with clear learning outcomes "
             f"and explain how each selected object supports educational objectives.",
         )
