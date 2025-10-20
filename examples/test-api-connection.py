@@ -6,7 +6,6 @@ without requiring the full MCP server setup.
 """
 
 import asyncio
-import os
 import logging
 from pathlib import Path
 import sys
@@ -19,6 +18,9 @@ from smithsonian_mcp import create_client, Config, CollectionSearchFilter
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Setting httpx logging to WARNING to reduce key leaks
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 async def test_api_connection():
@@ -65,6 +67,7 @@ async def test_api_connection():
                 has_3d=None,
                 is_cc0=None,
                 offset=0,
+                on_view=None,
             )
             results = await client.search_collections(filters)
             print(

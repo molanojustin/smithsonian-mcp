@@ -23,6 +23,8 @@ from .models import (
     UnitStats,
 )
 
+from .utils import mask_api_key
+
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.si.edu/openaccess/api/v1.0/"
@@ -153,12 +155,14 @@ class SmithsonianAPIClient:
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
         try:
-            logger.debug("Making request to %s with params: %s", url, params)
-
             # The Smithsonian API uses api_key in the query string, not headers
             request_params = params.copy() if params else {}
             if self.api_key:
                 request_params["api_key"] = self.api_key
+
+            logger.debug(
+                "Making request to %s with params: %s", url, mask_api_key(request_params)
+            )
 
             # Double-check session is available
             if self.session is None:
@@ -184,6 +188,15 @@ class SmithsonianAPIClient:
                 raise APIError(
                     error="not_found",
                     message="Resource not found",
+                    status_code=status_code,
+                    details={"url": url},
+                ) from e
+            elif status_code == 429:
+                error_msg = f"Rate limit temporarilyexceeded for {url}"
+                logger.error(error_msg)
+                raise APIError(
+                    error="rate_limit_exceeded",
+                    message=error_msg,
                     status_code=status_code,
                     details={"url": url},
                 ) from e
