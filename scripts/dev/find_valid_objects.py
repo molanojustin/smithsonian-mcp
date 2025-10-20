@@ -10,7 +10,7 @@ import os
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from smithsonian_mcp.server import get_api_client
+from smithsonian_mcp.api_client import create_client
 from smithsonian_mcp.config import Config
 
 
@@ -19,7 +19,7 @@ async def find_valid_objects():
     print("Searching for valid Smithsonian objects...")
 
     try:
-        api_client = await get_api_client()
+        api_client = await create_client()
 
         # Search for some objects
         from smithsonian_mcp.models import CollectionSearchFilter
@@ -37,6 +37,7 @@ async def find_valid_objects():
             has_images=True,
             has_3d=None,
             is_cc0=None,
+            on_view=None,
         )
 
         results = await api_client.search_collections(filters)

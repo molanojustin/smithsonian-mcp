@@ -1,7 +1,7 @@
 """
 Search for Bert and Ernie specifically in the Smithsonian database.
 """
-# TODO: REMOVE FROM GIT TRACKING
+
 import asyncio
 import sys
 from pathlib import Path

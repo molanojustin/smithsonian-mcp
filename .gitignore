@@ -447,6 +447,3 @@ dev/*
 # But do not ignore /dev/documentation/ and its contents
 !dev/documentation/
 !dev/documentation/**
-check_bert_*
-
-bugs_to_fix.txt

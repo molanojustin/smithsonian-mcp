@@ -2,7 +2,7 @@
 """
 Test script to verify object details handling with valid and invalid IDs.
 """
-# TODO: FIX STANDALONE TEST
+
 import asyncio
 import sys
 import os
@@ -10,7 +10,7 @@ import os
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from smithsonian_mcp.server import get_api_client
+from smithsonian_mcp.api_client import create_client
 from smithsonian_mcp.config import Config
 
 
@@ -19,7 +19,7 @@ async def test_object_details():
     print("Testing object details handling...")
 
     try:
-        api_client = await get_api_client()
+        api_client = await create_client()
 
         # Test with invalid object ID (should return None gracefully)
         print("\n1. Testing invalid object ID (F1900.47)...")
