@@ -191,7 +191,7 @@ class SmithsonianAPIClient:
                     status_code=status_code,
                     details={"url": url},
                 ) from e
-            elif status_code == 429:
+            if status_code == 429:
                 error_msg = f"Rate limit temporarilyexceeded for {url}"
                 logger.error(error_msg)
                 raise APIError(
