@@ -3,6 +3,9 @@ Constants and static mappings used by the MCP server.
 """
 
 from typing import Dict, List
+from ._version import __version__
+
+SERVER_VERSION = __version__
 
 MUSEUM_MAP: Dict[str, str] = {
     "american history": "NMAH",
