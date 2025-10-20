@@ -2,7 +2,7 @@
 """
 Test script to verify object details handling with valid and invalid IDs.
 """
-
+# TODO: FIX STANDALONE TEST
 import asyncio
 import sys
 import os

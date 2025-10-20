@@ -2,7 +2,7 @@
 """
 Test script to verify mcpo compatibility fix.
 """
-
+# TODO: FIX STANDALONE TEST
 import asyncio
 import sys
 import os

@@ -3,7 +3,7 @@ Comprehensive MCP integration tests for the Smithsonian MCP server.
 
 This module tests end-to-end MCP workflows, protocol adherence, and cross-tool dependencies.
 """
-
+# TODO: DEBUG THIS TEST. STILL PASSING, BUT WE NEED TO FIGURE OUT THE 21 ISSUES.
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
