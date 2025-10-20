@@ -28,9 +28,11 @@ from .config import Config
 from .models import SmithsonianObject, SearchResult, CollectionSearchFilter
 from .api_client import SmithsonianAPIClient, create_client
 from . import server, tools, resources, prompts, context, main
+from warnings import warn
 try:
     from ._version import __version__
 except ModuleNotFoundError:  # pragma: no cover - fallback for missing build artefact
+    warn("Version module not found, setting local __version__ to '0.0.0'")
     __version__ = "0.0.0"
 
 __author__ = "Justin Molano"
