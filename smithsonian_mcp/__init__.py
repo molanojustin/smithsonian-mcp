@@ -23,14 +23,18 @@ API Key Setup:
     Set environment variable: SMITHSONIAN_API_KEY=your_key_here
 """
 
-from .server import mcp
+from .app import mcp
 from .config import Config
 from .models import SmithsonianObject, SearchResult, CollectionSearchFilter
 from .api_client import SmithsonianAPIClient, create_client
+from . import server, tools, resources, prompts, context, main
+try:
+    from ._version import __version__
+except ModuleNotFoundError:  # pragma: no cover - fallback for missing build artefact
+    __version__ = "0.0.0"
 
-__version__ = "0.1.0"
 __author__ = "Justin Molano"
-__email__ = "160653314+molanojustin@users.noreply.github.com"
+__email__ = "justinmolano2@gmail.com"
 
 __all__ = [
     "mcp",
@@ -40,4 +44,10 @@ __all__ = [
     "CollectionSearchFilter",
     "SmithsonianAPIClient",
     "create_client",
+    "server",
+    "tools",
+    "resources",
+    "prompts",
+    "context",
+    "main",
 ]

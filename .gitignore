@@ -48,6 +48,8 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
+_version.py
+
 # Build results on 'Bin' directories (but not our bin/ directory)
 # Ignore bin directories except for our specific bin/ directory
 **/bin/*
@@ -436,6 +438,7 @@ FodyWeavers.xsd
 !README.md
 !TROUBLESHOOTING.md
 smithsonian-mcp-workspace.code-workspace
+.vscode/settings.json
 
 # Ignore everything in /dev/
 dev/*

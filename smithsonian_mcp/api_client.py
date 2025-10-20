@@ -2,7 +2,6 @@
 HTTP client for interacting with the Smithsonian Open Access API via api.data.gov.
 """
 
-import asyncio
 import json
 import logging
 from datetime import datetime
@@ -25,6 +24,8 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+BASE_URL = "https://api.si.edu/openaccess/api/v1.0/"
+
 
 class SmithsonianAPIClient:
     """
@@ -42,7 +43,7 @@ class SmithsonianAPIClient:
             api_key: Optional API key. If not provided, uses Config.API_KEY
         """
         self.api_key = api_key or Config.API_KEY
-        self.base_url = "https://api.si.edu/openaccess/api/v1.0/"
+        self.base_url = BASE_URL
         self.session: Optional[httpx.AsyncClient] = None
 
         if not self.api_key:
@@ -151,7 +152,7 @@ class SmithsonianAPIClient:
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
         try:
-            logger.debug(f"Making request to {url} with params: {params}")
+            logger.debug("Making request to %s with params: %s", url, params)
 
             # The Smithsonian API uses api_key in the query string, not headers
             request_params = params.copy() if params else {}
@@ -178,21 +179,20 @@ class SmithsonianAPIClient:
             error_msg = f"HTTP {status_code} error for {url}: {str(e)}"
 
             if status_code == 404:
-                logger.debug(f"Resource not found: {url}")
+                logger.debug("Resource not found: %s", url)
                 raise APIError(
                     error="not_found",
                     message="Resource not found",
                     status_code=status_code,
                     details={"url": url},
-                )
-            else:
-                logger.error(error_msg)
-                raise APIError(
-                    error="http_error",
-                    message=error_msg,
-                    status_code=status_code,
-                    details={"url": url},
-                )
+                ) from e
+            logger.error(error_msg)
+            raise APIError(
+                error="http_error",
+                message=error_msg,
+                status_code=status_code,
+                details={"url": url},
+            ) from e
         except Exception as e:
             error_msg = f"Request failed: {str(e)}"
             logger.error(error_msg)
@@ -202,7 +202,7 @@ class SmithsonianAPIClient:
                 message=error_msg,
                 status_code=None,
                 details={"exception_type": type(e).__name__},
-            )
+            ) from e
 
     def _parse_on_view_status(self, indexed_structured: Dict[str, Any]) -> bool:
         """
@@ -215,7 +215,7 @@ class SmithsonianAPIClient:
         first_item = on_exhibit[0]
         if isinstance(first_item, str):
             return first_item == "Yes"
-        elif isinstance(first_item, dict):
+        if isinstance(first_item, dict):
             return first_item.get("content") == "Yes"
         return False
 
@@ -242,9 +242,9 @@ class SmithsonianAPIClient:
             room = exhibitions[0].get("room", "")
             if building and room:
                 return f"{building}, {room}"
-            elif building:
+            if building:
                 return building
-            elif room:
+            if room:
                 return room
         return None
 
@@ -256,12 +256,12 @@ class SmithsonianAPIClient:
         if isinstance(raw_data, str):
             try:
                 raw_data = json.loads(raw_data)
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse raw_data as JSON: {raw_data}")
-                raise ValueError("raw_data is not valid JSON or dict")
+            except json.JSONDecodeError as exc:
+                logger.error("Failed to parse raw_data as JSON: %s", raw_data)
+                raise ValueError("raw_data is not valid JSON or dict") from exc
 
         if not isinstance(raw_data, dict):
-            logger.error(f"raw_data is not a dict or JSON string: {type(raw_data)}")
+            logger.error("raw_data is not a dict or JSON string: %s", type(raw_data))
             raise ValueError("raw_data must be a dict or JSON string")
 
         content = raw_data.get("content", {})
@@ -410,12 +410,12 @@ class SmithsonianAPIClient:
             try:
                 obj = self._parse_object_data(row)
                 objects.append(obj)
-            except Exception as e:
+            except APIError as e:
                 logger.warning(
-                    f"Failed to parse object data for row {row.get('id')}: {e}"
+                    "Failed to parse object data for row %s: %s", row.get("id"), e
                 )
                 # Debug: print the problematic row structure
-                logger.debug(f"Row data: {row}")
+                logger.debug("Row data: %s", row)
                 continue
 
         total_count = response_data.get("response", {}).get("rowCount", 0)
@@ -449,14 +449,13 @@ class SmithsonianAPIClient:
             # The content endpoint response is nested under 'response'
             if "response" in response_data:
                 return self._parse_object_data(response_data["response"])
-            else:
-                logger.warning(
-                    f"Malformed response for object {object_id}: {response_data}"
-                )
-                return None
+            logger.warning(
+                "Malformed response for object %s: %s", object_id, response_data
+            )
+            return None
         except APIError as e:
             if e.error == "not_found" or e.status_code == 404:
-                logger.info(f"Object {object_id} not found in Smithsonian collection")
+                logger.info("Object %s not found in Smithsonian collection", object_id)
                 return None
             raise
 
@@ -537,7 +536,9 @@ class SmithsonianAPIClient:
 
         return known_units
 
-    async def get_collection_stats(self) -> CollectionStats:
+    async def get_collection_stats( # pylint: disable=too-many-locals
+        self,
+    ) -> CollectionStats:
         """
         Get overall collection statistics.
 
@@ -558,7 +559,10 @@ class SmithsonianAPIClient:
             total_cc0_media = metrics.get("CC0_media", 0)
 
             logger.info(
-                f"Stats from API - Total: {total_objects:,}, CC0: {total_cc0:,}, CC0 Media: {total_cc0_media:,}"
+                "Stats from API - Total: %s, CC0: %s, CC0 Media: %s",
+                f"{total_objects:,}",
+                f"{total_cc0:,}",
+                f"{total_cc0_media:,}",
             )
 
             # Build unit statistics from the API response
@@ -607,8 +611,8 @@ class SmithsonianAPIClient:
                 last_updated=datetime.now(),
             )
 
-        except Exception as e:
-            logger.error(f"Failed to get collection stats from API: {e}")
+        except APIError as e:
+            logger.error("Failed to get collection stats from API: %s", e)
             # Fallback to basic search if stats endpoint fails
             try:
                 filter_dict = {
@@ -657,12 +661,12 @@ class SmithsonianAPIClient:
                     last_updated=datetime.now(),
                 )
             except Exception as fallback_error:
-                logger.error(f"Fallback also failed: {fallback_error}")
+                logger.error("Fallback also failed: %s", fallback_error)
                 raise APIError(
                     error="stats_failed",
                     message=f"Failed to retrieve collection statistics: {e}",
                     status_code=None,
-                )
+                ) from fallback_error
 
 
 # Utility function for creating client instance
