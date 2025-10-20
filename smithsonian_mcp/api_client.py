@@ -39,7 +39,7 @@ class SmithsonianAPIClient:
         """
         Initialize the API client.
 
-        Args:
+        Args: # TODO: Update to require API key.
             api_key: Optional API key. If not provided, uses Config.API_KEY
         """
         self.api_key = api_key or Config.API_KEY
@@ -47,7 +47,7 @@ class SmithsonianAPIClient:
         self.session: Optional[httpx.AsyncClient] = None
 
         if not self.api_key:
-            logger.warning("No API key configured. Rate limits will be lower.")
+            logger.warning("No API key configured. ") # TODO: Update to raise exception and quit if no API key is provided.
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -110,7 +110,7 @@ class SmithsonianAPIClient:
             filter_queries.append("online_media_type:Images")
 
         if filters.has_3d:
-            filter_queries.append("online_media_type:3D")
+            filter_queries.append("online_media_type:\"3D Models\"")
 
         if filters.is_cc0:
             filter_queries.append("usage_rights:CC0")
@@ -313,7 +313,7 @@ class SmithsonianAPIClient:
         return SmithsonianObject(
             id=obj_id,
             title=title,
-            url=None,  # raw_data.get("url") is an internal ID, not a URL
+            url=None,  # raw_data.get("url") is an internal ID, not a URL # TODO: Try to parse url
             unit_code=unit_code,
             unit_name=(
                 indexed_structured.get("unit_name", [{}])[0].get("content")
@@ -468,68 +468,69 @@ class SmithsonianAPIClient:
         """
         # The Smithsonian API doesn't have a dedicated endpoint for units.
         # Return a hardcoded list of known units based on documentation
+        # TODO: Update units to include all museums.
         known_units = [
             SmithsonianUnit(
                 code="NMNH",
                 name="National Museum of Natural History",
                 description="Natural history museum",
-                website=None,
+                website=None,  # TODO: Add urls
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NPG",
                 name="National Portrait Gallery",
                 description="Portrait art museum",
-                website=None,
+                website=None, # TODO: Add urls
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="SAAM",
                 name="Smithsonian American Art Museum",
                 description="American art museum",
-                website=None,
+                website=None, # TODO: Add urls
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="HMSG",
                 name="Hirshhorn Museum and Sculpture Garden",
                 description="Modern and contemporary art",
-                website=None,
+                website=None, # TODO: Add urls
                 location="Washington, DC",
             ),
             SmithsonianUnit(
-                code="FSG",
+                code="FSG", # TODO: Find a way to ensure the name is Freer and Sackler instead of Freer|Sackler
                 name="Freer and Sackler Galleries",
                 description="Asian art museum",
-                website=None,
+                website=None, # TODO: Add urls
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAfA",
                 name="National Museum of African Art",
                 description="African art museum",
-                website=None,
+                website=None, # TODO: Add urls
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAI",
                 name="National Museum of the American Indian",
                 description="Native American art and culture",
-                website=None,
+                website=None, # TODO: Add urls
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NASM",
                 name="National Air and Space Museum",
                 description="Air and space museum",
-                website=None,
+                website=None, # TODO: Add urls
                 location="Washington, DC",
             ),
             SmithsonianUnit(
                 code="NMAH",
                 name="National Museum of American History",
                 description="American history museum",
-                website=None,
+                website=None, # TODO: Add urls
                 location="Washington, DC",
             ),
         ]
@@ -590,12 +591,12 @@ class SmithsonianAPIClient:
                         total_objects=unit_total,
                         digitized_objects=(
                             unit_total // 2 if unit_total else None
-                        ),  # Estimate
+                        ),  # Estimate # TODO: Investigate
                         cc0_objects=unit_metrics.get("CC0_records", 0),
                         objects_with_images=unit_metrics.get(
                             "CC0_records_with_CC0_media", 0
                         ),
-                        objects_with_3d=None,  # Not available in stats
+                        objects_with_3d=None,  # Not available in stats # TODO: Investigate
                     )
                 )
 
@@ -603,10 +604,10 @@ class SmithsonianAPIClient:
                 total_objects=total_objects,
                 total_digitized=(
                     total_objects // 2 if total_objects else None
-                ),  # Estimate
+                ),  # Estimate # TODO: Investigate
                 total_cc0=total_cc0,
                 total_with_images=total_with_cc0_media,  # CC0 media count
-                total_with_3d=None,  # Not available
+                total_with_3d=None,  # Not available # TODO: Investigate
                 units=unit_stats,
                 last_updated=datetime.now(),
             )
@@ -643,7 +644,7 @@ class SmithsonianAPIClient:
                         total_objects=total_objects // num_units,
                         digitized_objects=(
                             total_objects // num_units // 2 if total_objects else None
-                        ),
+                        ), # TODO: Investigate
                         cc0_objects=None,
                         objects_with_images=None,
                         objects_with_3d=None,
@@ -653,10 +654,10 @@ class SmithsonianAPIClient:
 
                 return CollectionStats(
                     total_objects=total_objects,
-                    total_digitized=total_objects // 2 if total_objects else None,
-                    total_cc0=None,
-                    total_with_images=None,
-                    total_with_3d=None,
+                    total_digitized=total_objects // 2 if total_objects else None, # TODO: Investigate
+                    total_cc0=None, # TODO: Investigate
+                    total_with_images=None, # TODO: Investigate
+                    total_with_3d=None, # TODO: Investigate
                     units=unit_stats,
                     last_updated=datetime.now(),
                 )
@@ -675,7 +676,7 @@ async def create_client(api_key: Optional[str] = None) -> SmithsonianAPIClient:
     Create and initialize an API client.
 
     Args:
-        api_key: Optional API key
+        api_key: Optional API key # TODO: Require API key.
 
     Returns:
         Initialized API client

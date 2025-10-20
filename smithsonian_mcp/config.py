@@ -10,6 +10,7 @@ class Config:
     """Configuration settings for the Smithsonian MCP server."""
 
     # API Configuration
+    # TODO: Align with actual base URL if different.
     API_DATA_GOV_BASE_URL: str = config(
         "API_DATA_GOV_BASE_URL", default="https://api.data.gov"
     )  # type: ignore
@@ -23,6 +24,7 @@ class Config:
     DEFAULT_RATE_LIMIT: int = config("DEFAULT_RATE_LIMIT", default=60, cast=int)
 
     # Server configuration
+    # TODO: Remove from environment variables in future releases.
     SERVER_NAME: str = config("SERVER_NAME", default="Smithsonian Open Access")  # type: ignore
     SERVER_VERSION: str = config("SERVER_VERSION", default="1.0.0")  # type: ignore
 

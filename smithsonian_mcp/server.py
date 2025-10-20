@@ -28,9 +28,9 @@ async def server_lifespan(
 
     # Validate configuration
     if not Config.validate_api_key():
-        logger.warning(
-            "No API key configured. Some features may have reduced rate limits. "
-            "Set SMITHSONIAN_API_KEY environment variable for full access."
+        logger.warning( # TODO: Update to raise exception and quit if no API key is provided.
+            "No API key configured. "
+            "Set SMITHSONIAN_API_KEY environment variable for access."
         )
 
     # Initialize API client
