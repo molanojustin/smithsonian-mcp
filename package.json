@@ -13,7 +13,7 @@
     "sync-requirements": "node scripts/sync-requirements.js",
     "prepublishOnly": "npm run check-version && npm test",
     "preversion": "npm test",
-    "version": "node -e \"const fs=require('fs'); const pkg=require('./package.json'); const toml=fs.readFileSync('pyproject.toml','utf8'); fs.writeFileSync('pyproject.toml', toml.replace(/^version\\s*=\\s*\\\"[^\\\"]+\\\"/m, 'version = \\\"'+pkg.version+'\\\"')); require('child_process').execSync('uv lock')\" && npm run sync-requirements && python scripts/write_version.py && git add pyproject.toml uv.lock config/requirements.txt smithsonian_mcp/_version.py package.json package-lock.json",
+    "version": "node -e \"const fs=require('fs'); const pkg=require('./package.json'); const toml=fs.readFileSync('pyproject.toml','utf8'); fs.writeFileSync('pyproject.toml', toml.replace(/^version\\s*=\\s*\\\"[^\\\"]+\\\"/m, 'version = \\\"'+pkg.version+'\\\"')); require('child_process').execSync('uv lock')\" && npm run sync-requirements && python smithsonian_mcp/write_version.py && git add pyproject.toml uv.lock config/requirements.txt smithsonian_mcp/_version.py package.json package-lock.json",
     "postversion": "git push && git push --tags",
     "bump:patch": "npm version patch -m \"chore(release): %s\" --tag-version-prefix=\"v\"",
     "bump:minor": "npm version minor -m \"feat(release): %s\" --tag-version-prefix=\"v\"",
