@@ -145,7 +145,7 @@ Create a `examples/mcpo-config.json` file:
   "mcpServers": {
     "smithsonian_open_access": {
       "command": "python",
-      "args": ["-m", "smithsonian_mcp.server"],
+      "args": ["-m", "smithsonian_mcp.main"],
       "env": {
         "SMITHSONIAN_API_KEY": "your_api_key_here"
       }
