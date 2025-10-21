@@ -160,8 +160,12 @@ class SmithsonianAPIClient:
             if self.api_key:
                 request_params["api_key"] = self.api_key
 
+            log_params = request_params.copy()
+            if "api_key" in log_params:
+                del log_params["api_key"]
+
             logger.debug(
-                "Making request to %s with params: %s", url, mask_api_key(request_params)
+                "Making request to %s with params: %s", url, mask_api_key(log_params)
             )
 
             # Double-check session is available
