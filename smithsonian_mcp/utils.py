@@ -14,7 +14,7 @@ def mask_api_key(params: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         A new dictionary with the API key masked.
     """
-    if "api_key" in params:
+    if "api_key" in params: # TODO: Expand reach beyond api_key. QL is very weary of any potential leaks so fix them here.
         masked_params = params.copy()
         masked_params["api_key"] = "****"
         return masked_params
