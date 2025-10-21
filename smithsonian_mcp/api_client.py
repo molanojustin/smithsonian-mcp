@@ -161,8 +161,10 @@ class SmithsonianAPIClient:
                 request_params["api_key"] = self.api_key
 
             log_params = request_params.copy()
-            if "api_key" in log_params:
-                del log_params["api_key"]
+            # Remove all common sensitive keys, just in case
+            for sensitive_field in ["api_key", "key", "access_token", "password", "secret"]:
+                if sensitive_field in log_params:
+                    del log_params[sensitive_field]
 
             logger.debug(
                 "Making request to %s with params: %s", url, mask_api_key(log_params)
