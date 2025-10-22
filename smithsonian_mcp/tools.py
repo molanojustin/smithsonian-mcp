@@ -64,9 +64,18 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
-        Search results including objects, total count, and pagination info. Use the
-        has_more and next_offset fields to determine if there are additional results
-        beyond the returned set.
+        Search results including objects, total count, and pagination info. Each object
+        has an 'id' field that can be used with get_object_details. Use the has_more
+        and next_offset fields to determine if there are additional results beyond
+        the returned set.
+
+    Example:
+        # Search for Alma Thomas paintings
+        results = search_collections(query="Alma Thomas", object_type="painting")
+
+        # Get detailed info for the first result
+        if results.objects:
+            details = get_object_details(object_id=results.objects[0].id)
     """
     try:
 
@@ -537,6 +546,33 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
 
 
 @mcp.tool()
+async def get_object_ids(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    search_result: Optional[SearchResult] = None
+) -> Optional[List[str]]:
+    """
+    Extract object IDs from search results for use with get_object_details.
+
+    This is a helper tool to make it easier to get the correct object IDs
+    from search results. Use this if you're having trouble extracting IDs manually.
+
+    Args:
+        search_result: The result from a search_collections call
+
+    Returns:
+        List of object IDs that can be used with get_object_details, or None if no search_result provided
+
+    Example:
+        results = search_collections(query="Alma Thomas")
+        ids = get_object_ids(search_result=results)
+        # ids[0] can now be used with get_object_details
+    """
+    if search_result is None:
+        return None
+    return [obj.id for obj in search_result.objects]
+
+
+@mcp.tool()
 async def get_object_details(
     ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
 ) -> Optional[SmithsonianObject]:
@@ -551,17 +587,26 @@ async def get_object_details(
     - Partial IDs like "hmsg_80.107" (will be prefixed automatically)
 
     Args:
-        object_id: Unique identifier for the object. Can be:
+        object_id: Unique identifier for the object. This should be the 'id' field
+                  from a search result. Can be:
                   - Full API ID (e.g., "edanmdm-hmsg_80.107")
                   - Partial ID from object URLs (e.g., "hmsg_80.107")
-                  - ID from search results
+                  - Any format - the tool will try multiple variations automatically
 
     Returns:
         Detailed object information, or None if object not found
 
     Note:
         If the object is not found, the tool tries multiple ID formats automatically.
-        For best results, use the ID exactly as returned from search_collections.
+        For best results, use the 'id' field from search_collections results.
+
+    Example:
+        # First search for objects
+        results = search_collections(query="Alma Thomas")
+
+        # Then get details using the ID from search results
+        if results.objects:
+            details = get_object_details(object_id=results.objects[0].id)
     """
     # Input validation
     if not object_id or object_id.strip() == "":

@@ -38,6 +38,7 @@ class TestMCPProtocolAdherence:
             ("search_collections", tools_module.search_collections),
             ("simple_explore", tools_module.simple_explore),
             ("continue_explore", tools_module.continue_explore),
+            ("get_object_ids", tools_module.get_object_ids),
             ("get_object_details", tools_module.get_object_details),
             ("get_smithsonian_units", tools_module.get_smithsonian_units),
             ("get_collection_statistics", tools_module.get_collection_statistics),
