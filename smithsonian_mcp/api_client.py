@@ -580,8 +580,9 @@ class SmithsonianAPIClient:
 
         This method tries multiple ID formats to handle different input styles:
         1. The provided object_id as-is
-        2. "edanmdm-" + object_id (if not already prefixed)
-        3. object_id with "edanmdm-" prefix removed (if already prefixed incorrectly)
+        2. "edanmdm-" + object_id (dash format, as returned in search results)
+        3. "edanmdm:" + object_id (colon format, as shown in URLs)
+        4. object_id with dash/colon conversions if already prefixed
 
         Args:
             object_id: Unique object identifier (may be partial or full format)
@@ -595,13 +596,19 @@ class SmithsonianAPIClient:
         # Always try the original ID first
         id_formats_to_try.append(object_id)
 
-        # If it doesn't start with "edanmdm-", try adding the prefix
-        if not object_id.startswith("edanmdm-"):
-            id_formats_to_try.append(f"edanmdm-{object_id}")
+        # If it doesn't start with "edanmdm", try both dash and colon formats
+        if not object_id.startswith("edanmdm"):
+            id_formats_to_try.append(f"edanmdm-{object_id}")  # API ID format
+            id_formats_to_try.append(f"edanmdm:{object_id}")  # URL format
 
-        # If it does start with "edanmdm-", try without the prefix (unlikely but possible)
+        # If it starts with "edanmdm-", try the colon version
         elif object_id.startswith("edanmdm-"):
+            id_formats_to_try.append(object_id.replace("-", ":", 1))  # Convert dash to colon
             id_formats_to_try.append(object_id[8:])  # Remove "edanmdm-" prefix
+
+        # If it starts with "edanmdm:", try the dash version
+        elif object_id.startswith("edanmdm:"):
+            id_formats_to_try.append(object_id.replace(":", "-", 1))  # Convert colon to dash
 
         for attempt_id in id_formats_to_try:
             endpoint = f"/content/{attempt_id}"

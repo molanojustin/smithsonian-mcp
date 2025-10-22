@@ -36,10 +36,10 @@ async def test_get_object_by_id_returns_none_on_404(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_object_by_id_partial_id_fallback(monkeypatch):
-    """get_object_by_id should try prefixed ID when partial ID fails."""
+    """get_object_by_id should try multiple ID formats when partial ID fails."""
     client = SmithsonianAPIClient(api_key="test")
 
-    # Mock _make_request to fail on partial ID but succeed on full ID
+    # Mock _make_request to fail on partial ID and dash format, but succeed on colon format
     mock_request = AsyncMock()
     mock_request.side_effect = [
         APIError(  # First call with partial ID fails
@@ -48,7 +48,13 @@ async def test_get_object_by_id_partial_id_fallback(monkeypatch):
             status_code=404,
             details=None,
         ),
-        {"response": {"id": "edanmdm-test_123", "title": "Test Object"}}  # Second call with full ID succeeds
+        APIError(  # Second call with dash format fails
+            error="http_error",
+            message="not found",
+            status_code=404,
+            details=None,
+        ),
+        {"response": {"id": "edanmdm:test_123", "title": "Test Object"}}  # Third call with colon format succeeds
     ]
 
     monkeypatch.setattr(client, "_make_request", mock_request)
@@ -56,13 +62,14 @@ async def test_get_object_by_id_partial_id_fallback(monkeypatch):
     result = await client.get_object_by_id("test_123")
 
     assert result is not None
-    assert result.id == "edanmdm-test_123"
+    assert result.id == "edanmdm:test_123"
     assert result.title == "Test Object"
 
-    # Verify both ID formats were tried
+    # Verify all ID formats were tried
     expected_calls = [
         call("/content/test_123"),
-        call("/content/edanmdm-test_123")
+        call("/content/edanmdm-test_123"),
+        call("/content/edanmdm:test_123")
     ]
     mock_request.assert_has_calls(expected_calls)
 
@@ -103,7 +110,7 @@ async def test_get_object_by_id_all_formats_fail(monkeypatch):
 
     assert result is None
 
-    # Should have tried both formats
-    assert mock_request.call_count == 2
+    # Should have tried all formats
+    assert mock_request.call_count == 3
 
 
