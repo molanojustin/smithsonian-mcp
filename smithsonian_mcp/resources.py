@@ -9,6 +9,7 @@ from mcp.server.session import ServerSession
 from .app import mcp
 from .context import ServerContext, get_api_client
 from .models import CollectionSearchFilter, APIError
+from .constants import MUSEUM_MAP, VALID_MUSEUM_CODES
 
 logger = logging.getLogger(__name__)
 
@@ -125,10 +126,21 @@ async def get_on_view_context(
     The results are filtered to include only verified on-view objects.
 
     Args:
-        unit_code: Optional filter by specific Smithsonian unit
+        unit_code: Optional filter by Smithsonian unit code (e.g., "NMAH", "HMSG") or museum name
+            (e.g., "hirshhorn", "natural history")
         limit: Maximum number of results to return (default: 10)
     """
     try:
+        # Map museum names to codes
+        museum_code = None
+        if unit_code:
+            unit_code_lower = unit_code.lower().strip()
+            if unit_code_lower in MUSEUM_MAP:
+                museum_code = MUSEUM_MAP[unit_code_lower]
+            elif unit_code_upper := unit_code.upper():
+                if unit_code_upper in VALID_MUSEUM_CODES:
+                    museum_code = unit_code_upper
+
         # Use reliable approach: search broadly then filter locally
         # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
@@ -136,7 +148,7 @@ async def get_on_view_context(
             limit=min(
                 limit * 5, 1000
             ),  # Search more broadly to get verified on-view items
-            unit_code=unit_code,
+            unit_code=museum_code,
             on_view=None,  # Don't use unreliable API filter
             object_type=None,
             date_start=None,
