@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from urllib.parse import urlencode
 
 import httpx
 from pydantic import HttpUrl
@@ -22,6 +23,8 @@ from .models import (
     CollectionStats,
     UnitStats,
 )
+
+from .utils import mask_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +156,20 @@ class SmithsonianAPIClient:
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
         try:
-            logger.debug("Making request to %s with params: %s", url, params)
-
             # The Smithsonian API uses api_key in the query string, not headers
             request_params = params.copy() if params else {}
             if self.api_key:
                 request_params["api_key"] = self.api_key
+                log_params = mask_api_key(request_params)  # Remove API key from being logged
+            else:
+                log_params = request_params
+
+            # Create masked URL for logging
+            log_url = f"{url}?{urlencode(log_params)}" if log_params else url
+
+            logger.debug(
+                "Making request to %s", log_url
+            )
 
             # Double-check session is available
             if self.session is None:
@@ -177,13 +188,22 @@ class SmithsonianAPIClient:
         except httpx.HTTPStatusError as e:
             # Handle HTTP status errors (like 404) gracefully
             status_code = e.response.status_code
-            error_msg = f"HTTP {status_code} error for {url}: {str(e)}"
+            error_msg = f"HTTP {status_code} error for {log_url}"
 
             if status_code == 404:
                 logger.debug("Resource not found: %s", url)
                 raise APIError(
                     error="not_found",
                     message="Resource not found",
+                    status_code=status_code,
+                    details={"url": url},
+                ) from e
+            if status_code == 429:
+                error_msg = f"Rate limit temporarilyexceeded for {url}"
+                logger.error(error_msg)
+                raise APIError(
+                    error="rate_limit_exceeded",
+                    message=error_msg,
                     status_code=status_code,
                     details={"url": url},
                 ) from e

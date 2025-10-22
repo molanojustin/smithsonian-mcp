@@ -28,7 +28,7 @@ from .app import mcp
 from .config import Config
 from .models import SmithsonianObject, SearchResult, CollectionSearchFilter
 from .api_client import SmithsonianAPIClient, create_client
-from . import server, tools, resources, prompts, context, main
+from . import server, tools, resources, prompts, context, main, utils
 try:
     from ._version import __version__
 except ModuleNotFoundError:  # pragma: no cover - fallback for missing build artefact
@@ -52,4 +52,5 @@ __all__ = [
     "prompts",
     "context",
     "main",
+    "utils",
 ]
