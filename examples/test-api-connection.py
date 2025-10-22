@@ -65,7 +65,6 @@ async def test_api_connection():
                 material=None,
                 topic=None,
                 has_images=None,
-                has_3d=None,
                 is_cc0=None,
                 offset=0,
                 on_view=None,
@@ -91,9 +90,6 @@ async def test_api_connection():
                     print(f"✅ Retrieved detailed info for: {detailed_obj.title}")
                     print(
                         f"   Images: {len(detailed_obj.images) if detailed_obj.images else 0} available"
-                    )
-                    print(
-                        f"   3D Models: {len(detailed_obj.models_3d) if detailed_obj.models_3d else 0} available"
                     )
                 else:
                     print("Warning: Object details not found")
