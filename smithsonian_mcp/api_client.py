@@ -374,8 +374,10 @@ class SmithsonianAPIClient:
                         if isinstance(resource, dict):
                             label = resource.get("label", "").lower()
                             url = resource.get("url")
-                            if url and isinstance(url, str) and (url.startswith("http://") or url.startswith("https://")):
-                                if "high-resolution tiff" in label or "high-resolution jpeg" in label:
+                            if (url and isinstance(url, str) and
+                                (url.startswith("http://") or url.startswith("https://"))):
+                                if ("high-resolution tiff" in label or
+                                    "high-resolution jpeg" in label):
                                     try:
                                         media_url = HttpUrl(url)  # type: ignore
                                         # Extract dimensions if available
@@ -388,7 +390,7 @@ class SmithsonianAPIClient:
                                             except (ValueError, IndexError):
                                                 pass
                                         break  # Found high-res, use it
-                                    except Exception:
+                                    except (ValueError, TypeError):
                                         pass
 
                 # If no high-res found in resources, fall back to direct fields
@@ -396,10 +398,11 @@ class SmithsonianAPIClient:
                     for field_name in ["content", "url", "href", "src"]:
                         candidate_url = media_item.get(field_name)
                         if (candidate_url and isinstance(candidate_url, str) and
-                            (candidate_url.startswith("http://") or candidate_url.startswith("https://"))):
+                            (candidate_url.startswith("http://") or
+                             candidate_url.startswith("https://"))):
                             try:
                                 media_url = HttpUrl(candidate_url)  # type: ignore
-                            except Exception:
+                            except (ValueError, TypeError):
                                 # If URL validation fails, keep as None
                                 pass
                             break
@@ -410,7 +413,7 @@ class SmithsonianAPIClient:
                 if thumbnail_str and isinstance(thumbnail_str, str):
                     try:
                         thumbnail_url = HttpUrl(thumbnail_str)  # type: ignore
-                    except Exception:
+                    except (ValueError, TypeError):
                         pass
 
                 # Extract IIIF URL
@@ -419,7 +422,7 @@ class SmithsonianAPIClient:
                 if iiif_str and isinstance(iiif_str, str):
                     try:
                         iiif_url = HttpUrl(iiif_str)  # type: ignore
-                    except Exception:
+                    except (ValueError, TypeError):
                         pass
 
                 # Parse usage rights
