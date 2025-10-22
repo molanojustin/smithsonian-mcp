@@ -65,7 +65,7 @@ python scripts/verify-setup.py
 
 ### Core Functionality
 
-- **Search Collections**: 3+ million objects across 19 Smithsonian museums
+- **Search Collections**: 3+ million objects across 24 Smithsonian museums
 - **Object Details**: Complete metadata, descriptions, and provenance
 - **On-View Status** - Find objects currently on physical exhibit
 - **Image Access**: High-resolution images (CC0 licensed when available)
@@ -250,7 +250,7 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 - Image statistics are estimates based on search filtering, not actual media availability
 - The system gracefully handles this limitation and continues to provide all other metadata
 
-**API Scope: Diverse Museum Collections**: The Smithsonian Open Access API provides access to diverse collections across 16 Smithsonian museums, with each museum having distinct object types reflecting their unique focus areas. The discovery tools now correctly identify museum-specific collections.
+**API Scope: Diverse Museum Collections**: The Smithsonian Open Access API provides access to diverse collections across 24 Smithsonian museums, with each museum having distinct object types reflecting their unique focus areas. The discovery tools now correctly identify museum-specific collections with comprehensive object type intelligence gathered through systematic sampling.
 
 - **SAAM** (American Art): Paintings, decorative arts, sculptures, drawings
 - **NASM** (Air & Space): Aircraft, avionics, spacecraft, aviation equipment
@@ -270,7 +270,7 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 - `search_by_unit` - Museum-specific searches
 - `get_objects_on_view` - Find objects currently on physical exhibit
 - `check_object_on_view` - Check if a specific object is on display
-- `get_museum_collection_types` - Discover what types of objects are available in each museum (proactive discovery tool)
+- `get_museum_collection_types` - Get comprehensive list of object types available in each museum (based on systematic collection sampling)
 - `check_museum_has_object_type` - Check if a specific museum has objects of a particular type (e.g., paintings, sculptures)
 
 ### Information & Context
