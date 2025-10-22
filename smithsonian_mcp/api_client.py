@@ -340,7 +340,7 @@ class SmithsonianAPIClient:
 
         # Log when online_media is missing (API may have changed)
         if not online_media:
-            logger.debug(f"No online_media found for object {obj_id} - images may not be available through current API")
+            logger.debug("No online_media found for object %s", obj_id)
 
         # Handle different possible structures for online_media
         media_items = []
@@ -446,7 +446,7 @@ class SmithsonianAPIClient:
                     )
                 )
 
-        logger.debug(f"Parsed {len(images)} images for object {obj_id}")
+        logger.debug("Parsed %d images for object %s", images, obj_id)
 
 
 
