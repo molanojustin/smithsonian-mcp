@@ -64,5 +64,5 @@ async def test_get_stats_context_handles_stats_endpoint_failure(monkeypatch):
     assert "  NMNH: 120 total, 0 with images (est.)" in result
 
     stats_failure.assert_awaited_once()
-    assert client.search_collections.call_count == 8
+    assert client.search_collections.call_count == 9
     client.get_units.assert_awaited_once()

@@ -55,3 +55,20 @@ SIZE_GUIDELINES: Dict[str, str] = {
     "medium": "30-50 objects",
     "large": "60+ objects",
 }
+
+# Backward compatibility imports - these have been moved to museum_data.py
+# Import them here for backward compatibility
+try:
+    from .museum_data import (
+        MUSEUM_OBJECT_TYPES,
+        get_museum_object_types,
+        museum_has_object_type
+    )
+except ImportError:
+    # Fallback if museum_data.py doesn't exist
+    MUSEUM_OBJECT_TYPES = {}
+    def get_museum_object_types(museum_code: str) -> List[str]:
+        return []
+    def museum_has_object_type(museum_code: str, object_type: str) -> bool:
+        return False
+

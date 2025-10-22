@@ -229,6 +229,9 @@ class UnitStats(BaseModel):
     objects_with_images: Optional[int] = Field(
         None, description="Objects with images count"
     )
+    object_types: Optional[List[str]] = Field(
+        None, description="Available object types in this museum's Open Access collection"
+    )
 
 
 
@@ -240,8 +243,34 @@ class CollectionStats(BaseModel):
     total_cc0: Optional[int] = Field(None, description="Total CC0 licensed objects")
     total_with_images: Optional[int] = Field(None, description="Objects with images")
 
+    object_type_breakdown: Optional[Dict[str, int]] = Field(
+        None, description="Count of objects by type across all collections"
+    )
+
     units: List[UnitStats] = Field(..., description="Per-unit statistics")
     last_updated: datetime = Field(..., description="Statistics last updated")
+
+
+class MuseumCollectionTypes(BaseModel):
+    """Information about what types of objects are available in museum collections."""
+
+    museum_code: str = Field(..., description="Museum unit code")
+    museum_name: str = Field(..., description="Full museum name")
+    available_object_types: List[str] = Field(..., description="Object types available in Open Access")
+    total_sampled: int = Field(..., description="Number of objects sampled")
+    notes: Optional[str] = Field(None, description="Additional notes about collection scope")
+
+
+class ObjectTypeAvailability(BaseModel):
+    """Result of checking if a museum has objects of a specific type."""
+
+    museum_code: str = Field(..., description="Museum unit code")
+    museum_name: str = Field(..., description="Full museum name")
+    object_type: str = Field(..., description="Object type being checked")
+    available: bool = Field(..., description="Whether this object type is available")
+    count: Optional[int] = Field(None, description="Number of objects of this type")
+    sample_ids: Optional[List[str]] = Field(None, description="Sample object IDs")
+    message: str = Field(..., description="Human-readable explanation")
 
 
 class APIError(Exception):

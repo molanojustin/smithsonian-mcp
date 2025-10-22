@@ -74,7 +74,8 @@ python scripts/verify-setup.py
 
 ### AI Integration
 
-- **14 MCP Tools**: Smart discovery, comprehensive search, museum-specific queries, exhibition status, and contextual data access
+- **16 MCP Tools**: Smart discovery, comprehensive search, museum-specific queries, exhibition status, contextual data access, and proactive collection type discovery
+- **Proactive Discovery**: New tools help AI assistants understand API scope and available object types before searching, preventing confusion about archival vs. museum materials
 - **Smart Context**: Contextual data sources for AI assistants including enhanced statistics
 - **Rich Metadata**: Complete object information and exhibition details
 - **Exhibition Planning** - Tools to find and explore currently exhibited objects
@@ -249,6 +250,15 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 - Image statistics are estimates based on search filtering, not actual media availability
 - The system gracefully handles this limitation and continues to provide all other metadata
 
+**API Scope: Diverse Museum Collections**: The Smithsonian Open Access API provides access to diverse collections across 16 Smithsonian museums, with each museum having distinct object types reflecting their unique focus areas. The discovery tools now correctly identify museum-specific collections.
+
+- **SAAM** (American Art): Paintings, decorative arts, sculptures, drawings
+- **NASM** (Air & Space): Aircraft, avionics, spacecraft, aviation equipment
+- **NMAH** (American History): Historical artifacts, inventions, cultural objects
+- **CHNDM** (Design Museum): Design objects, textiles, furniture, graphics
+- Use discovery tools (`get_museum_collection_types`, `check_museum_has_object_type`) to explore available collections
+- Each museum's collection reflects its institutional mission and expertise
+
 ## MCP Tools
 
 ### Search & Discovery
@@ -260,6 +270,8 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 - `search_by_unit` - Museum-specific searches
 - `get_objects_on_view` - Find objects currently on physical exhibit
 - `check_object_on_view` - Check if a specific object is on display
+- `get_museum_collection_types` - Discover what types of objects are available in each museum (proactive discovery tool)
+- `check_museum_has_object_type` - Check if a specific museum has objects of a particular type (e.g., paintings, sculptures)
 
 ### Information & Context
 

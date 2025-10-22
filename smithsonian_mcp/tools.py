@@ -17,6 +17,8 @@ from .models import (
     CollectionSearchFilter,
     SmithsonianUnit,
     CollectionStats,
+    MuseumCollectionTypes,
+    ObjectTypeAvailability,
     APIError,
 )
 from .constants import MUSEUM_MAP, VALID_MUSEUM_CODES
@@ -792,8 +794,16 @@ async def find_and_describe(
     """
     Find an object and provide a complete description with download information.
 
-    This is the easiest way to get information about a Smithsonian object.
-    It searches, finds the best match, and returns a complete description.
+    This is the easiest way to get information about a Smithsonian object from their
+    Open Access collections.
+
+    IMPORTANT: The Smithsonian Open Access API primarily contains archival/library
+    materials (books, manuscripts, catalogs) and some digitized objects. Most museum
+    artwork collections (paintings, sculptures, artifacts) are NOT available through
+    this API - they require visiting museum websites directly.
+
+    Use get_museum_collection_types() first to see what's available in each museum,
+    or check_museum_has_object_type() to verify if a specific type is available.
 
     Args:
         query: What you're looking for (e.g., "Alma Thomas Earth Sermon")
@@ -806,9 +816,10 @@ async def find_and_describe(
         and download information if available
 
     Example:
+        # First check what's available
+        types = get_museum_collection_types(unit_code="HMSG")
+        # Then search if appropriate
         description = find_and_describe(query="Alma Thomas Earth Sermon", unit_code="HMSG")
-        # Returns: "Found: Earth Sermon—Beauty, Love and Peace by Alma Thomas.
-        # This 1971 painting... Download links: [list of available downloads]"
     """
     try:
         # Perform search directly
@@ -1185,10 +1196,15 @@ async def get_collection_statistics(
     Get comprehensive statistics about the Smithsonian Open Access collections.
 
     This tool provides overview statistics including total objects, digitized items,
-    CC0 licensed materials, and breakdowns by museum/unit.
+    CC0 licensed materials, and breakdowns by museum/unit and object type.
+
+    IMPORTANT: The Smithsonian Open Access API primarily contains archival/library
+    materials (books, manuscripts, catalogs) and some digitized objects. Most museum
+    artwork collections (paintings, sculptures, artifacts) are NOT available through
+    this API - they require visiting museum websites directly.
 
     Returns:
-        Collection statistics and metrics
+        Collection statistics including object type breakdowns
     """
     try:
         api_client = await get_api_client(ctx)
@@ -1492,3 +1508,275 @@ async def find_on_view_items(
     except Exception as e:
         logger.error("Error finding on-view items: %s", e)
         raise RuntimeError(f"Failed to find on-view items: {e}") from e
+
+
+@mcp.tool()
+async def get_museum_collection_types(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    unit_code: Optional[str] = None,
+    sample_size: int = 100,
+    use_cache: bool = True
+) -> List[MuseumCollectionTypes]:
+    """
+    Discover what types of objects are available in Smithsonian museums' Open Access collections.
+
+    This tool returns known object types from cached data when available, or samples
+    collections to identify object types available in each museum's Open Access contributions.
+
+    IMPORTANT: The Smithsonian Open Access API primarily contains archival/library
+    materials and technical objects. Traditional museum artworks (paintings, sculptures)
+    are generally NOT available through this API.
+
+    Args:
+        unit_code: Specific museum code (e.g., "SAAM", "NASM"), or None for all museums
+        sample_size: Number of objects to sample per museum when not using cache (default: 100, max: 500)
+        use_cache: Whether to use cached known object types (default: True)
+
+    Returns:
+        List of museums with their available object types in Open Access collections
+
+    Examples:
+        # Check what types are available at SAAM (uses cache)
+        types = get_museum_collection_types(unit_code="SAAM")
+
+        # Check all museums with fresh sampling
+        all_types = get_museum_collection_types(use_cache=False)
+    """
+    from .museum_data import MUSEUM_OBJECT_TYPES, get_museum_object_types
+
+    try:
+        sample_size = max(10, min(sample_size, 500))  # Reasonable bounds
+        api_client = await get_api_client(ctx)
+
+        # Get list of units to check
+        if unit_code:
+            # Validate unit code exists
+            all_units = await api_client.get_units()
+            unit_codes = [unit_code] if any(u.code == unit_code for u in all_units) else []
+            if not unit_codes:
+                raise ValueError(f"Unknown museum code: {unit_code}")
+        else:
+            # Get all unit codes
+            all_units = await api_client.get_units()
+            unit_codes = [u.code for u in all_units]
+
+        results = []
+
+        for code in unit_codes:
+            try:
+                # First try to get from cache
+                cached_types = get_museum_object_types(code) if use_cache else []
+
+                if cached_types:
+                    # Use cached data
+                    available_types = cached_types
+                    source = "cached"
+                    sampled_count = 0
+                    search_results = None
+                else:
+                    # Fall back to API sampling
+                    filters = CollectionSearchFilter(
+                        query="*",  # Get all objects
+                        unit_code=code,
+                        limit=sample_size,
+                        offset=0,
+                        object_type=None,
+                        maker=None,
+                        material=None,
+                        topic=None,
+                        has_images=None,
+                        is_cc0=None,
+                        on_view=None,
+                        date_start=None,
+                        date_end=None,
+                    )
+
+                    search_results = await api_client.search_collections(filters)
+
+                    # Extract unique object types
+                    object_types = set()
+                    for obj in search_results.objects:
+                        if obj.object_type:
+                            object_types.add(obj.object_type.lower().strip())
+
+                    # Sort for consistency
+                    available_types = sorted(list(object_types))
+                    source = "sampled"
+                    sampled_count = len(search_results.objects)
+
+                # Get museum name
+                museum_name = next((u.name for u in all_units if u.code == code), code)
+
+                # Create notes about scope and source
+                notes = None
+                if not available_types:
+                    notes = "No objects found in Open Access collection"
+                elif "painting" not in available_types and "sculpture" not in available_types:
+                    notes = "Primarily archival/library materials; traditional artwork may not be available in Open Access"
+
+                if source == "cached":
+                    notes = (notes + "; " if notes else "") + "Data from cached known types"
+                elif source == "sampled":
+                    notes = (notes + "; " if notes else "") + f"Sampled {sampled_count} objects"
+
+                results.append(MuseumCollectionTypes(
+                    museum_code=code,
+                    museum_name=museum_name,
+                    available_object_types=available_types,
+                    total_sampled=sampled_count,
+                    notes=notes
+                ))
+
+                logger.info(
+                    "Sampled %d objects from %s (%s): found types %s",
+                    len(search_results.objects), code, museum_name, available_types
+                )
+
+            except Exception as e:
+                logger.warning("Failed to sample museum %s: %s", code, e)
+                # Add empty result for failed museums
+                museum_name = next((u.name for u in all_units if u.code == code), code)
+                results.append(MuseumCollectionTypes(
+                    museum_code=code,
+                    museum_name=museum_name,
+                    available_object_types=[],
+                    total_sampled=0,
+                    notes=f"Failed to sample: {str(e)}"
+                ))
+
+        return results
+
+    except Exception as e:
+        logger.error("Error getting museum collection types: %s", e)
+        raise RuntimeError(f"Failed to get museum collection types: {e}") from e
+
+
+@mcp.tool()
+async def check_museum_has_object_type(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    unit_code: str = "",
+    object_type: str = "",
+    use_cache: bool = True
+) -> ObjectTypeAvailability:
+    """
+    Check if a Smithsonian museum has objects of a specific type in their Open Access collection.
+
+    This tool uses cached known data when available, or samples the collection to determine
+    whether a particular type of object is available in a museum's Open Access contributions.
+
+    IMPORTANT: Most museum artwork collections are NOT available through the Open Access API.
+    This API primarily contains archival/library materials and some digitized objects.
+
+    Args:
+        unit_code: Museum code (e.g., "SAAM" for American Art Museum, "NASM" for Air & Space)
+        object_type: Object type to check (e.g., "painting", "sculpture", "aircraft")
+        use_cache: Whether to use cached known data (default: True)
+
+    Returns:
+        Availability information with explanation
+
+    Examples:
+        # Check if SAAM has paintings (uses cache)
+        result = check_museum_has_object_type(unit_code="SAAM", object_type="painting")
+
+        # Check if NASM has aircraft with fresh sampling
+        result = check_museum_has_object_type(unit_code="NASM", object_type="aircraft", use_cache=False)
+    """
+    if not unit_code or not object_type:
+        raise ValueError("Both unit_code and object_type are required")
+
+    unit_code = unit_code.strip().upper()
+    object_type = object_type.strip().lower()
+
+    try:
+        api_client = await get_api_client(ctx)
+
+        # Validate museum exists
+        all_units = await api_client.get_units()
+        museum_info = next((u for u in all_units if u.code == unit_code), None)
+        if not museum_info:
+            return ObjectTypeAvailability(
+                museum_code=unit_code,
+                museum_name=f"Unknown Museum ({unit_code})",
+                object_type=object_type,
+                available=False,
+                count=None,
+                sample_ids=None,
+                message=f"Unknown museum code: {unit_code}"
+            )
+
+        # Check cached data first if enabled
+        if use_cache:
+            from .museum_data import museum_has_object_type as cached_check
+            cached_result = cached_check(unit_code, object_type)
+
+            if cached_result:
+                return ObjectTypeAvailability(
+                    museum_code=unit_code,
+                    museum_name=museum_info.name,
+                    object_type=object_type,
+                    available=True,
+                    count=None,  # We don't cache counts, just presence
+                    sample_ids=None,
+                    message=f"Yes, {museum_info.name} has {object_type}(s) in their Open Access collection (confirmed by cached data)"
+                )
+
+        # Search for objects of this type in the museum
+        filters = CollectionSearchFilter(
+            query="*",  # Get all objects
+            unit_code=unit_code,
+            object_type=object_type,
+            limit=10,  # Just need to check if any exist
+            offset=0,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            is_cc0=None,
+            on_view=None,
+            date_start=None,
+            date_end=None,
+        )
+
+        search_results = await api_client.search_collections(filters)
+
+        available = search_results.returned_count > 0
+        sample_ids = search_results.object_ids[:3] if available else None  # First 3 examples
+
+        # Craft helpful message
+        if available:
+            message = f"Yes, {museum_info.name} has {search_results.total_count} {object_type}(s) in their Open Access collection"
+            if search_results.total_count > search_results.returned_count:
+                message += f" ({search_results.returned_count} shown)"
+            if not use_cache:
+                message += " (sampled)"
+        else:
+            # Provide guidance based on object type
+            if object_type in ["painting", "sculpture", "artifact", "pottery", "textile"]:
+                message = f"No {object_type}s found in {museum_info.name}'s Open Access collection. Most museum artwork requires visiting {museum_info.website or 'the museum website'} directly."
+            else:
+                message = f"No {object_type}s found in {museum_info.name}'s Open Access collection."
+            if not use_cache:
+                message += " (sampled)"
+
+        return ObjectTypeAvailability(
+            museum_code=unit_code,
+            museum_name=museum_info.name,
+            object_type=object_type,
+            available=available,
+            count=search_results.total_count if available else None,
+            sample_ids=sample_ids,
+            message=message
+        )
+
+    except Exception as e:
+        logger.error("Error checking object type availability: %s", e)
+        return ObjectTypeAvailability(
+            museum_code=unit_code,
+            museum_name=f"Error checking {unit_code}",
+            object_type=object_type,
+            available=False,
+            count=None,
+            sample_ids=None,
+            message=f"Error checking availability: {str(e)}"
+        )

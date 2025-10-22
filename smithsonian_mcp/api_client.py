@@ -91,12 +91,21 @@ class SmithsonianAPIClient:
         filter_queries = []
 
         # Basic search query
+        query_parts = []
         if filters.query:
-            params["q"] = filters.query
+            query_parts.append(filters.query)
+
+        # Handle unit_code filtering - WORKAROUND: Smithsonian API fq=unitCode filter is broken
+        # Instead, incorporate unit_code into the main query using the correct field name
+        if filters.unit_code:
+            query_parts.append(f'unit_code:{filters.unit_code}')
+
+        # Combine query parts
+        if query_parts:
+            params["q"] = " AND ".join(query_parts)
 
         # Filters - these are added as 'fq' (filter query) parameters
-        if filters.unit_code:
-            filter_queries.append(f'unitCode:{filters.unit_code}')
+        # Note: unitCode filter is intentionally removed due to API bug
 
         if filters.object_type:
             filter_queries.append(f'content_type:"{filters.object_type}"')
@@ -307,6 +316,51 @@ class SmithsonianAPIClient:
         except APIError as e:
             logger.warning("Failed to sample objects for stats: %s", e)
             return 0, 0
+
+    async def _sample_object_types_for_stats(
+        self, sample_size: int = 2000
+    ) -> Dict[str, int]:
+        """
+        Sample objects and count occurrences of each object type.
+
+        Args:
+            sample_size: Number of objects to sample
+
+        Returns:
+            Dictionary mapping object types to counts
+        """
+        filters = CollectionSearchFilter(
+            query="*",  # Required for API
+            limit=sample_size,
+            offset=0,
+            unit_code=None,
+            object_type=None,
+            date_start=None,
+            date_end=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            is_cc0=None,
+            on_view=None,
+        )
+
+        try:
+            results = await self.search_collections(filters)
+            objects = results.objects
+
+            type_counts = {}
+            for obj in objects:
+                obj_type = obj.object_type
+                if obj_type:
+                    obj_type = obj_type.lower().strip()
+                    type_counts[obj_type] = type_counts.get(obj_type, 0) + 1
+
+            return type_counts
+
+        except APIError as e:
+            logger.warning("Failed to sample object types for stats: %s", e)
+            return {}
 
     def _parse_object_data(self, raw_data: Dict[str, Any]) -> SmithsonianObject:
         """
@@ -832,14 +886,19 @@ class SmithsonianAPIClient:
                         digitized_objects=unit_with_images,
                         cc0_objects=unit_metrics.get("CC0_records", 0),
                         objects_with_images=unit_with_images,
+                        object_types=None,  # Will be populated separately
                     )
                 )
+
+            # Sample object types for overall breakdown
+            object_type_breakdown = await self._sample_object_types_for_stats(sample_size=2000)
 
             return CollectionStats(
                 total_objects=total_objects,
                 total_digitized=total_with_images,
                 total_cc0=total_cc0,
                 total_with_images=total_with_images,
+                object_type_breakdown=object_type_breakdown,
                 units=unit_stats,
                 last_updated=datetime.now(),
             )
@@ -961,14 +1020,19 @@ class SmithsonianAPIClient:
                             digitized_objects=unit_images,
                             cc0_objects=unit_cc0,
                             objects_with_images=unit_images,
+                            object_types=None,  # Will be populated separately
                         )
                     )
+
+                # Sample object types for overall breakdown (fallback)
+                object_type_breakdown = await self._sample_object_types_for_stats(sample_size=2000)
 
                 return CollectionStats(
                     total_objects=total_objects,
                     total_digitized=total_with_images,
                     total_cc0=total_cc0,
                     total_with_images=total_with_images,
+                    object_type_breakdown=object_type_breakdown,
                     units=unit_stats,
                     last_updated=datetime.now(),
                 )
