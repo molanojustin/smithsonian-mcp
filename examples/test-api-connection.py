@@ -8,6 +8,7 @@ without requiring the full MCP server setup.
 import asyncio
 import logging
 from pathlib import Path
+import random
 import sys
 
 # Add parent directory to path to import smithsonian_mcp
@@ -19,7 +20,7 @@ from smithsonian_mcp import create_client, Config, CollectionSearchFilter
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Setting httpx logging to WARNING to reduce key leaks
+# Setting httpx logging to WARNING to prevent API key exposure in HTTP logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
@@ -98,21 +99,26 @@ async def test_api_connection():
                     print("Warning: Object details not found")
                 print()
 
-            # Test 4: Collection statistics
-            print("Test 4: Getting collection statistics...")
-            stats = await client.get_collection_stats()
-            print(f"✅ Collection statistics:")
-            print(f"   Total objects: {stats.total_objects:,}")
-            print(
-                f"   CC0 licensed: {stats.total_cc0:,}"
-                if stats.total_cc0
-                else "   CC0 licensed: Not available from API"
-            )
-            print(
-                f"   With CC0 media: {stats.total_with_images:,}"
-                if stats.total_with_images
-                else "   With CC0 media: Not available from API"
-            )
+            # Test 4: Sample collection statistics (3 random museums)
+            print("Test 4: Getting sample collection statistics...")
+            # Get stats from the API (single call)
+            stats_response = await client._make_request("stats")
+            stats_data = stats_response.get("response", {})
+            units_data = stats_data.get("units", [])
+
+            # Get unit name mapping
+            unit_name_map = {unit.code: unit.name for unit in await client.get_units()}
+
+            # Randomly select 3 units that have stats data
+            available_units = [unit for unit in units_data if unit.get("unit") in unit_name_map]
+            selected_units = random.sample(available_units, min(3, len(available_units)))
+
+            print(f"✅ Sample statistics from {len(selected_units)} museums:")
+            for unit_data in selected_units:
+                unit_code = unit_data.get("unit", "")
+                unit_name = unit_name_map.get(unit_code, unit_code)
+                total_objects = unit_data.get("total_objects", 0)
+                print(f"   {unit_name}: {total_objects:,} objects")
             print()
 
         print("All tests passed! API connection is working.")

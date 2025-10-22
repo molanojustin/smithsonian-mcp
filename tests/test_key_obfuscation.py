@@ -47,5 +47,4 @@ class TestKeyObfuscation(unittest.TestCase):
             print("Logged message:", logged_message)
 
             self.assertNotIn("test_api_key", logged_message)
-            self.assertNotIn("api_key': 'test_api_key", logged_message)
-            self.assertIn("api_key': '****'", logged_message)
+            self.assertIn("api_key=%2A%2A%2A%2A", logged_message)  # Ensure api_key is masked

@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from urllib.parse import urlencode
 
 import httpx
 from pydantic import HttpUrl
@@ -163,8 +164,11 @@ class SmithsonianAPIClient:
             else:
                 log_params = request_params
 
+            # Create masked URL for logging
+            log_url = f"{url}?{urlencode(log_params)}" if log_params else url
+
             logger.debug(
-                "Making request to %s with params: %s", url, log_params
+                "Making request to %s", log_url
             )
 
             # Double-check session is available
@@ -184,7 +188,7 @@ class SmithsonianAPIClient:
         except httpx.HTTPStatusError as e:
             # Handle HTTP status errors (like 404) gracefully
             status_code = e.response.status_code
-            error_msg = f"HTTP {status_code} error for {url}: {str(e)}"
+            error_msg = f"HTTP {status_code} error for {log_url}"
 
             if status_code == 404:
                 logger.debug("Resource not found: %s", url)
