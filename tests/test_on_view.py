@@ -229,7 +229,7 @@ class TestOnViewAPIClient:
 
         assert "fq" in params
         assert 'onPhysicalExhibit:"Yes"' in params["fq"]
-        assert 'unit_code:"NMNH"' in params["fq"]
+        assert 'unitCode:NMNH' in params["fq"]
         assert " AND " in params["fq"]
 
     def test_build_search_params_on_view_none(self):
@@ -398,8 +398,8 @@ class TestOnViewIntegration:
         assert "fq" in params
         fq_value = params["fq"]
         assert 'onPhysicalExhibit:"Yes"' in fq_value
-        assert 'unit_code:"NMNH"' in fq_value
-        assert "online_media_type:Images" in fq_value
+        assert 'unitCode:NMNH' in fq_value
+        assert 'online_media_type:Images' in fq_value
 
     async def test_combined_filters_on_view_and_cc0(self):
         """Test combining on_view filter with CC0 license."""

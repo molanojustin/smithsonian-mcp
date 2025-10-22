@@ -28,19 +28,7 @@ class ImageData(BaseModel):
     is_cc0: bool = Field(default=False, description="Whether image is CC0 licensed")
 
 
-class Model3D(BaseModel):
-    """Represents 3D model data for collection objects."""
 
-    url: Optional[HttpUrl] = Field(None, description="URL to the 3D model file")
-    format: Optional[str] = Field(None, description="3D model format (gltf, obj, etc.)")
-    preview_url: Optional[HttpUrl] = Field(
-        None, description="URL to 3D model preview image"
-    )
-    file_size: Optional[int] = Field(None, description="Model file size in bytes")
-    polygons: Optional[int] = Field(None, description="Number of polygons in the model")
-    textures: Optional[List[str]] = Field(
-        default_factory=list, description="Available texture maps"
-    )
 
 
 class SmithsonianUnit(BaseModel):
@@ -71,7 +59,6 @@ class CollectionSearchFilter(BaseModel):
     material: Optional[str] = Field(None, description="Material or medium")
     topic: Optional[str] = Field(None, description="Subject topic or theme")
     has_images: Optional[bool] = Field(None, description="Filter objects with images")
-    has_3d: Optional[bool] = Field(None, description="Filter objects with 3D models")
     is_cc0: Optional[bool] = Field(None, description="Filter CC0 licensed objects")
     on_view: Optional[bool] = Field(
         None, description="Filter objects currently on physical exhibit"
@@ -131,9 +118,6 @@ class SmithsonianObject(BaseModel):
     images: Optional[List[ImageData]] = Field(
         default_factory=list, description="Associated images"
     )
-    models_3d: Optional[List[Model3D]] = Field(
-        default_factory=list, description="Associated 3D models"
-    )
 
     # Rights and access
     credit_line: Optional[str] = Field(None, description="Credit line")
@@ -187,9 +171,7 @@ class UnitStats(BaseModel):
     objects_with_images: Optional[int] = Field(
         None, description="Objects with images count"
     )
-    objects_with_3d: Optional[int] = Field(
-        None, description="Objects with 3D models count"
-    )
+
 
 
 class CollectionStats(BaseModel):
@@ -199,7 +181,7 @@ class CollectionStats(BaseModel):
     total_digitized: Optional[int] = Field(None, description="Total digitized objects")
     total_cc0: Optional[int] = Field(None, description="Total CC0 licensed objects")
     total_with_images: Optional[int] = Field(None, description="Objects with images")
-    total_with_3d: Optional[int] = Field(None, description="Objects with 3D models")
+
     units: List[UnitStats] = Field(..., description="Per-unit statistics")
     last_updated: datetime = Field(..., description="Statistics last updated")
 

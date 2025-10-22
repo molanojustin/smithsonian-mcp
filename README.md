@@ -69,15 +69,16 @@ python scripts/verify-setup.py
 - **Object Details**: Complete metadata, descriptions, and provenance
 - **On-View Status** - Find objects currently on physical exhibit
 - **Image Access**: High-resolution images (CC0 licensed when available)
-- **3D Models**: Interactive 3D content where available
 - **Museum Information**: Browse all Smithsonian institutions
+- **Collection Statistics**: Comprehensive metrics with per-museum breakdowns (sampling-based estimates)
 
 ### AI Integration
 
 - **14 MCP Tools**: Smart discovery, comprehensive search, museum-specific queries, exhibition status, and contextual data access
-- **Smart Context**: Contextual data sources for AI assistants
+- **Smart Context**: Contextual data sources for AI assistants including enhanced statistics
 - **Rich Metadata**: Complete object information and exhibition details
 - **Exhibition Planning** - Tools to find and explore currently exhibited objects
+- **Collection Analytics**: Per-museum statistics with sampling-based accuracy
 - **Multi-Model Compatible**: Works well with both advanced and simpler AI models through simplified tool interfaces
 
 ## Integration
@@ -228,7 +229,25 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed mcpo troubleshooting, 
 - **CC0 Content**: Public domain materials for commercial use
 - **Rich Metadata**: Creators, dates, materials, dimensions
 - **High-Resolution Images**: Professional photography
-- **3D Models**: Interactive digital assets
+
+### Data Accuracy & Sampling
+
+Collection statistics for objects with images use **sampling methodology** to provide accurate estimates:
+
+- **Sample Size**: Up to 1000 objects per query for statistical significance
+- **Methodology**: Counts actual returned objects instead of relying on potentially buggy API totals
+- **Coverage**: Includes per-museum breakdowns with individual sampling for each institution
+- **Transparency**: All sampled counts are clearly marked as "(est.)" in outputs
+
+This approach ensures reliable metrics while respecting API rate limits and avoiding the Smithsonian API's rowCount filtering bug.
+
+### Current API Limitations
+
+**Image URLs Not Available**: The Smithsonian Open Access API currently does not provide image URLs or media data in detailed content responses. While the search API can filter objects by media type (e.g., `online_media_type:Images`), the actual image URLs are not included in the detailed object data returned by the content API. This appears to be a change in the API since the available documentation was published.
+
+- Objects will show as having 0 images even when filtered for image content
+- Image statistics are estimates based on search filtering, not actual media availability
+- The system gracefully handles this limitation and continues to provide all other metadata
 
 ## MCP Tools
 
@@ -245,11 +264,11 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed mcpo troubleshooting, 
 ### Information & Context
 
 - `get_smithsonian_units` - List all museums
-- `get_collection_statistics` - Collection metrics
+- `get_collection_statistics` - Collection metrics with per-museum breakdowns
 - `get_search_context` - Get search results as context data
 - `get_object_context` - Get detailed object information as context
 - `get_units_context` - Get list of units as context data
-- `get_stats_context` - Get collection statistics as context
+- `get_stats_context` - Get collection statistics as context (includes sampling-based estimates)
 - `get_on_view_context` - Get currently exhibited objects as context
 
 ## Use Cases

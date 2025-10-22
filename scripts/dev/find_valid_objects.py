@@ -27,15 +27,14 @@ async def find_valid_objects():
         filters = CollectionSearchFilter(
             query="painting",
             limit=5,
-            unit_code=None,
+            unit_code="NPG",  # National Portrait Gallery
             object_type=None,
             date_start=None,
             date_end=None,
             maker=None,
             material=None,
             topic=None,
-            has_images=True,
-            has_3d=None,
+            has_images=None,  # Remove image filter
             is_cc0=None,
             on_view=None,
         )
@@ -48,6 +47,23 @@ async def find_valid_objects():
             print(f"  ID: {obj.id}")
             print(f"  Museum: {obj.unit_name}")
             print(f"  Images: {len(obj.images) if obj.images else 0}")
+
+            # Debug: Get raw content to see full structure
+            try:
+                raw_content = await api_client._make_request(f"content/{obj.id}")
+                content = raw_content.get("response", {}).get("content", {})
+                descriptive_non_repeating = content.get("descriptiveNonRepeating", {})
+                online_media = descriptive_non_repeating.get("online_media", {})
+                print(f"  Raw online_media: {online_media}")
+                print(f"  Content keys: {list(content.keys())}")
+                print(f"  DescriptiveNonRepeating keys: {list(descriptive_non_repeating.keys())}")
+                indexed_structured = content.get("indexedStructured", {})
+                print(f"  IndexedStructured keys: {list(indexed_structured.keys())}")
+                # Check if images are in indexedStructured
+                if "online_media" in indexed_structured:
+                    print(f"  IndexedStructured online_media: {indexed_structured['online_media']}")
+            except Exception as e:
+                print(f"  Error getting raw content: {e}")
             print()
 
         return results.objects[:3]  # Return first 3 for testing

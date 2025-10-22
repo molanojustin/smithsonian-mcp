@@ -6,6 +6,7 @@ This module tests end-to-end MCP workflows, protocol adherence, and cross-tool d
 # TODO: DEBUG THIS TEST. STILL PASSING, BUT WE NEED TO FIGURE OUT THE 21 ISSUES.
 import pytest
 import asyncio
+from datetime import datetime
 from unittest.mock import AsyncMock, patch, MagicMock
 from typing import List, Dict, Any, Optional
 
@@ -105,8 +106,7 @@ class TestMCPProtocolAdherence:
                         total_digitized=500,
                         total_cc0=200,
                         total_with_images=400,
-                        total_with_3d=50,
-                        last_updated="2024-01-01",
+                        last_updated=datetime(2024, 1, 1),
                         units=[],
                     )
                 )

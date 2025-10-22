@@ -41,8 +41,8 @@ async def test_get_stats_context_handles_stats_endpoint_failure(monkeypatch):
     )
 
     fallback_units = [
-        SmithsonianUnit(code="NMAH", name="National Museum of American History"),
-        SmithsonianUnit(code="NMNH", name="National Museum of Natural History"),
+        SmithsonianUnit(code="NMAH", name="National Museum of American History", description="", website=None, location=""),
+        SmithsonianUnit(code="NMNH", name="National Museum of Natural History", description="", website=None, location=""),
     ]
     monkeypatch.setattr(client, "get_units", AsyncMock(return_value=fallback_units))
 
@@ -56,13 +56,13 @@ async def test_get_stats_context_handles_stats_endpoint_failure(monkeypatch):
     result = await resources_module.get_stats_context.fn()
 
     assert "Total Objects: 120" in result
-    assert "Digitized Objects: 120" in result
+    assert "Digitized Objects: 0" in result
     assert "CC0 Licensed Objects: 120" in result
-    assert "Objects with Images: 120" in result
-    assert "Objects with 3D Models: 120" in result
-    assert "  NMAH: 120" in result
-    assert "  NMNH: 120" in result
+    assert "Objects with Images (est.): 0" in result
+
+    assert "  NMAH: 120 total, 0 with images (est.)" in result
+    assert "  NMNH: 120 total, 0 with images (est.)" in result
 
     stats_failure.assert_awaited_once()
-    assert client.search_collections.call_count == 12
+    assert client.search_collections.call_count == 8
     client.get_units.assert_awaited_once()

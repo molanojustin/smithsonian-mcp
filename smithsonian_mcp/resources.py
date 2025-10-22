@@ -46,7 +46,6 @@ async def get_search_context(
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
             on_view=None,
         )
@@ -105,9 +104,6 @@ async def get_object_context(
             output.append(f"\nDescription: {obj.description}")
 
         output.append(f"\nImages: {len(obj.images) if obj.images else 0} available")
-        output.append(
-            f"3D Models: {len(obj.models_3d) if obj.models_3d else 0} available"
-        )
 
         return "\n".join(output)
 
@@ -149,7 +145,6 @@ async def get_on_view_context(
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
         api_client = await get_api_client(ctx)
@@ -228,15 +223,18 @@ async def get_stats_context(
             f"Total Objects: {stats.total_objects:,}",
             f"Digitized Objects: {_format_optional_number(stats.total_digitized)}",
             f"CC0 Licensed Objects: {_format_optional_number(stats.total_cc0)}",
-            f"Objects with Images: {_format_optional_number(stats.total_with_images)}",
-            f"Objects with 3D Models: {_format_optional_number(stats.total_with_3d)}",
+            f"Objects with Images (est.): {_format_optional_number(stats.total_with_images)}",
+
             f"\nLast Updated: {stats.last_updated}\n",
-            "By Museum:",
+            "By Museum (estimates using overall collection proportions):",
+            "Note: Smithsonian API doesn't provide per-museum image statistics.",
+            "All museums show the same percentage due to API limitations.",
         ]
 
         for unit in stats.units:
             output.append(
-                f"  {unit.unit_code}: {_format_optional_number(unit.total_objects)}"
+                f"  {unit.unit_code}: {_format_optional_number(unit.total_objects)} total, "
+                f"{_format_optional_number(unit.objects_with_images)} with images (est.)"
             )
 
         return "\n".join(output)

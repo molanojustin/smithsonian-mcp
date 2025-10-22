@@ -59,7 +59,7 @@ def collection_research_prompt(
             f"1. Searching for relevant objects and artworks related to this topic\n"
             f"2. Identifying which Smithsonian museums have the most relevant materials\n"
             f"3. Suggesting related topics or themes I should also explore\n"
-            f"4. Highlighting any objects with high-quality images or 3D models\n"
+            f"4. Highlighting any objects with high-quality images\n"
             f"5. Noting any objects that are CC0 licensed for potential publication use\n\n"
             f"Please provide detailed information about the most significant objects you find, "
             f"including their historical context and scholarly significance.",

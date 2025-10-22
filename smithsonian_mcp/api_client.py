@@ -17,7 +17,6 @@ from .models import (
     SearchResult,
     CollectionSearchFilter,
     ImageData,
-    Model3D,
     APIError,
     SmithsonianUnit,
     CollectionStats,
@@ -97,7 +96,7 @@ class SmithsonianAPIClient:
 
         # Filters - these are added as 'fq' (filter query) parameters
         if filters.unit_code:
-            filter_queries.append(f'unit_code:"{filters.unit_code}"')
+            filter_queries.append(f'unitCode:{filters.unit_code}')
 
         if filters.object_type:
             filter_queries.append(f'content_type:"{filters.object_type}"')
@@ -112,9 +111,6 @@ class SmithsonianAPIClient:
         # Boolean filters
         if filters.has_images:
             filter_queries.append("online_media_type:Images")
-
-        if filters.has_3d:
-            filter_queries.append("online_media_type:\"3D Models\"")
 
         if filters.is_cc0:
             filter_queries.append("usage_rights:CC0")
@@ -155,17 +151,18 @@ class SmithsonianAPIClient:
 
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
-        try:
-            # The Smithsonian API uses api_key in the query string, not headers
-            request_params = params.copy() if params else {}
-            if self.api_key:
-                request_params["api_key"] = self.api_key
-                log_params = mask_api_key(request_params)  # Remove API key from being logged
-            else:
-                log_params = request_params
+        # Prepare request parameters and logging URL
+        request_params = params.copy() if params else {}
+        if self.api_key:
+            request_params["api_key"] = self.api_key
+            log_params = mask_api_key(request_params)  # Remove API key from being logged
+        else:
+            log_params = request_params
 
-            # Create masked URL for logging
-            log_url = f"{url}?{urlencode(log_params)}" if log_params else url
+        # Create masked URL for logging
+        log_url = f"{url}?{urlencode(log_params)}" if log_params else url
+
+        try:
 
             logger.debug(
                 "Making request to %s", log_url
@@ -269,6 +266,48 @@ class SmithsonianAPIClient:
                 return room
         return None
 
+    async def _sample_objects_for_stats(
+        self, sample_size: int = 1000
+    ) -> tuple[int, int]:
+        """
+        Sample objects and count how many have images.
+
+        Args:
+            sample_size: Number of objects to sample
+
+        Returns:
+            Tuple of (total_sampled, count_with_images)
+        """
+        # Search for sample objects
+        # Note: unit filtering doesn't work in the API
+        filters = CollectionSearchFilter(
+            query="*",  # Required for API
+            limit=sample_size,
+            offset=0,
+            unit_code=None,  # Filtering doesn't work
+            object_type=None,
+            date_start=None,
+            date_end=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            is_cc0=None,
+            on_view=None,
+        )
+
+        try:
+            results = await self.search_collections(filters)
+            objects = results.objects
+
+            count_with_images = sum(1 for obj in objects if obj.images)
+
+            return len(objects), count_with_images
+
+        except APIError as e:
+            logger.warning("Failed to sample objects for stats: %s", e)
+            return 0, 0
+
     def _parse_object_data(self, raw_data: Dict[str, Any]) -> SmithsonianObject:
         """
         Parse raw API response data into a SmithsonianObject.
@@ -295,41 +334,121 @@ class SmithsonianAPIClient:
         title = raw_data.get("title", "")
         unit_code = raw_data.get("unitCode", "")
 
-        # Parse images
+        # Parse images with robust structure handling
         images = []
         online_media = descriptive_non_repeating.get("online_media", {})
-        if "media" in online_media:
-            for media_item in online_media["media"]:
-                if media_item.get("type") == "Images":
-                    images.append(
-                        ImageData(
-                            url=media_item.get("content"),
-                            thumbnail_url=media_item.get("thumbnail"),
-                            iiif_url=media_item.get("iiif"),
-                            alt_text=media_item.get("caption", ""),
-                            width=media_item.get("width"),
-                            height=media_item.get("height"),
-                            format=media_item.get("format"),
-                            size_bytes=media_item.get("size"),
-                            caption=media_item.get("caption", ""),
-                            is_cc0=media_item.get("usage", {}).get("access") == "CC0",
-                        )
-                    )
 
-        # Parse 3D models
-        models_3d = []
-        if "media" in online_media:
-            for media_item in online_media["media"]:
-                if media_item.get("type") == "3D":
-                    models_3d.append(
-                        Model3D(
-                            url=media_item.get("content"),
-                            format=media_item.get("format"),
-                            preview_url=media_item.get("thumbnail"),
-                            file_size=media_item.get("size"),
-                            polygons=media_item.get("polygons"),
-                        )
+        # Log when online_media is missing (API may have changed)
+        if not online_media:
+            logger.debug(f"No online_media found for object {obj_id} - images may not be available through current API")
+
+        # Handle different possible structures for online_media
+        media_items = []
+        if isinstance(online_media, list):
+            # online_media is a direct array of media items
+            media_items = online_media
+        elif isinstance(online_media, dict):
+            if "media" in online_media and isinstance(online_media["media"], list):
+                # online_media has a "media" key containing array
+                media_items = online_media["media"]
+            elif online_media.get("type"):
+                # online_media itself is a single media item
+                media_items = [online_media]
+
+        # Process each media item
+        for media_item in media_items:
+            if not isinstance(media_item, dict):
+                continue
+
+
+
+            if media_item.get("type") == "Images":
+                # Extract media URL - prioritize high-resolution versions from resources
+                media_url = None
+
+                # First, check resources array for high-resolution versions
+                resources = media_item.get("resources", [])
+                if isinstance(resources, list):
+                    # Prioritize high-res TIFF, then JPEG, then any download URL
+                    for resource in resources:
+                        if isinstance(resource, dict):
+                            label = resource.get("label", "").lower()
+                            url = resource.get("url")
+                            if url and isinstance(url, str) and (url.startswith("http://") or url.startswith("https://")):
+                                if "high-resolution tiff" in label or "high-resolution jpeg" in label:
+                                    try:
+                                        media_url = HttpUrl(url)  # type: ignore
+                                        # Extract dimensions if available
+                                        dimensions = resource.get("dimensions")
+                                        if dimensions and isinstance(dimensions, str):
+                                            try:
+                                                width, height = dimensions.split("x")
+                                                media_item["width"] = int(width)
+                                                media_item["height"] = int(height)
+                                            except (ValueError, IndexError):
+                                                pass
+                                        break  # Found high-res, use it
+                                    except Exception:
+                                        pass
+
+                # If no high-res found in resources, fall back to direct fields
+                if media_url is None:
+                    for field_name in ["content", "url", "href", "src"]:
+                        candidate_url = media_item.get(field_name)
+                        if (candidate_url and isinstance(candidate_url, str) and
+                            (candidate_url.startswith("http://") or candidate_url.startswith("https://"))):
+                            try:
+                                media_url = HttpUrl(candidate_url)  # type: ignore
+                            except Exception:
+                                # If URL validation fails, keep as None
+                                pass
+                            break
+
+                # Extract thumbnail URL
+                thumbnail_url = None
+                thumbnail_str = media_item.get("thumbnail")
+                if thumbnail_str and isinstance(thumbnail_str, str):
+                    try:
+                        thumbnail_url = HttpUrl(thumbnail_str)  # type: ignore
+                    except Exception:
+                        pass
+
+                # Extract IIIF URL
+                iiif_url = None
+                iiif_str = media_item.get("iiif")
+                if iiif_str and isinstance(iiif_str, str):
+                    try:
+                        iiif_url = HttpUrl(iiif_str)  # type: ignore
+                    except Exception:
+                        pass
+
+                # Parse usage rights
+                is_cc0 = False
+                usage = media_item.get("usage", {})
+                if isinstance(usage, dict):
+                    access = usage.get("access")
+                    is_cc0 = access == "CC0"
+                elif isinstance(usage, str):
+                    is_cc0 = usage == "CC0"
+
+                images.append(
+                    ImageData(
+                        url=media_url,
+                        thumbnail_url=thumbnail_url,
+                        iiif_url=iiif_url,
+                        alt_text=media_item.get("caption", ""),
+                        width=media_item.get("width"),
+                        height=media_item.get("height"),
+                        format=media_item.get("format"),
+                        size_bytes=media_item.get("size"),
+                        caption=media_item.get("caption", ""),
+                        is_cc0=is_cc0,
                     )
+                )
+
+        logger.debug(f"Parsed {len(images)} images for object {obj_id}")
+
+
 
         return SmithsonianObject(
             id=obj_id,
@@ -350,7 +469,6 @@ class SmithsonianAPIClient:
                 None,
             ),
             images=images,
-            models_3d=models_3d,
             raw_metadata=raw_data,
             date=descriptive_non_repeating.get("date", {}).get("content"),
             date_standardized=descriptive_non_repeating.get("date", {}).get(
@@ -615,8 +733,15 @@ class SmithsonianAPIClient:
 
     async def get_collection_stats(self) -> CollectionStats: # pylint: disable=too-many-locals
         """
-        Get overall collection statistics, augmenting CC0 stats with search queries
-        for more comprehensive data.
+        Get overall collection statistics.
+
+        Note: The Smithsonian API stats endpoint only provides CC0 object counts.
+        Image statistics are estimated via sampling since the API doesn't provide
+        per-media-type metrics. Additionally, the current API version does not
+        include online_media data in detailed content responses, so actual image
+        availability cannot be verified. Per-museum image counts are approximations
+        based on overall collection proportions and may not reflect actual
+        museum-specific digitization patterns.
         """
         try:
             # Get base stats (total objects, CC0 metrics) from the stats endpoint
@@ -626,107 +751,49 @@ class SmithsonianAPIClient:
             metrics = stats_data.get("metrics", {})
             total_cc0 = metrics.get("CC0_records", 0)
 
-            # Get more comprehensive stats via search
-            total_with_images = (
-                await self.search_collections(
-                    CollectionSearchFilter(
-                        query="*",
-                        limit=0,
-                        offset=0,
-                        unit_code=None,
-                        object_type=None,
-                        date_start=None,
-                        date_end=None,
-                        maker=None,
-                        material=None,
-                        topic=None,
-                        has_images=True,
-                        has_3d=None,
-                        is_cc0=None,
-                        on_view=None,
-                    )
-                )
-            ).total_count
-            total_with_3d = (
-                await self.search_collections(
-                    CollectionSearchFilter(
-                        query="*",
-                        limit=0,
-                        offset=0,
-                        unit_code=None,
-                        object_type=None,
-                        date_start=None,
-                        date_end=None,
-                        maker=None,
-                        material=None,
-                        topic=None,
-                        has_images=None,
-                        has_3d=True,
-                        is_cc0=None,
-                        on_view=None,
-                    )
-                )
-            ).total_count
+            # Get estimates via sampling (API doesn't support accurate filtered counts)
+            sample_size, sample_with_images = await self._sample_objects_for_stats(
+                sample_size=1000
+            )
+            if sample_size > 0:
+                total_with_images = int((sample_with_images / sample_size) * total_objects)
+            else:
+                total_with_images = 0
 
             # Build unit statistics
             unit_stats = []
             units_data = stats_data.get("units", [])
             unit_name_map = {unit.code: unit.name for unit in await self.get_units()}
 
+            # Note: Smithsonian API doesn't provide per-unit image statistics.
+            # We use overall collection proportions as estimates for each unit.
+            # This is a limitation of the API - different museum types should have
+            # different image percentages, but we can't determine this accurately.
+            overall_sample_size, overall_with_images = await self._sample_objects_for_stats(
+                sample_size=1000
+            )
+            if overall_sample_size > 0:
+                overall_images_ratio = overall_with_images / overall_sample_size
+            else:
+                overall_images_ratio = 0
+
             for unit_data in units_data:
                 unit_code = unit_data.get("unit", "")
                 unit_metrics = unit_data.get("metrics", {})
-                unit_with_images = (
-                    await self.search_collections(
-                        CollectionSearchFilter(
-                            query="*",
-                            limit=0,
-                            offset=0,
-                            unit_code=unit_code,
-                            object_type=None,
-                            date_start=None,
-                            date_end=None,
-                            maker=None,
-                            material=None,
-                            topic=None,
-                            has_images=True,
-                            has_3d=None,
-                            is_cc0=None,
-                            on_view=None,
-                        )
-                    )
-                ).total_count
-                unit_with_3d = (
-                    await self.search_collections(
-                        CollectionSearchFilter(
-                            query="*",
-                            limit=0,
-                            offset=0,
-                            unit_code=unit_code,
-                            object_type=None,
-                            date_start=None,
-                            date_end=None,
-                            maker=None,
-                            material=None,
-                            topic=None,
-                            has_images=None,
-                            has_3d=True,
-                            is_cc0=None,
-                            on_view=None,
-                        )
-                    )
-                ).total_count
+                unit_total = unit_data.get("total_objects", 0)
+
+                # Use overall proportions as estimates (API limitation)
+                unit_with_images = int(overall_images_ratio * unit_total)
 
                 unit_stats.append(
                     UnitStats(
                         unit_code=unit_code,
                         unit_name=unit_name_map.get(unit_code, unit_code)
                         or "Unknown Unit",
-                        total_objects=unit_data.get("total_objects", 0),
+                        total_objects=unit_total,
                         digitized_objects=unit_with_images,
                         cc0_objects=unit_metrics.get("CC0_records", 0),
                         objects_with_images=unit_with_images,
-                        objects_with_3d=unit_with_3d,
                     )
                 )
 
@@ -735,7 +802,6 @@ class SmithsonianAPIClient:
                 total_digitized=total_with_images,
                 total_cc0=total_cc0,
                 total_with_images=total_with_images,
-                total_with_3d=total_with_3d,
                 units=unit_stats,
                 last_updated=datetime.now(),
             )
@@ -758,52 +824,21 @@ class SmithsonianAPIClient:
                             material=None,
                             topic=None,
                             has_images=None,
-                            has_3d=None,
                             is_cc0=None,
                             on_view=None,
                         )
                     )
                 ).total_count
-                total_with_images = (
-                    await self.search_collections(
-                        CollectionSearchFilter(
-                            query="*",
-                            limit=0,
-                            offset=0,
-                            unit_code=None,
-                            object_type=None,
-                            date_start=None,
-                            date_end=None,
-                            maker=None,
-                            material=None,
-                            topic=None,
-                            has_images=True,
-                            has_3d=None,
-                            is_cc0=None,
-                            on_view=None,
-                        )
-                    )
-                ).total_count
-                total_with_3d = (
-                    await self.search_collections(
-                        CollectionSearchFilter(
-                            query="*",
-                            limit=0,
-                            offset=0,
-                            unit_code=None,
-                            object_type=None,
-                            date_start=None,
-                            date_end=None,
-                            maker=None,
-                            material=None,
-                            topic=None,
-                            has_images=None,
-                            has_3d=True,
-                            is_cc0=None,
-                            on_view=None,
-                        )
-                    )
-                ).total_count
+
+                # Get estimates via sampling
+                sample_size, sample_with_images = await self._sample_objects_for_stats(
+                    sample_size=1000
+                )
+                if sample_size > 0:
+                    total_with_images = int((sample_with_images / sample_size) * total_objects)
+                else:
+                    total_with_images = 0
+
                 total_cc0 = (
                     await self.search_collections(
                         CollectionSearchFilter(
@@ -818,7 +853,6 @@ class SmithsonianAPIClient:
                             material=None,
                             topic=None,
                             has_images=None,
-                            has_3d=None,
                             is_cc0=True,
                             on_view=None,
                         )
@@ -826,6 +860,16 @@ class SmithsonianAPIClient:
                 ).total_count
 
                 units = await self.get_units()
+
+                # Get overall proportions for fallback
+                overall_sample_size, overall_with_images = await self._sample_objects_for_stats(
+                    sample_size=1000
+                )
+                if overall_sample_size > 0:
+                    overall_images_ratio = overall_with_images / overall_sample_size
+                else:
+                    overall_images_ratio = 0
+
                 unit_stats = []
                 for unit in units:
                     unit_total = (
@@ -842,52 +886,15 @@ class SmithsonianAPIClient:
                                 material=None,
                                 topic=None,
                                 has_images=None,
-                                has_3d=None,
                                 is_cc0=None,
                                 on_view=None,
                             )
                         )
                     ).total_count
-                    unit_images = (
-                        await self.search_collections(
-                            CollectionSearchFilter(
-                                query="*",
-                                limit=0,
-                                offset=0,
-                                unit_code=unit.code,
-                                object_type=None,
-                                date_start=None,
-                                date_end=None,
-                                maker=None,
-                                material=None,
-                                topic=None,
-                                has_images=True,
-                                has_3d=None,
-                                is_cc0=None,
-                                on_view=None,
-                            )
-                        )
-                    ).total_count
-                    unit_3d = (
-                        await self.search_collections(
-                            CollectionSearchFilter(
-                                query="*",
-                                limit=0,
-                                offset=0,
-                                unit_code=unit.code,
-                                object_type=None,
-                                date_start=None,
-                                date_end=None,
-                                maker=None,
-                                material=None,
-                                topic=None,
-                                has_images=None,
-                                has_3d=True,
-                                is_cc0=None,
-                                on_view=None,
-                            )
-                        )
-                    ).total_count
+
+                    # Use overall proportions since per-unit filtering doesn't work
+                    unit_images = int(overall_images_ratio * unit_total)
+
                     unit_cc0 = (
                         await self.search_collections(
                             CollectionSearchFilter(
@@ -902,7 +909,6 @@ class SmithsonianAPIClient:
                                 material=None,
                                 topic=None,
                                 has_images=None,
-                                has_3d=None,
                                 is_cc0=True,
                                 on_view=None,
                             )
@@ -917,7 +923,6 @@ class SmithsonianAPIClient:
                             digitized_objects=unit_images,
                             cc0_objects=unit_cc0,
                             objects_with_images=unit_images,
-                            objects_with_3d=unit_3d,
                         )
                     )
 
@@ -926,7 +931,6 @@ class SmithsonianAPIClient:
                     total_digitized=total_with_images,
                     total_cc0=total_cc0,
                     total_with_images=total_with_images,
-                    total_with_3d=total_with_3d,
                     units=unit_stats,
                     last_updated=datetime.now(),
                 )
