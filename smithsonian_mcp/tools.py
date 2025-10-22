@@ -13,6 +13,7 @@ from .context import ServerContext, get_api_client
 from .models import (
     SmithsonianObject,
     SearchResult,
+    SimpleSearchResult,
     CollectionSearchFilter,
     SmithsonianUnit,
     CollectionStats,
@@ -71,23 +72,32 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         the returned set.
 
     Note:
-        For easy access to object IDs, use the helper tools:
-        - get_first_object_id() - Get the ID of the first result
-        - get_object_ids() - Get all IDs from the results
-        - validate_object_id() - Check if an ID exists before fetching details
+        **For the absolute simplest experience, use these LLM-optimized tools:**
 
-    Example:
-        # Search for Alma Thomas paintings
+        **Easiest:** `find_and_describe(query="Alma Thomas Earth Sermon")`
+        - Returns complete description with download links in one call!
+
+        **Simple:** `simple_search(query="Alma Thomas")`
+        - Returns easy-to-read results with first_object_id ready to use
+
+        **Advanced:** Use search_collections with helper tools:
+        - summarize_search_results() - Get readable summary
+        - get_first_object_id() - Extract first object ID
+        - search_and_get_first_details() - Search and get details
+
+    Examples:
+        # Simplest: Get complete description with downloads
+        description = find_and_describe(query="Alma Thomas Earth Sermon")
+
+        # Simple: Easy search with readable results
+        results = simple_search(query="Alma Thomas Earth Sermon")
+        details = get_object_details(object_id=results.first_object_id)
+
+        # Advanced: Full control workflow
         results = search_collections(query="Alma Thomas", object_type="painting")
-
-        # Easy way: Get first object ID and details
+        summary = summarize_search_results(search_result=results)
         object_id = get_first_object_id(search_result=results)
-        if object_id:
-            details = get_object_details(object_id=object_id)
-
-        # Alternative: Manual extraction
-        if results.objects:
-            details = get_object_details(object_id=results.objects[0].id)
+        details = get_object_details(object_id=object_id)
     """
     try:
 
@@ -135,6 +145,91 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
     except Exception as e:
         logger.error("API error during search: %s", e)
         raise RuntimeError(f"Search failed: {e}") from e
+
+
+@mcp.tool()
+async def simple_search(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+    material: Optional[str] = None,
+    topic: Optional[str] = None,
+    has_images: Optional[bool] = None,
+    is_cc0: Optional[bool] = None,
+    on_view: Optional[bool] = None,
+    limit: int = 10,
+) -> SimpleSearchResult:
+    """
+    Search Smithsonian collections and return results in a simple, easy-to-understand format.
+
+    This tool is optimized for LLMs - it returns a human-readable summary along with
+    the key information you need. Use the first_object_id with get_object_details().
+
+    Args:
+        query: General search terms (keywords, titles, descriptions)
+        unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
+        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+        maker: Creator or maker name (artist, photographer, etc.)
+        material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
+        topic: Subject topic or theme
+        has_images: Filter objects that have associated images
+        is_cc0: Filter objects with CC0 (public domain) licensing
+        on_view: Filter objects currently on physical exhibit
+        limit: Number of results to return (default: 10, max: 50)
+
+    Returns:
+        Simplified search results with summary, object IDs, and easy-to-use fields
+
+    Example:
+        # Simple search for Alma Thomas
+        results = simple_search(query="Alma Thomas Earth Sermon")
+
+        # Get details for the first result
+        if results.first_object_id:
+            details = get_object_details(object_id=results.first_object_id)
+    """
+    try:
+        # Limit to reasonable number for simple format
+        limit = max(1, min(limit, 50))
+
+        # Create search filter
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=material,
+            topic=topic,
+            has_images=has_images,
+            is_cc0=is_cc0,
+            on_view=on_view,
+            limit=limit,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        # Convert to simple format
+        simple_results = results.to_simple_result()
+
+        logger.info(
+            "Simple search completed: '%s' returned %d of %d results",
+            query,
+            results.returned_count,
+            results.total_count,
+        )
+
+        return simple_results
+
+    except Exception as e:
+        logger.error("API error during simple search: %s", e)
+        raise RuntimeError(f"Simple search failed: {e}") from e
 
 
 @mcp.tool()
@@ -558,6 +653,49 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
 
 
 @mcp.tool()
+async def summarize_search_results(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    search_result: Optional[SearchResult] = None
+) -> Optional[str]:
+    """
+    Provide a human-readable summary of search results.
+
+    This tool creates a clear, readable summary of what objects were found in a search,
+    making it easy to understand the results without parsing complex data structures.
+
+    Args:
+        search_result: The result from a search_collections call
+
+    Returns:
+        A readable summary of the search results, or None if no results provided
+
+    Example:
+        results = search_collections(query="Alma Thomas Earth Sermon")
+        summary = summarize_search_results(search_result=results)
+        # Returns: "Found 3 objects: 1. 'Earth Sermon—Beauty, Love and Peace' by Alma Thomas (edanmdm-hmsg_80.107), ..."
+    """
+    if search_result is None or not search_result.objects:
+        return "No search results to summarize."
+
+    summary_lines = []
+    summary_lines.append(f"Found {search_result.returned_count} objects (out of {search_result.total_count} total matches):")
+
+    for i, obj in enumerate(search_result.objects[:5], 1):  # Show first 5 objects
+        title = obj.title or "Untitled"
+        maker = obj.maker[0] if obj.maker else "Unknown artist"
+        object_id = obj.id
+        summary_lines.append(f"{i}. '{title}' by {maker} (ID: {object_id})")
+
+    if search_result.returned_count > 5:
+        summary_lines.append(f"... and {search_result.returned_count - 5} more objects")
+
+    if search_result.has_more:
+        summary_lines.append(f"More results available (use offset={search_result.next_offset} for next page)")
+
+    return "\n".join(summary_lines)
+
+
+@mcp.tool()
 async def get_object_ids(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     search_result: Optional[SearchResult] = None
@@ -641,6 +779,220 @@ async def validate_object_id(
         return result is not None
     except (APIError, RuntimeError, ValueError):
         return False
+
+
+@mcp.tool()
+async def find_and_describe(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+) -> str:
+    """
+    Find an object and provide a complete description with download information.
+
+    This is the easiest way to get information about a Smithsonian object.
+    It searches, finds the best match, and returns a complete description.
+
+    Args:
+        query: What you're looking for (e.g., "Alma Thomas Earth Sermon")
+        unit_code: Museum code (e.g., "HMSG" for Hirshhorn)
+        object_type: Type of object (e.g., "painting")
+        maker: Artist or creator name
+
+    Returns:
+        Complete description of the object including title, artist, description,
+        and download information if available
+
+    Example:
+        description = find_and_describe(query="Alma Thomas Earth Sermon", unit_code="HMSG")
+        # Returns: "Found: Earth Sermon—Beauty, Love and Peace by Alma Thomas.
+        # This 1971 painting... Download links: [list of available downloads]"
+    """
+    try:
+        # Perform search directly
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=None,
+            topic=None,
+            has_images=None,
+            is_cc0=None,
+            on_view=None,
+            limit=1,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        api_client = await get_api_client(ctx)
+        search_results = await api_client.search_collections(filters)
+
+        if not search_results.objects:
+            return f"No objects found matching: {query}"
+
+        # Get detailed information
+        object_id = search_results.first_object_id
+        if not object_id:
+            return f"Found object but could not determine ID for: {query}"
+
+        details = await api_client.get_object_by_id(object_id)
+
+        if not details:
+            return f"Found object but could not retrieve details for: {query}"
+
+        # Build comprehensive description
+        description_parts = []
+
+        # Basic info
+        title = details.title or "Untitled"
+        maker_text = ", ".join(details.maker) if details.maker else "Unknown artist"
+        description_parts.append(f"**{title}** by {maker_text}")
+
+        # Date and dimensions
+        if details.date:
+            description_parts.append(f"**Date:** {details.date}")
+        if details.dimensions:
+            description_parts.append(f"**Dimensions:** {details.dimensions}")
+
+        # Description
+        if details.description:
+            description_parts.append(f"**Description:** {details.description}")
+        elif details.summary:
+            description_parts.append(f"**Summary:** {details.summary}")
+
+        # Materials and type
+        if details.materials:
+            description_parts.append(f"**Materials:** {', '.join(details.materials)}")
+        if details.object_type:
+            description_parts.append(f"**Type:** {details.object_type}")
+
+        # Location and exhibition
+        if details.is_on_view and details.exhibition_location:
+            description_parts.append(f"**Currently on view:** {details.exhibition_location}")
+        elif details.unit_name:
+            description_parts.append(f"**Collection:** {details.unit_name}")
+
+        # Images and downloads
+        if details.images:
+            image_count = len(details.images)
+            description_parts.append(f"**Images available:** {image_count}")
+
+            # Check for downloadable images
+            downloadable = [img for img in details.images if img.url and (img.is_cc0 or img.url)]
+            if downloadable:
+                description_parts.append("**Download options:**")
+                for i, img in enumerate(downloadable[:3], 1):  # Show first 3
+                    format_info = f" ({img.format})" if img.format else ""
+                    size_info = f" [{img.size_bytes} bytes]" if img.size_bytes else ""
+                    description_parts.append(f"  {i}. {img.url}{format_info}{size_info}")
+                if len(downloadable) > 3:
+                    description_parts.append(f"  ... and {len(downloadable) - 3} more")
+            else:
+                description_parts.append("**Note:** High-resolution downloads may require special permissions")
+        else:
+            description_parts.append("**Images:** None available")
+
+        # Rights and usage
+        if details.is_cc0:
+            description_parts.append("**Usage rights:** CC0 (public domain)")
+        elif details.rights:
+            description_parts.append(f"**Rights:** {details.rights}")
+
+        # Object ID for reference
+        description_parts.append(f"**Object ID:** {details.id}")
+
+        return "\n".join(description_parts)
+
+    except (APIError, RuntimeError, ValueError) as e:
+        logger.error("Error in find_and_describe: %s", e)
+        return f"Error retrieving information for: {query}. {str(e)}"
+
+
+@mcp.tool()
+async def search_and_get_first_details(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+    material: Optional[str] = None,
+    topic: Optional[str] = None,
+    has_images: Optional[bool] = None,
+    is_cc0: Optional[bool] = None,
+    on_view: Optional[bool] = None,
+) -> Optional[SmithsonianObject]:
+    """
+    Search for objects and automatically get details for the first result.
+
+    This is the simplest way to get detailed information about a specific object.
+    It combines searching and detail retrieval in one step, automatically selecting
+    the most relevant result.
+
+    Args:
+        query: General search terms (keywords, titles, descriptions)
+        unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
+        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+        maker: Creator or maker name (artist, photographer, etc.)
+        material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
+        topic: Subject topic or theme
+        has_images: Filter objects that have associated images
+        is_cc0: Filter objects with CC0 (public domain) licensing
+        on_view: Filter objects currently on physical exhibit
+
+    Returns:
+        Detailed information for the first search result, or None if no results found
+
+    Example:
+        # Get details for the most relevant Alma Thomas work
+        details = search_and_get_first_details(
+            query="Alma Thomas Earth Sermon",
+            object_type="painting",
+            has_images=True
+        )
+        # Returns full object details including images, description, etc.
+    """
+    try:
+        # Search with limit 1 to get just the first result
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=material,
+            topic=topic,
+            has_images=has_images,
+            is_cc0=is_cc0,
+            on_view=on_view,
+            limit=1,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        if not results.objects:
+            logger.info("No results found for query: %s", query)
+            return None
+
+        # Get details for the first (and only) result
+        first_object_id = results.first_object_id
+        if first_object_id:
+            logger.info("Found object, getting details for: %s", first_object_id)
+            return await api_client.get_object_by_id(first_object_id)
+        else:
+            logger.warning("Search returned results but no valid object ID found")
+            return None
+
+    except Exception as e:
+        logger.error("Error in search_and_get_first_details: %s", e)
+        raise RuntimeError(f"Search and get details failed: {e}") from e
 
 
 @mcp.tool()

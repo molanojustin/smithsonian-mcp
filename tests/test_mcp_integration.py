@@ -36,9 +36,13 @@ class TestMCPProtocolAdherence:
         # Get the actual function implementations (the decorated tools are directly callable)
         tools_to_test = [
             ("search_collections", tools_module.search_collections),
+            ("simple_search", tools_module.simple_search),
+            ("find_and_describe", tools_module.find_and_describe),
+            ("search_and_get_first_details", tools_module.search_and_get_first_details),
             ("search_and_get_details", tools_module.search_and_get_details),
             ("simple_explore", tools_module.simple_explore),
             ("continue_explore", tools_module.continue_explore),
+            ("summarize_search_results", tools_module.summarize_search_results),
             ("get_object_ids", tools_module.get_object_ids),
             ("get_first_object_id", tools_module.get_first_object_id),
             ("validate_object_id", tools_module.validate_object_id),

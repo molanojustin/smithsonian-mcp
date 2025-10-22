@@ -147,6 +147,50 @@ class SmithsonianObject(BaseModel):
     )
 
 
+class SimpleSearchResult(BaseModel):
+    """Simplified search results optimized for LLM parsing."""
+
+    summary: str = Field(..., description="Human-readable summary of results")
+    object_count: int = Field(..., description="Number of objects found")
+    total_available: int = Field(..., description="Total matching objects in database")
+    object_ids: List[str] = Field(..., description="List of object IDs for get_object_details")
+    first_object_id: Optional[str] = Field(None, description="ID of first result (easiest to use)")
+    has_more: bool = Field(..., description="Whether more results are available")
+    next_offset: Optional[int] = Field(None, description="Offset for next page if has_more is true")
+
+    @classmethod
+    def from_search_result(cls, search_result: "SearchResult") -> "SimpleSearchResult":
+        """Convert a SearchResult to a SimpleSearchResult."""
+        summary_lines = []
+        summary_lines.append(f"Found {search_result.returned_count} objects")
+
+        if search_result.total_count > search_result.returned_count:
+            summary_lines[0] += f" (out of {search_result.total_count} total matches)"
+
+        summary_lines[0] += ":"
+
+        for i, obj in enumerate(search_result.objects[:5], 1):  # Show first 5
+            title = obj.title or "Untitled"
+            maker = obj.maker[0] if obj.maker else "Unknown artist"
+            summary_lines.append(f"{i}. '{title}' by {maker}")
+
+        if search_result.returned_count > 5:
+            summary_lines.append(f"... and {search_result.returned_count - 5} more objects")
+
+        if search_result.has_more:
+            summary_lines.append(f"More results available (use offset={search_result.next_offset})")
+
+        return cls(
+            summary="\n".join(summary_lines),
+            object_count=search_result.returned_count,
+            total_available=search_result.total_count,
+            object_ids=search_result.object_ids,
+            first_object_id=search_result.first_object_id,
+            has_more=search_result.has_more,
+            next_offset=search_result.next_offset
+        )
+
+
 class SearchResult(BaseModel):
     """Represents search results with pagination info."""
 
@@ -166,6 +210,10 @@ class SearchResult(BaseModel):
     def first_object_id(self) -> Optional[str]:
         """The ID of the first object, or None if no results. Use with get_object_details."""
         return self.object_ids[0] if self.objects else None
+
+    def to_simple_result(self) -> SimpleSearchResult:
+        """Convert to a simplified, LLM-friendly format."""
+        return SimpleSearchResult.from_search_result(self)
 
 
 class UnitStats(BaseModel):
