@@ -578,28 +578,56 @@ class SmithsonianAPIClient:
         """
         Get detailed information about a specific object.
 
+        This method tries multiple ID formats to handle different input styles:
+        1. The provided object_id as-is
+        2. "edanmdm-" + object_id (if not already prefixed)
+        3. object_id with "edanmdm-" prefix removed (if already prefixed incorrectly)
+
         Args:
-            object_id: Unique object identifier
+            object_id: Unique object identifier (may be partial or full format)
 
         Returns:
             Object details or None if not found
         """
-        endpoint = f"/content/{object_id}"
+        # Try different ID formats in order of likelihood
+        id_formats_to_try = []
 
-        try:
-            response_data = await self._make_request(endpoint)
-            # The content endpoint response is nested under 'response'
-            if "response" in response_data:
-                return self._parse_object_data(response_data["response"])
-            logger.warning(
-                "Malformed response for object %s: %s", object_id, response_data
-            )
-            return None
-        except APIError as e:
-            if e.error == "not_found" or e.status_code == 404:
-                logger.info("Object %s not found in Smithsonian collection", object_id)
-                return None
-            raise
+        # Always try the original ID first
+        id_formats_to_try.append(object_id)
+
+        # If it doesn't start with "edanmdm-", try adding the prefix
+        if not object_id.startswith("edanmdm-"):
+            id_formats_to_try.append(f"edanmdm-{object_id}")
+
+        # If it does start with "edanmdm-", try without the prefix (unlikely but possible)
+        elif object_id.startswith("edanmdm-"):
+            id_formats_to_try.append(object_id[8:])  # Remove "edanmdm-" prefix
+
+        for attempt_id in id_formats_to_try:
+            endpoint = f"/content/{attempt_id}"
+
+            try:
+                logger.debug("Trying object ID format: %s", attempt_id)
+                response_data = await self._make_request(endpoint)
+                # The content endpoint response is nested under 'response'
+                if "response" in response_data:
+                    result = self._parse_object_data(response_data["response"])
+                    logger.info("Successfully retrieved object using ID format: %s", attempt_id)
+                    return result
+                logger.warning(
+                    "Malformed response for object %s: %s", attempt_id, response_data
+                )
+            except APIError as e:
+                if e.error == "not_found" or e.status_code == 404:
+                    logger.debug("Object not found with ID format %s: %s", attempt_id, e.message)
+                    continue  # Try next format
+                # For other errors, don't continue trying
+                logger.error("API error trying ID format %s: %s", attempt_id, e)
+                raise
+
+        # If we get here, none of the formats worked
+        logger.info("Object %s not found in Smithsonian collection (tried %d formats)", object_id, len(id_formats_to_try))
+        return None
 
     async def get_units(self) -> List[SmithsonianUnit]:
         """

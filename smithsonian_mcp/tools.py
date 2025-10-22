@@ -546,12 +546,29 @@ async def get_object_details(
     This tool retrieves comprehensive metadata, descriptions, images, and other
     details for a single object using its unique identifier.
 
+    The tool automatically tries multiple ID formats to handle different input styles:
+    - Full IDs like "edanmdm-hmsg_80.107"
+    - Partial IDs like "hmsg_80.107" (will be prefixed automatically)
+
     Args:
-        object_id: Unique identifier for the object (found in search results)
+        object_id: Unique identifier for the object. Can be:
+                  - Full API ID (e.g., "edanmdm-hmsg_80.107")
+                  - Partial ID from object URLs (e.g., "hmsg_80.107")
+                  - ID from search results
 
     Returns:
         Detailed object information, or None if object not found
+
+    Note:
+        If the object is not found, the tool tries multiple ID formats automatically.
+        For best results, use the ID exactly as returned from search_collections.
     """
+    # Input validation
+    if not object_id or object_id.strip() == "":
+        raise ValueError("object_id cannot be empty")
+
+    object_id = object_id.strip()
+
     try:
         api_client = await get_api_client(ctx)
         result = await api_client.get_object_by_id(object_id)
@@ -559,13 +576,20 @@ async def get_object_details(
         if result:
             logger.info("Retrieved object details: %s", object_id)
         else:
-            logger.warning("Object not found: %s", object_id)
+            logger.warning(
+                "Object not found: %s. This may indicate the object doesn't exist, "
+                "or the ID format needs adjustment. Try using the exact ID from search results.",
+                object_id
+            )
 
         return result
 
     except Exception as e:
         logger.error("API error retrieving object %s: %s", object_id, e)
-        raise RuntimeError(f"Failed to retrieve object: {e}") from e
+        raise RuntimeError(
+            f"Failed to retrieve object '{object_id}': {e}. "
+            "Try using the exact ID from search results (e.g., 'edanmdm-hmsg_80.107')."
+        ) from e
 
 
 @mcp.tool()
