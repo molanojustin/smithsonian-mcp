@@ -115,7 +115,7 @@ async def get_object_context(
 @mcp.tool()
 async def get_on_view_context(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
-    unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
     limit: int = 10,
 ) -> str:
     """
@@ -125,21 +125,24 @@ async def get_on_view_context(
     can be used as context data without explicitly calling search tools.
     The results are filtered to include only verified on-view objects.
 
+    IMPORTANT: Specify the museum parameter to get results from a specific museum.
+    Without it, results will be from all museums.
+
     Args:
-        unit_code: Optional filter by Smithsonian unit code (e.g., "NMAH", "HMSG") or museum name
-            (e.g., "hirshhorn", "natural history")
+        museum: Optional filter by Smithsonian unit code (e.g., "NMAH", "HMSG") or museum name
+            (e.g., "hirshhorn", "natural history"). Highly recommended for targeted searches.
         limit: Maximum number of results to return (default: 10)
     """
     try:
         # Map museum names to codes
         museum_code = None
-        if unit_code:
-            unit_code_lower = unit_code.lower().strip()
-            if unit_code_lower in MUSEUM_MAP:
-                museum_code = MUSEUM_MAP[unit_code_lower]
-            elif unit_code_upper := unit_code.upper():
-                if unit_code_upper in VALID_MUSEUM_CODES:
-                    museum_code = unit_code_upper
+        if museum:
+            museum_lower = museum.lower().strip()
+            if museum_lower in MUSEUM_MAP:
+                museum_code = MUSEUM_MAP[museum_lower]
+            elif museum_upper := museum.upper():
+                if museum_upper in VALID_MUSEUM_CODES:
+                    museum_code = museum_upper
 
         # Use reliable approach: search broadly then filter locally
         # pylint: disable=duplicate-code
@@ -165,13 +168,16 @@ async def get_on_view_context(
         # Filter for verified on-view objects
         verified_on_view = [obj for obj in results.objects if obj.is_on_view][:limit]
 
-        if unit_code:
-            output = [f"Objects Currently On View at {unit_code}:\n"]
+        if museum:
+            output = [f"Objects Currently On View at {museum}:\n"]
         else:
-            output = ["Objects Currently On View:\n"]
+            output = ["Objects Currently On View (all museums):\n"]
 
         if not verified_on_view:
-            output.append("No objects are currently on view.")
+            if museum:
+                output.append(f"No objects are currently on view at {museum}.")
+            else:
+                output.append("No objects are currently on view.")
             return "\n".join(output)
 
         for obj in verified_on_view:

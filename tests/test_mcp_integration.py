@@ -226,7 +226,7 @@ class TestEndToEndMCPWorkflows:
 
                 # Step 3: Get on-view context
                 context_result = await resources_module.get_on_view_context.fn(
-                    unit_code="NMAH"
+                    museum="NMAH"
                 )
                 assert "Currently on exhibit" in context_result
 
