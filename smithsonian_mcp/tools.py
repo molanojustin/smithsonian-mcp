@@ -16,6 +16,7 @@ from .models import (
     CollectionSearchFilter,
     SmithsonianUnit,
     CollectionStats,
+    APIError,
 )
 from .constants import MUSEUM_MAP, VALID_MUSEUM_CODES
 
@@ -69,11 +70,22 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         and next_offset fields to determine if there are additional results beyond
         the returned set.
 
+    Note:
+        For easy access to object IDs, use the helper tools:
+        - get_first_object_id() - Get the ID of the first result
+        - get_object_ids() - Get all IDs from the results
+        - validate_object_id() - Check if an ID exists before fetching details
+
     Example:
         # Search for Alma Thomas paintings
         results = search_collections(query="Alma Thomas", object_type="painting")
 
-        # Get detailed info for the first result
+        # Easy way: Get first object ID and details
+        object_id = get_first_object_id(search_result=results)
+        if object_id:
+            details = get_object_details(object_id=object_id)
+
+        # Alternative: Manual extraction
         if results.objects:
             details = get_object_details(object_id=results.objects[0].id)
     """
@@ -569,7 +581,152 @@ async def get_object_ids(
     """
     if search_result is None:
         return None
-    return [obj.id for obj in search_result.objects]
+    return search_result.object_ids
+
+
+@mcp.tool()
+async def get_first_object_id(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    search_result: Optional[SearchResult] = None
+) -> Optional[str]:
+    """
+    Get the ID of the first object from search results.
+
+    This is the easiest way to get an object ID for get_object_details.
+    Use this right after search_collections to get the most relevant result.
+
+    Args:
+        search_result: The result from a search_collections call
+
+    Returns:
+        The object ID of the first result, or None if no results
+
+    Example:
+        results = search_collections(query="Alma Thomas Earth Sermon")
+        object_id = get_first_object_id(search_result=results)
+        details = get_object_details(object_id=object_id)
+    """
+    if search_result is None:
+        return None
+    return search_result.first_object_id
+
+
+@mcp.tool()
+async def validate_object_id(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    object_id: str = ""
+) -> bool:
+    """
+    Check if an object ID exists in the Smithsonian collection.
+
+    Use this to verify an object ID before calling get_object_details.
+    This is faster than get_object_details since it doesn't fetch full metadata.
+
+    Args:
+        object_id: The object ID to validate
+
+    Returns:
+        True if the object exists, False otherwise
+
+    Example:
+        if validate_object_id(object_id="edanmdm-hmsg_80.107"):
+            details = get_object_details(object_id="edanmdm-hmsg_80.107")
+    """
+    if not object_id or object_id.strip() == "":
+        return False
+
+    try:
+        api_client = await get_api_client(ctx)
+        result = await api_client.get_object_by_id(object_id.strip())
+        return result is not None
+    except (APIError, RuntimeError, ValueError):
+        return False
+
+
+@mcp.tool()
+async def search_and_get_details(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+    material: Optional[str] = None,
+    topic: Optional[str] = None,
+    has_images: Optional[bool] = None,
+    is_cc0: Optional[bool] = None,
+    on_view: Optional[bool] = None,
+    limit: int = 1,
+) -> Optional[SmithsonianObject]:
+    """
+    Search for objects and get detailed information for the first result.
+
+    This combines search_collections and get_object_details into one convenient tool.
+    Use this when you want details for the most relevant search result.
+
+    Args:
+        query: General search terms (keywords, titles, descriptions)
+        unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
+        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+        maker: Creator or maker name (artist, photographer, etc.)
+        material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
+        topic: Subject topic or theme
+        has_images: Filter objects that have associated images
+        is_cc0: Filter objects with CC0 (public domain) licensing
+        on_view: Filter objects currently on physical exhibit
+        limit: Number of results to search through (default: 1, max: 10)
+
+    Returns:
+        Detailed information for the first search result, or None if no results found
+
+    Example:
+        # Get details for the most relevant Alma Thomas work
+        details = search_and_get_details(
+            query="Alma Thomas Earth Sermon",
+            object_type="painting",
+            has_images=True
+        )
+    """
+    try:
+        # Limit to reasonable number for this combined operation
+        limit = max(1, min(limit, 10))
+
+        # Create search filter
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=material,
+            topic=topic,
+            has_images=has_images,
+            is_cc0=is_cc0,
+            on_view=on_view,
+            limit=limit,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        if not results.objects:
+            logger.info("No results found for query: %s", query)
+            return None
+
+        # Get details for the first result
+        first_object_id = results.first_object_id
+        if first_object_id:
+            logger.info("Found %d results, getting details for first: %s", results.returned_count, first_object_id)
+            return await api_client.get_object_by_id(first_object_id)
+        else:
+            logger.warning("Search returned results but no valid object ID found")
+            return None
+
+    except Exception as e:
+        logger.error("Error in search_and_get_details: %s", e)
+        raise RuntimeError(f"Search and get details failed: {e}") from e
 
 
 @mcp.tool()
@@ -599,12 +756,18 @@ async def get_object_details(
     Note:
         If the object is not found, the tool tries multiple ID formats automatically.
         For best results, use the 'id' field from search_collections results.
+        Use validate_object_id() first to check if an ID exists.
 
     Example:
         # First search for objects
         results = search_collections(query="Alma Thomas")
 
-        # Then get details using the ID from search results
+        # Easy way: Use helper to get first ID
+        object_id = get_first_object_id(search_result=results)
+        if object_id and validate_object_id(object_id=object_id):
+            details = get_object_details(object_id=object_id)
+
+        # Alternative: Manual extraction
         if results.objects:
             details = get_object_details(object_id=results.objects[0].id)
     """

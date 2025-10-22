@@ -157,6 +157,16 @@ class SearchResult(BaseModel):
     has_more: bool = Field(..., description="Whether more results are available")
     next_offset: Optional[int] = Field(None, description="Offset for next page")
 
+    @property
+    def object_ids(self) -> List[str]:
+        """List of object IDs for easy access. Use these with get_object_details."""
+        return [obj.id for obj in self.objects]
+
+    @property
+    def first_object_id(self) -> Optional[str]:
+        """The ID of the first object, or None if no results. Use with get_object_details."""
+        return self.object_ids[0] if self.objects else None
+
 
 class UnitStats(BaseModel):
     """Statistics for a Smithsonian unit."""
