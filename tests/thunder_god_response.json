@@ -1,0 +1,468 @@
+{
+    "status": 200,
+    "responseCode": 1,
+    "response": {
+        "id": "ld1-1643390182193-1643390183699-0",
+        "title": "Thunder god",
+        "unitCode": "FSG",
+        "type": "edanmdm",
+        "url": "edanmdm:fsg_F1900.47",
+        "content": {
+            "freetext": {
+                "date": [
+                    {
+                        "label": "Date",
+                        "content": "1847"
+                    },
+                    {
+                        "label": "Period",
+                        "content": "Edo period"
+                    }
+                ],
+                "name": [
+                    {
+                        "label": "Artist",
+                        "content": "Katsushika Hokusai 葛飾北斎 (1760-1849)"
+                    }
+                ],
+                "notes": [
+                    {
+                        "label": "Label",
+                        "content": "In the upper right portion of this painting is the Thunder God, who beats the drums carried on his back during storms. Japanese painters enjoyed depicting this deity among rolling clouds and sparks of lightning. Hokusai's painting reflects his virtuosity in capturing the latent energy of the deity as he hovers among black clouds splattered with ink to express the violence of the storm."
+                    },
+                    {
+                        "label": "Label",
+                        "content": "A phenomenally prolific artist, Hokusai produced sketches, paintings, prints, and the illustrations for more than two hundred woodblock-printed books during his lifetime. This work, which gives his age as 88 (by Western calculation, 87), displays the skill and energy that he retained even in the last years of his life."
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "To 1900"
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "Ernest Francisco Fenollosa (1853-1908), Japan, to 1900 [1]"
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "From 1900 to 1919"
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "Charles Lang Freer (1854-1919), purchased from Ernest Francisco Fenollosa, through Edward S. Hull Jr., New York, in 1900 [2]"
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "From 1920"
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "Freer Gallery of Art, gift of Charles Lang Freer in 1920 [3]"
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "Notes:"
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "[1] See Original Kakemono List, L. 203, pg. 44, as well as Voucher No. 47, June 1900, Freer Gallery of Art and Arthur M. Sackler Gallery Archives. Edward S. Hull Jr. was Ernest Francisco Fenollosa’s (1853-1908) lawyer. Hull often acted as an agent, facilitating purchases of objects consigned to him by Fenollosa, as well as purchases of objects consigned to him by Fenollosa's"
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "well-known associate, Bunshichi Kobayashi (see correspondence, Hull to Freer, 1898-1900, as well as invoices from E.S. Hull Jr., 1898-1900, Freer Gallery of Art and Arthur M. Sackler Gallery Archives). See also, Ingrid Larsen, \"'Don’t Send Ming or Later Pictures': Charles Lang Freer and the First Major Collection of Chinese Painting in an American Museum,\" Ars Orientalis vol. 40 (2011), pgs. 15 and 34. See further, Thomas Lawton and Linda Merrill, Freer: A Legacy of Art, (Washington, DC and New York: Freer Gallery of Art and H. N. Abrams, 1993), pgs. 133-134."
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "[2] See note 1."
+                    },
+                    {
+                        "label": "Provenance",
+                        "content": "[3] The original deed of Charles Lang Freer's gift was signed in 1906. The collection was received in 1920 upon the completion of the Freer Gallery."
+                    },
+                    {
+                        "label": "Collection",
+                        "content": "Freer Gallery of Art Collection"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Japanese Art from the Collection (October 26, 2024 - ongoing)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Hokusai: Mad About Painting (November 20, 2019 to January 9, 2022)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Hokusai: Paintings and Drawings (January 28, 2012 to June 24, 2012)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Seasons: Arts of Japan (February 5, 2011 to January 13, 2013)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Japanese Arts in the Edo Period: 1615-1868, part 2 (March 8 to October 19, 2008)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Hokusai (October 25, 2005 to May 14, 2006)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Surveying the Collections: Poets and Parties (July 2, 2000 to February 4, 2001)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Japanese Prints (January 18, 1980 to May 18, 1980)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Japanese Ukiyo-e Painting (May 2, 1973 to July 1, 1974)"
+                    },
+                    {
+                        "label": "Exhibition History",
+                        "content": "Hokusai Bicentennial Exhibition (March 30, 1960 to August 16, 1961)"
+                    },
+                    {
+                        "label": "Previous custodian or owner",
+                        "content": "Ernest Francisco Fenollosa (1853-1908) (C.L. Freer source)"
+                    },
+                    {
+                        "label": "Previous custodian or owner",
+                        "content": "Charles Lang Freer (1854-1919)"
+                    }
+                ],
+                "place": [
+                    {
+                        "label": "Origin",
+                        "content": "Japan"
+                    }
+                ],
+                "topic": [
+                    {
+                        "label": "Topic",
+                        "content": "Edo period (1615 - 1868)"
+                    },
+                    {
+                        "label": "Topic",
+                        "content": "Japan"
+                    },
+                    {
+                        "label": "Topic",
+                        "content": "ukiyo-e"
+                    },
+                    {
+                        "label": "Topic",
+                        "content": "kakemono"
+                    },
+                    {
+                        "label": "Topic",
+                        "content": "Japanese Art"
+                    },
+                    {
+                        "label": "Topic",
+                        "content": "Charles Lang Freer collection"
+                    }
+                ],
+                "setName": [
+                    {
+                        "label": "On View",
+                        "content": "West Building (Freer Gallery of Art), Gallery 07: Japanese Art from the Collection"
+                    },
+                    {
+                        "label": "Related Online Resources",
+                        "content": "Google Arts & Culture"
+                    },
+                    {
+                        "label": "See more items in",
+                        "content": "Freer Gallery of Art and Arthur M. Sackler Gallery Collection"
+                    }
+                ],
+                "creditLine": [
+                    {
+                        "label": "Credit Line",
+                        "content": "Gift of Charles Lang Freer"
+                    }
+                ],
+                "dataSource": [
+                    {
+                        "label": "Data Source",
+                        "content": "Freer Gallery of Art and Arthur M. Sackler Gallery"
+                    }
+                ],
+                "identifier": [
+                    {
+                        "label": "Accession Number",
+                        "content": "F1900.47"
+                    }
+                ],
+                "objectType": [
+                    {
+                        "label": "Type",
+                        "content": "Painting"
+                    }
+                ],
+                "objectRights": [
+                    {
+                        "label": "Restrictions & Rights",
+                        "content": "CC0"
+                    }
+                ],
+                "physicalDescription": [
+                    {
+                        "label": "Medium",
+                        "content": "Ink and color on paper"
+                    },
+                    {
+                        "label": "Dimensions",
+                        "content": "H x W (image): 126.9 x 53.8 cm (49 15/16 x 21 3/16 in)"
+                    }
+                ]
+            },
+            "indexedStructured": {
+                "date": [
+                    "1700s",
+                    "1710s",
+                    "1720s",
+                    "1770s",
+                    "1780s",
+                    "1790s",
+                    "1730s",
+                    "1740s",
+                    "1750s",
+                    "1760s",
+                    "1800s",
+                    "1810s",
+                    "1820s",
+                    "1830s",
+                    "1610s",
+                    "1650s",
+                    "1640s",
+                    "1630s",
+                    "1620s",
+                    "1840s",
+                    "1690s",
+                    "1680s",
+                    "1850s",
+                    "1670s",
+                    "1860s",
+                    "1660s"
+                ],
+                "name": [
+                    "Fenollosa, Ernest Francisco",
+                    "Freer, Charles Lang"
+                ],
+                "place": [
+                    "Japan"
+                ],
+                "topic": [
+                    "Charles Lang Freer collection",
+                    "Art",
+                    "Edo period, Japan, (1600 - 1868)",
+                    "Japanese Art",
+                    "Ukiyo-e",
+                    "Kakemono"
+                ],
+                "culture": [
+                    "Japanese"
+                ],
+                "exhibition": [
+                    {
+                        "room": "Gallery 07",
+                        "building": "Freer",
+                        "exhibitionTitle": "West Building (Freer Gallery of Art), Gallery 07: Japanese Art from the Collection"
+                    }
+                ],
+                "geoLocation": [
+                    {
+                        "L2": {
+                            "type": "Country",
+                            "content": "Japan"
+                        }
+                    }
+                ],
+                "object_type": [
+                    "Paintings"
+                ],
+                "onPhysicalExhibit": [
+                    "Yes"
+                ],
+                "online_media_type": [
+                    "Images"
+                ]
+            },
+            "descriptiveNonRepeating": {
+                "guid": "http://n2t.net/ark:/65665/ye30aece99a-c7aa-43b2-b844-8a3ca47b651d",
+                "title": {
+                    "label": "Title",
+                    "content": "Thunder god"
+                },
+                "record_ID": "fsg_F1900.47",
+                "unit_code": "FSG",
+                "title_sort": "THUNDER GOD",
+                "data_source": "Freer Gallery of Art and Arthur M. Sackler Gallery",
+                "record_link": "https://asia.si.edu/object/F1900.47/",
+                "online_media": {
+                    "media": [
+                        {
+                            "id": "media:FS-F1900.47_001",
+                            "guid": "http://n2t.net/ark:/65665/jy5d8dbd72a-d17a-4e87-9564-089869f94887",
+                            "type": "Images",
+                            "idsId": "FS-F1900.47_001",
+                            "usage": {
+                                "access": "CC0"
+                            },
+                            "content": "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_001",
+                            "thumbnail": "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_001",
+                            "altTextAccessibility": "",
+                            "extDescrAccessibility": "",
+                            "resources": [
+                                {
+                                    "label": "High-resolution TIFF",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_001.tif",
+                                    "width": 3506,
+                                    "height": 9833,
+                                    "dimensions": "3506x9833"
+                                },
+                                {
+                                    "label": "High-resolution JPEG",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_001.jpg",
+                                    "width": 3506,
+                                    "height": 9833,
+                                    "dimensions": "3506x9833"
+                                },
+                                {
+                                    "label": "Screen Image",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_001_screen"
+                                },
+                                {
+                                    "label": "Thumbnail Image",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_001_thumb"
+                                }
+                            ]
+                        },
+                        {
+                            "id": "media:FS-F1900.47_002",
+                            "guid": "http://n2t.net/ark:/65665/jy5d234f4b2-0f58-4e0c-a8e2-5b2b19c237f6",
+                            "type": "Images",
+                            "idsId": "FS-F1900.47_002",
+                            "usage": {
+                                "access": "CC0"
+                            },
+                            "content": "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_002",
+                            "thumbnail": "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_002",
+                            "altTextAccessibility": "",
+                            "extDescrAccessibility": "",
+                            "resources": [
+                                {
+                                    "label": "High-resolution TIFF",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_002.tif",
+                                    "width": 4295,
+                                    "height": 9700,
+                                    "dimensions": "4295x9700"
+                                },
+                                {
+                                    "label": "High-resolution JPEG",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_002.jpg",
+                                    "width": 4295,
+                                    "height": 9700,
+                                    "dimensions": "4295x9700"
+                                },
+                                {
+                                    "label": "Screen Image",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_002_screen"
+                                },
+                                {
+                                    "label": "Thumbnail Image",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_002_thumb"
+                                }
+                            ]
+                        },
+                        {
+                            "id": "media:FS-F1900.47_003",
+                            "guid": "http://n2t.net/ark:/65665/jy594963e9f-4964-4ec9-8422-760361335b61",
+                            "type": "Images",
+                            "idsId": "FS-F1900.47_003",
+                            "usage": {
+                                "access": "CC0"
+                            },
+                            "content": "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_003",
+                            "thumbnail": "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_003",
+                            "altTextAccessibility": "",
+                            "extDescrAccessibility": "",
+                            "resources": [
+                                {
+                                    "label": "High-resolution TIFF",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_003.tif",
+                                    "width": 3857,
+                                    "height": 5240,
+                                    "dimensions": "3857x5240"
+                                },
+                                {
+                                    "label": "High-resolution JPEG",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_003.jpg",
+                                    "width": 3857,
+                                    "height": 5240,
+                                    "dimensions": "3857x5240"
+                                },
+                                {
+                                    "label": "Screen Image",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_003_screen"
+                                },
+                                {
+                                    "label": "Thumbnail Image",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_003_thumb"
+                                }
+                            ]
+                        },
+                        {
+                            "id": "media:FS-F1900.47_005",
+                            "guid": "http://n2t.net/ark:/65665/jy553b31d73-172a-462d-bfe2-00370e01656e",
+                            "type": "Images",
+                            "idsId": "FS-F1900.47_005",
+                            "usage": {
+                                "access": "CC0"
+                            },
+                            "content": "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_005",
+                            "thumbnail": "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_005",
+                            "altTextAccessibility": "",
+                            "extDescrAccessibility": "",
+                            "resources": [
+                                {
+                                    "label": "High-resolution TIFF",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_005.tif",
+                                    "width": 12112,
+                                    "height": 28416,
+                                    "dimensions": "12112x28416"
+                                },
+                                {
+                                    "label": "High-resolution JPEG",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_005.jpg",
+                                    "width": 12112,
+                                    "height": 28416,
+                                    "dimensions": "12112x28416"
+                                },
+                                {
+                                    "label": "Screen Image",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_005_screen"
+                                },
+                                {
+                                    "label": "Thumbnail Image",
+                                    "url": "https://ids.si.edu/ids/download?id=FS-F1900.47_005_thumb"
+                                }
+                            ]
+                        }
+                    ],
+                    "mediaCount": 4
+                },
+                "metadata_usage": {
+                    "access": "CC0"
+                }
+            }
+        },
+        "hash": "1372657fee58bb575041a25a9253cef9bfaf6788",
+        "docSignature": "2111a2dec0e4c17c4697c08c2db80dbb",
+        "timestamp": "1663786530",
+        "lastTimeUpdated": "1758793013",
+        "version": ""
+    }
+}

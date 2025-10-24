@@ -153,3 +153,64 @@ def educational_content_prompt(
             f"and explain how each selected object supports educational objectives.",
         )
     ]
+
+
+@mcp.prompt(title="Get Object URL")
+def get_object_url_prompt(object_name: str) -> List[base.Message]:
+    """
+    Get the web page URL for a specific Smithsonian object by name.
+
+    This prompt helps users find the direct URL to an object's page
+    by first searching for the object, then retrieving its validated URL.
+
+    Args:
+        object_name: Name or description of the object to find
+    """
+    return [
+        base.Message(
+            role="user",
+            content=f"Find the Smithsonian object called '{object_name}' and get its official web page URL. "
+            f"Use the get_object_url() tool with the object's identifier - do not construct URLs manually."
+        )
+    ]
+
+
+@mcp.prompt(title="Museum On-View Objects")
+def museum_on_view_prompt(museum_name: str) -> List[base.Message]:
+    """
+    Get information about objects currently on display at a specific museum.
+
+    This prompt helps users discover what's currently exhibited at a Smithsonian museum
+    by using the on-view tools to find currently displayed objects.
+
+    Args:
+        museum_name: Name of the Smithsonian museum (e.g., "National Museum of Natural History")
+    """
+    return [
+        base.Message(
+            role="user",
+            content=f"Tell me about objects currently on display at the {museum_name}. "
+            f"Use the get_objects_on_view() or get_on_view_context() tools to find currently exhibited items. "
+            f"Include details about what visitors can see right now."
+        )
+    ]
+
+
+@mcp.prompt(title="Quick Object Lookup")
+def quick_object_lookup_prompt(object_query: str) -> List[base.Message]:
+    """
+    Quickly find and describe a Smithsonian object.
+
+    This prompt provides a streamlined way to search for and get details about
+    a specific object using the most efficient tool combination.
+
+    Args:
+        object_query: Search query for the object (name, description, etc.)
+    """
+    return [
+        base.Message(
+            role="user",
+            content=f"Find the Smithsonian object '{object_query}' and provide its key details including "
+            f"description, creator, date, and museum location. Use the most efficient search approach."
+        )
+    ]

@@ -87,6 +87,7 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         **Advanced:** Use search_collections with helper tools:
         - summarize_search_results() - Get readable summary
         - get_first_object_id() - Extract first object ID
+        - get_object_url() - MANDATORY: Get validated object URL (never construct manually)
         - search_and_get_first_details() - Search and get details
 
     Examples:
@@ -101,6 +102,7 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         results = search_collections(query="Alma Thomas", object_type="painting")
         summary = summarize_search_results(search_result=results)
         object_id = get_first_object_id(search_result=results)
+        url = get_object_url(object_identifier=object_id)  # MANDATORY: Never construct URLs manually
         details = get_object_details(object_id=object_id)
     """
     try:
@@ -1184,6 +1186,8 @@ async def get_object_details(
         If the object is not found, the tool tries multiple ID formats automatically.
         For best results, use the 'id' field from search_collections results.
         Use validate_object_id() first to check if an ID exists.
+        IMPORTANT: Use get_object_url() if you need the object's web page URL.
+        NEVER construct URLs manually - always use the get_object_url() tool.
 
     Example:
         # First search for objects
@@ -1224,6 +1228,163 @@ async def get_object_details(
         raise RuntimeError(
             f"Failed to retrieve object '{object_id}': {e}. "
             "Try using the exact ID from search results (e.g., 'edanmdm-hmsg_80.107')."
+        ) from e
+
+
+@mcp.tool()
+async def get_object_url(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    object_identifier: str = ""
+) -> Optional[str]:
+    """
+    CRITICAL: Always use this tool to get object URLs. NEVER construct URLs manually.
+
+    Manual URL construction WILL FAIL due to case sensitivity, formatting changes, or API updates.
+    This tool ensures you get the correct, validated URL from Smithsonian's record_link field.
+
+    Get the direct URL to an object's page on the Smithsonian website.
+
+    This tool provides the exact URL for viewing an object on the Smithsonian's website.
+    Use this when you need the object's web page URL for sharing or direct access.
+
+    The tool accepts multiple identifier formats for maximum flexibility:
+    - Accession Number (e.g., "F1900.47")
+    - Record ID (e.g., "fsg_F1900.47")
+    - Internal ID (e.g., "ld1-1643390182193-1643390183699-0")
+    - Full API ID (e.g., "edanmdm-hmsg_80.107")
+    - Partial ID from object URLs (e.g., "hmsg_80.107")
+
+    The tool validates URLs and prefers the record_link field when it differs from the url field.
+
+    URL Validation Benefits:
+    - Handles case sensitivity (F1916.118 vs f1916.118)
+    - Uses authoritative record_link field over API identifier
+    - Validates HTTP/HTTPS URLs and filters invalid ones
+    - Adapts to API changes and formatting updates
+
+    Args:
+        object_identifier: Identifier for the object. Can be:
+                  - Accession Number (e.g., "F1900.47")
+                  - Record ID (e.g., "fsg_F1900.47")
+                  - Internal ID (e.g., "ld1-1643390182193-1643390183699-0")
+                  - Full API ID (e.g., "edanmdm-hmsg_80.107")
+                  - Partial ID (e.g., "hmsg_80.107")
+
+    Returns:
+        Direct URL to the object's page (e.g., "https://asia.si.edu/object/F1900.47/"),
+        or None if object not found
+
+    Note:
+        This tool returns only the URL string, not full object details.
+        Use get_object_details() if you need additional metadata.
+
+    IMPORTANT: Never construct URLs like "https://asia.si.edu/object/{id}" yourself.
+    Always use this tool as manual construction often fails (wrong case, formatting, etc.).
+
+    Examples:
+        # CORRECT: Always use the tool
+        url = get_object_url(object_identifier="F1900.47")
+        # Returns: "https://asia.si.edu/object/F1900.47/"
+
+        # WRONG: Don't do this - it will fail with wrong case/formatting
+        # url = "https://asia.si.edu/object/f1900.47"  # Wrong!
+
+        # Get URL using Record ID
+        url = get_object_url(object_identifier="fsg_F1900.47")
+
+        # Get URL using Internal ID
+        url = get_object_url(object_identifier="ld1-1643390182193-1643390183699-0")
+    """
+    # Input validation
+    if not object_identifier or object_identifier.strip() == "":
+        raise ValueError("object_identifier cannot be empty")
+
+    object_identifier = object_identifier.strip()
+
+    try:
+        from .utils import validate_url
+
+        api_client = await get_api_client(ctx)
+
+        # Try multiple lookup strategies in order of user-friendliness
+        lookup_strategies = []
+
+        # Strategy 1: Try as Accession Number (most user-friendly)
+        lookup_strategies.append(object_identifier)
+
+        # Strategy 2: Try as Record ID format (museum_code + accession)
+        if "_" not in object_identifier and not object_identifier.startswith("ld1-"):
+            # Try common museum codes
+            common_codes = ["fsg", "saam", "nmnh", "npg", "hmsg", "nasm", "nmah"]
+            for code in common_codes:
+                lookup_strategies.append(f"{code}_{object_identifier}")
+
+        # Strategy 3: Try as Internal ID format
+        if not object_identifier.startswith("ld1-") and len(object_identifier) < 20:
+            # Try adding ld1- prefix if it looks like a partial ID
+            lookup_strategies.append(f"ld1-{object_identifier}")
+
+        # Strategy 4: Try original API ID variations (existing logic)
+        lookup_strategies.extend([
+            object_identifier,  # Already included, but keep for completeness
+        ])
+
+        # Remove duplicates while preserving order
+        seen = set()
+        lookup_strategies = [x for x in lookup_strategies if not (x in seen or seen.add(x))]
+
+        result = None
+        successful_lookup = None
+
+        # Try each lookup strategy
+        for lookup_id in lookup_strategies:
+            try:
+                logger.debug("Trying object identifier format: %s", lookup_id)
+                candidate_result = await api_client.get_object_by_id(lookup_id)
+                if candidate_result:
+                    result = candidate_result
+                    successful_lookup = lookup_id
+                    logger.info("Successfully found object using identifier: %s", lookup_id)
+                    break
+            except Exception as e:
+                logger.debug("Failed to find object with identifier %s: %s", lookup_id, e)
+                continue
+
+        if not result:
+            logger.warning(
+                "Object not found with identifier: %s. Tried %d different formats.",
+                object_identifier, len(lookup_strategies)
+            )
+            return None
+
+        # Validate and select the best URL
+        valid_url = validate_url(str(result.url) if result.url else None)
+        valid_record_link = validate_url(str(result.record_link) if result.record_link else None)
+
+        # Prefer record_link if different and valid (web URL over identifier)
+        selected_url = None
+        if valid_record_link and valid_record_link != valid_url:
+            selected_url = valid_record_link
+            logger.info("Using record_link URL: %s", selected_url)
+        elif valid_url:
+            selected_url = valid_url
+            logger.info("Using url field: %s", selected_url)
+        else:
+            logger.warning(
+                "No valid URL found for object %s. url='%s', record_link='%s'",
+                successful_lookup, result.url, result.record_link
+            )
+            return None
+
+        logger.info("Retrieved object URL for %s: %s", object_identifier, selected_url)
+        return selected_url
+
+    except Exception as e:
+        logger.error("API error retrieving object URL %s: %s", object_identifier, e)
+        raise RuntimeError(
+            f"Failed to retrieve object URL '{object_identifier}': {e}. "
+            "Try using a different identifier format (Accession Number, Record ID, or Internal ID). "
+            "REMEMBER: Always use this tool for URLs - never construct them manually as they often fail due to case sensitivity."
         ) from e
 
 

@@ -87,3 +87,37 @@ def resolve_museum_code(museum_name: str) -> Optional[str]:
 
     # No match found
     return None
+
+
+def validate_url(url_str: Optional[str]) -> Optional[str]:
+    """
+    Validate and normalize a URL string.
+
+    This function checks if a URL string is a valid HTTP or HTTPS URL.
+    It handles edge cases like malformed URLs and non-HTTP protocols.
+
+    Args:
+        url_str: The URL string to validate
+
+    Returns:
+        The validated URL string if valid, None otherwise
+
+    Examples:
+        validate_url("https://example.com")  # -> "https://example.com"
+        validate_url("http://example.com")   # -> "http://example.com"
+        validate_url("ftp://example.com")    # -> None
+        validate_url("not-a-url")            # -> None
+        validate_url(None)                   # -> None
+    """
+    if not url_str:
+        return None
+
+    try:
+        from pydantic import HttpUrl
+        parsed = HttpUrl(url_str)
+        if parsed.scheme in ('http', 'https'):
+            return str(parsed)
+    except (ValueError, TypeError):
+        pass
+
+    return None

@@ -448,4 +448,3 @@ dev/*
 !dev/documentation/
 !dev/documentation/**
 
-*_response.json
