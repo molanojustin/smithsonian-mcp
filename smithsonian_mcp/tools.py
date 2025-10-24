@@ -84,10 +84,10 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         **Simple:** `simple_search(query="Alma Thomas")`
         - Returns easy-to-read results with first_object_id ready to use
 
-        **Advanced:** Use search_collections with helper tools:
+        **Advanced:** Use search_collections with helper tools (ALWAYS search first, never construct URLs manually):
         - summarize_search_results() - Get readable summary
         - get_first_object_id() - Extract first object ID
-        - get_object_url() - MANDATORY: Get validated object URL (never construct manually)
+        - get_object_url() - Get validated object URL (use IDs from search results only)
         - search_and_get_first_details() - Search and get details
 
     Examples:
@@ -1187,7 +1187,7 @@ async def get_object_details(
         For best results, use the 'id' field from search_collections results.
         Use validate_object_id() first to check if an ID exists.
         IMPORTANT: Use get_object_url() if you need the object's web page URL.
-        NEVER construct URLs manually - always use the get_object_url() tool.
+        NEVER construct URLs manually - always use search tools first to find the correct ID, then get_object_url().
 
     Example:
         # First search for objects
@@ -1383,8 +1383,12 @@ async def get_object_url(
         logger.error("API error retrieving object URL %s: %s", object_identifier, e)
         raise RuntimeError(
             f"Failed to retrieve object URL '{object_identifier}': {e}. "
-            "Try using a different identifier format (Accession Number, Record ID, or Internal ID). "
-            "REMEMBER: Always use this tool for URLs - never construct them manually as they often fail due to case sensitivity."
+            "This may be due to an invalid ID format or the object not existing. "
+            "Try these solutions: "
+            "1. Use search tools (search_collections, simple_explore) first to find the correct object ID "
+            "2. Try different identifier formats (Accession Number like 'F1900.47', Record ID like 'nmah_1448973', or full API ID) "
+            "3. Verify the museum name and object name are correct "
+            "REMEMBER: Never construct URLs manually - always use this tool with IDs from search results."
         ) from e
 
 

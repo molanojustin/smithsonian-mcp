@@ -214,3 +214,51 @@ def quick_object_lookup_prompt(object_query: str) -> List[base.Message]:
             f"description, creator, date, and museum location. Use the most efficient search approach."
         )
     ]
+
+
+@mcp.prompt(title="Find Object URL")
+def find_object_url_prompt(object_description: str, museum: Optional[str] = None) -> List[base.Message]:
+    """
+    Find the direct URL for a specific Smithsonian object.
+
+    This prompt ensures the correct workflow: search first to find the object,
+    then get its validated URL. Never construct URLs manually.
+
+    Args:
+        object_description: Description or name of the object to find
+        museum: Optional museum name to restrict search (e.g., "American History Museum")
+    """
+    museum_text = f" at the {museum}" if museum else ""
+    return [
+        base.Message(
+            role="user",
+            content=f"To find the URL for '{object_description}'{museum_text}: "
+            f"1. Use search tools (search_collections, simple_explore) to find the correct object "
+            f"2. Get the object's ID from search results "
+            f"3. Use get_object_url() with that exact ID "
+            f"Never construct URLs manually or use external Smithsonian search - always use our tools first."
+        )
+    ]
+
+
+@mcp.prompt(title="Museum Object Search")
+def museum_object_search_prompt(object_name: str, museum_name: str) -> List[base.Message]:
+    """
+    Search for a specific object within a particular Smithsonian museum.
+
+    This prompt ensures proper museum filtering and correct tool usage for
+    finding objects at specific museums.
+
+    Args:
+        object_name: Name or description of the object
+        museum_name: Name of the Smithsonian museum (e.g., "National Museum of American History")
+    """
+    return [
+        base.Message(
+            role="user",
+            content=f"Find '{object_name}' at the {museum_name}. "
+            f"Use search tools with proper museum filtering to locate the correct object, "
+            f"then use get_object_details() or get_object_url() with the ID from results. "
+            f"Do not use external search engines or construct URLs manually."
+        )
+    ]

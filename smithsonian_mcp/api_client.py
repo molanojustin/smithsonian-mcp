@@ -679,9 +679,10 @@ class SmithsonianAPIClient:
             id_formats_to_try.append(object_id.replace("-", ":", 1))  # Convert dash to colon
             id_formats_to_try.append(object_id[8:])  # Remove "edanmdm-" prefix
 
-        # If it starts with "edanmdm:", try the dash version
+        # If it starts with "edanmdm:", try the dash version and base ID
         elif object_id.startswith("edanmdm:"):
             id_formats_to_try.append(object_id.replace(":", "-", 1))  # Convert colon to dash
+            id_formats_to_try.append(object_id[8:])  # Remove "edanmdm:" prefix
 
         for attempt_id in id_formats_to_try:
             endpoint = f"/content/{attempt_id}"
