@@ -1615,14 +1615,15 @@ async def get_museum_highlights_on_view(
     limit: int = 10,
 ) -> SearchResult:
     """
-    Get HIGHLIGHTS of notable objects currently on view or with exhibition data at a Smithsonian museum.
+    Get HIGHLIGHTS of notable objects currently on view at a Smithsonian museum.
 
     FOR questions like "what are the highlights on view" or "featured exhibits".
-    This tool returns a curated selection of notable objects that are either truly on view
-    or have exhibition information, prioritizing objects with images and detailed descriptions.
+    This tool performs thorough on-view detection and returns notable objects that are
+    currently on physical exhibit when available. It uses both API filtering and local
+    detection to ensure comprehensive results.
 
-    This is more flexible than get_objects_on_view and will return results even when
-    the museum doesn't have objects marked as currently on physical exhibit.
+    If no on-view objects are found after thorough searching, it falls back to objects
+    with exhibition data or popular collection items to provide useful results.
 
     Args:
         unit_code: Optional museum code (e.g., "FSG", "SAAM", "NMNH")
@@ -1630,7 +1631,7 @@ async def get_museum_highlights_on_view(
         limit: Number of highlights to return (default: 10, max: 50)
 
     Returns:
-        Curated selection of notable objects with exhibition data
+        Curated selection of notable on-view objects, or meaningful fallbacks
 
     Examples:
         get_museum_highlights_on_view(unit_code="FSG")
@@ -1649,12 +1650,20 @@ async def get_museum_highlights_on_view(
 
         api_client = await get_api_client(ctx)
 
-        # Strategy 1: Try API-level on-view filtering
+        # Enhanced on-view detection function (used throughout)
+        def is_effectively_on_view(obj):
+            if obj.is_on_view:  # Direct API flag
+                return True
+            if obj.exhibition_title or obj.exhibition_location:  # Exhibition context
+                return True
+            return False
+
+        # Phase 1: Comprehensive API on-view search
         on_view_filters = CollectionSearchFilter(
             query="*",
             unit_code=resolved_unit_code,
             on_view=True,
-            limit=min(limit * 2, 100),
+            limit=min(limit * 3, 300),  # Thorough search before concluding none exist
             offset=0,
             object_type=None,
             maker=None,
@@ -1669,8 +1678,35 @@ async def get_museum_highlights_on_view(
         on_view_results = await api_client.search_collections(on_view_filters)
         candidate_objects = list(on_view_results.objects)
 
-        # Strategy 2: If few on-view objects, add objects with exhibition data
-        if len(candidate_objects) < limit:
+        # Phase 2: If API search finds nothing, try local filtering with broader search
+        if len(on_view_results.objects) == 0:
+            broad_filters = CollectionSearchFilter(
+                query="*",
+                unit_code=resolved_unit_code,
+                on_view=None,  # No API filter, filter locally
+                limit=min(limit * 10, 1000),  # Large search for thorough local filtering
+                offset=0,
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                is_cc0=None,
+                date_start=None,
+                date_end=None,
+            )
+
+            broad_results = await api_client.search_collections(broad_filters)
+
+            # Add locally detected on-view objects
+            local_on_view_objects = [
+                obj for obj in broad_results.objects
+                if is_effectively_on_view(obj) and obj.id not in {o.id for o in candidate_objects}
+            ]
+            candidate_objects.extend(local_on_view_objects)
+
+        # Strategy 2: Only if thorough on-view search found NOTHING, add exhibition objects
+        if len(on_view_results.objects) == 0 and len([obj for obj in candidate_objects if is_effectively_on_view(obj)]) == 0:
             exhibition_filters = CollectionSearchFilter(
                 query="*",
                 unit_code=resolved_unit_code,
@@ -1704,8 +1740,9 @@ async def get_museum_highlights_on_view(
 
             candidate_objects.extend(new_exhibition_objects)
 
-        # Strategy 3: If still few objects, add recent/popular objects
-        if len(candidate_objects) < limit // 2:
+        # Strategy 3: If still no on-view objects found, add recent/popular objects as final fallback
+        on_view_count = len([obj for obj in candidate_objects if is_effectively_on_view(obj)])
+        if on_view_count == 0 and len(candidate_objects) < limit // 2:
             recent_filters = CollectionSearchFilter(
                 query="*",
                 unit_code=resolved_unit_code,

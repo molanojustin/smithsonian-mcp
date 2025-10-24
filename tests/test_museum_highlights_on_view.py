@@ -74,12 +74,8 @@ class TestMuseumHighlightsOnView:
                     next_offset=None,
                 )
 
-                # Mock responses for all possible API calls (strategies 1, 2, and 3)
-                mock_client_instance.search_collections.side_effect = [
-                    on_view_results,  # Strategy 1: on-view filtering
-                    exhibition_results,  # Strategy 2: exhibition data
-                    exhibition_results,  # Strategy 3: recent/popular objects (fallback)
-                ]
+                # Mock response for on-view search (should find results, so no fallback calls)
+                mock_client_instance.search_collections.return_value = on_view_results
 
                 result = await tools_module.get_museum_highlights_on_view.fn(
                     unit_code="FSG", limit=10
@@ -88,9 +84,10 @@ class TestMuseumHighlightsOnView:
                 # Verify the tool was called and returned results
                 assert isinstance(result, SearchResult)
                 assert len(result.objects) > 0
+                assert result.objects[0].is_on_view is True  # Should return on-view objects
 
-                # Verify search_collections was called multiple times (dual strategy)
-                assert mock_client_instance.search_collections.call_count >= 2
+                # Verify only the on-view search was called (no fallback since on-view objects found)
+                assert mock_client_instance.search_collections.call_count == 1
 
     @pytest.mark.asyncio
     async def test_get_museum_highlights_on_view_empty_results(self):
