@@ -75,9 +75,6 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         and next_offset fields to determine if there are additional results beyond
         the returned set.
 
-        ⚠️  WARNING: Do NOT construct URLs manually from the returned data!
-        Use get_object_url(object_id=object.id) to get correct URLs.
-
     Note:
         **For the absolute simplest experience, use these LLM-optimized tools:**
 
@@ -1185,9 +1182,6 @@ async def get_object_details(
     Returns:
         Detailed object information, or None if object not found
 
-        ⚠️  Note: The returned object includes a 'url' field, but for reliable URL access,
-        always use get_object_url() instead of constructing URLs manually.
-
     Note:
         If the object is not found, the tool tries multiple ID formats automatically.
         For best results, use the 'id' field from search_collections results.
@@ -1242,32 +1236,21 @@ async def get_object_url(
     object_id: str = ""
 ) -> Optional[str]:
     """
-    🔗 REQUIRED: Get the direct URL to an object's page on the Smithsonian website.
+    Get the direct URL to an object's page on the Smithsonian website.
 
-    ⚠️  CRITICAL: Use the EXACT 'id' field from search_collections results!
-
-    The object_id parameter MUST be the literal 'id' field value from search results.
-    Do NOT construct, modify, or combine fields - use it exactly as returned.
-
-    Correct usage:
-        results = search_collections(query="jade cong")
-        for obj in results.objects:
-            url = get_object_url(object_id=obj.id)  # Use obj.id exactly!
-
-    ❌ WRONG - These will fail:
-        get_object_url(object_id=obj.unit_code + "-" + obj.url.split("/")[-1])
-        get_object_url(object_id="FS-F1916.118")  # Constructed, not from search
+    This tool provides the exact URL for viewing an object on the Smithsonian's website.
+    Use this when you need the object's web page URL for sharing or direct access.
 
     The tool automatically tries multiple ID formats to handle different input styles:
     - Full IDs like "edanmdm-hmsg_80.107"
     - Partial IDs like "hmsg_80.107" (will be prefixed automatically)
 
     Args:
-        object_id: Unique identifier for the object. This MUST be the exact 'id' field
-                  from a search_collections result. Examples:
-                  - "ld1-1643390182193-1643390189323-0" (from search results)
-                  - "edanmdm-hmsg_80.107" (full API ID)
-                  - "hmsg_80.107" (partial ID, will be prefixed automatically)
+        object_id: Unique identifier for the object. This should be the 'id' field
+                  from a search result. Can be:
+                  - Full API ID (e.g., "edanmdm-hmsg_80.107")
+                  - Partial ID from object URLs (e.g., "hmsg_80.107")
+                  - Any format - the tool will try multiple variations automatically
 
     Returns:
         Direct URL to the object's page (e.g., "https://asia.si.edu/object/F1916.118/"),
@@ -1278,39 +1261,15 @@ async def get_object_url(
         Use get_object_details() if you need additional metadata.
 
     Example:
-        # ✅ CORRECT: Use the exact id field from search results
-        results = search_collections(query="jade cong")
-        if results.objects:
-            object_id = results.objects[0].id  # "ld1-1643390182193-1643390189323-0"
-            url = get_object_url(object_id=object_id)
-
-        # ❌ WRONG: Don't construct IDs from other fields
-        # wrong_id = results.objects[0].unit_code + "-" + "F1916.118"  # "FSG-F1916.118"
+        # Get URL for an object
+        url = get_object_url(object_id="edanmdm-hmsg_80.107")
+        # Returns: "https://hirshhorn.si.edu/object/hmsg_80.107/"
     """
     # Input validation
     if not object_id or object_id.strip() == "":
         raise ValueError("object_id cannot be empty")
 
     object_id = object_id.strip()
-
-    # Detect if someone passed a URL instead of an object ID
-    if "://" in object_id or object_id.startswith("http"):
-        raise ValueError(
-            "object_id should be an object ID from search results, not a URL. "
-            "Use the 'id' field from search_collections results with this tool. "
-            "Example: get_object_url(object_id='edanmdm-hmsg_80.107')"
-        )
-
-    # Detect constructed IDs (common pattern: unit_code + "-" + url_fragment)
-    if "-" in object_id and not object_id.startswith(("edanmdm", "ld1-")):
-        # Check if it looks like unit_code-something pattern (e.g., "FS-F1916.118")
-        parts = object_id.split("-", 1)
-        if len(parts) == 2 and len(parts[0]) <= 4:  # Unit codes are typically 2-4 chars
-            raise ValueError(
-                f"object_id '{object_id}' appears to be constructed from unit_code + URL fragment. "
-                "Use the EXACT 'id' field from search_collections results instead. "
-                "Example: if search returns {'id': 'ld1-123-456-0', ...}, use 'ld1-123-456-0' exactly."
-            )
 
     try:
         api_client = await get_api_client(ctx)
