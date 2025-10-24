@@ -1618,12 +1618,13 @@ async def get_museum_highlights_on_view(
     Get HIGHLIGHTS of notable objects currently on view at a Smithsonian museum.
 
     FOR questions like "what are the highlights on view" or "featured exhibits".
-    This tool performs thorough on-view detection and returns notable objects that are
-    currently on physical exhibit when available. It uses both API filtering and local
-    detection to ensure comprehensive results.
+    This tool performs comprehensive on-view detection across up to 5000 objects
+    and returns ONLY objects that are currently on physical exhibit or have active
+    exhibition data. It uses multi-batch searching and local filtering to reliably
+    identify on-view objects even when API data is incomplete or sparsely populated.
 
-    If no on-view objects are found after thorough searching, it falls back to objects
-    with exhibition data or popular collection items to provide useful results.
+    Returns an empty result if no on-view objects are found after thorough searching -
+    no fallbacks to non-on-view objects.
 
     Args:
         unit_code: Optional museum code (e.g., "FSG", "SAAM", "NMNH")
@@ -1631,7 +1632,7 @@ async def get_museum_highlights_on_view(
         limit: Number of highlights to return (default: 10, max: 50)
 
     Returns:
-        Curated selection of notable on-view objects, or meaningful fallbacks
+        Curated selection of verified on-view objects, or empty result if none found
 
     Examples:
         get_museum_highlights_on_view(unit_code="FSG")
@@ -1650,7 +1651,7 @@ async def get_museum_highlights_on_view(
 
         api_client = await get_api_client(ctx)
 
-        # Enhanced on-view detection function (used throughout)
+        # Reliable on-view detection function
         def is_effectively_on_view(obj):
             if obj.is_on_view:  # Direct API flag
                 return True
@@ -1658,34 +1659,17 @@ async def get_museum_highlights_on_view(
                 return True
             return False
 
-        # Phase 1: Comprehensive API on-view search
-        on_view_filters = CollectionSearchFilter(
-            query="*",
-            unit_code=resolved_unit_code,
-            on_view=True,
-            limit=min(limit * 3, 300),  # Thorough search before concluding none exist
-            offset=0,
-            object_type=None,
-            maker=None,
-            material=None,
-            topic=None,
-            has_images=None,
-            is_cc0=None,
-            date_start=None,
-            date_end=None,
-        )
+        # Comprehensive multi-search approach for thorough on-view detection
+        all_searched_objects = []
+        max_searches = 5  # Search up to 5 batches of 1000 objects each
 
-        on_view_results = await api_client.search_collections(on_view_filters)
-        candidate_objects = list(on_view_results.objects)
-
-        # Phase 2: If API search finds nothing, try local filtering with broader search
-        if len(on_view_results.objects) == 0:
-            broad_filters = CollectionSearchFilter(
+        for search_batch in range(max_searches):
+            batch_filters = CollectionSearchFilter(
                 query="*",
                 unit_code=resolved_unit_code,
-                on_view=None,  # No API filter, filter locally
-                limit=min(limit * 10, 1000),  # Large search for thorough local filtering
-                offset=0,
+                on_view=None,  # Don't rely on potentially unreliable API filter
+                limit=1000,  # Large batch size for comprehensive coverage
+                offset=search_batch * 1000,  # Different offset for each batch
                 object_type=None,
                 maker=None,
                 material=None,
@@ -1696,79 +1680,41 @@ async def get_museum_highlights_on_view(
                 date_end=None,
             )
 
-            broad_results = await api_client.search_collections(broad_filters)
+            batch_results = await api_client.search_collections(batch_filters)
 
-            # Add locally detected on-view objects
-            local_on_view_objects = [
-                obj for obj in broad_results.objects
-                if is_effectively_on_view(obj) and obj.id not in {o.id for o in candidate_objects}
-            ]
-            candidate_objects.extend(local_on_view_objects)
+            # Add new objects (avoid duplicates across batches)
+            existing_ids = {obj.id for obj in all_searched_objects}
+            new_objects = [obj for obj in batch_results.objects if obj.id not in existing_ids]
+            all_searched_objects.extend(new_objects)
 
-        # Strategy 2: Only if thorough on-view search found NOTHING, add exhibition objects
-        if len(on_view_results.objects) == 0 and len([obj for obj in candidate_objects if is_effectively_on_view(obj)]) == 0:
-            exhibition_filters = CollectionSearchFilter(
-                query="*",
-                unit_code=resolved_unit_code,
-                on_view=None,
-                limit=min(limit * 3, 150),
+            # Check if we found any on-view objects in this batch
+            batch_on_view = [obj for obj in new_objects if is_effectively_on_view(obj)]
+            if batch_on_view:
+                # Found on-view objects, no need to search further batches
+                break
+
+        # Find ALL objects with on-view indicators from all searched objects
+        on_view_candidates = [
+            obj for obj in all_searched_objects
+            if is_effectively_on_view(obj)
+        ]
+
+        candidate_objects = on_view_candidates
+
+        # If no on-view objects found after comprehensive multi-batch search, return empty result
+        if len(on_view_candidates) == 0:
+            logger.info("No on-view objects found at %s after searching %d objects across %d batches",
+                       resolved_unit_code, len(all_searched_objects), max_searches)
+            return SearchResult(
+                objects=[],
+                total_count=0,
+                returned_count=0,
                 offset=0,
-                object_type=None,
-                maker=None,
-                material=None,
-                topic=None,
-                has_images=None,
-                is_cc0=None,
-                date_start=None,
-                date_end=None,
+                has_more=False,
+                next_offset=None,
             )
 
-            exhibition_results = await api_client.search_collections(exhibition_filters)
-
-            # Find objects with exhibition data
-            exhibition_objects = [
-                obj for obj in exhibition_results.objects
-                if obj.exhibition_title or obj.exhibition_location
-            ]
-
-            # Add exhibition objects that aren't already in candidates
-            existing_ids = {obj.id for obj in candidate_objects}
-            new_exhibition_objects = [
-                obj for obj in exhibition_objects
-                if obj.id not in existing_ids
-            ]
-
-            candidate_objects.extend(new_exhibition_objects)
-
-        # Strategy 3: If still no on-view objects found, add recent/popular objects as final fallback
-        on_view_count = len([obj for obj in candidate_objects if is_effectively_on_view(obj)])
-        if on_view_count == 0 and len(candidate_objects) < limit // 2:
-            recent_filters = CollectionSearchFilter(
-                query="*",
-                unit_code=resolved_unit_code,
-                on_view=None,
-                limit=min(limit * 2, 100),
-                offset=0,
-                object_type=None,
-                maker=None,
-                material=None,
-                topic=None,
-                has_images=True,  # Prioritize objects with images
-                is_cc0=None,
-                date_start=None,
-                date_end=None,
-            )
-
-            recent_results = await api_client.search_collections(recent_filters)
-
-            # Add objects with images that aren't already candidates
-            existing_ids = {obj.id for obj in candidate_objects}
-            new_recent_objects = [
-                obj for obj in recent_results.objects
-                if obj.id not in existing_ids and obj.images
-            ]
-
-            candidate_objects.extend(new_recent_objects[:limit])
+        # Apply highlight curation to the verified on-view objects
 
         # Curate highlights: prioritize objects with images and descriptions
         def highlight_score(obj):
@@ -1794,12 +1740,13 @@ async def get_museum_highlights_on_view(
         if exhibition_count > 0:
             curation_notes.append(f"{exhibition_count} with exhibition data")
 
-        notes = f"Highlights from {resolved_unit_code or 'all museums'}: {', '.join(curation_notes) if curation_notes else 'general collection highlights'}"
+        notes = f"On-view highlights from {resolved_unit_code or 'all museums'}: {', '.join(curation_notes) if curation_notes else 'no on-view objects found'}"
 
         logger.info(
-            "Found %d highlight objects at %s (%s)",
+            "Found %d on-view highlight objects at %s from %d searched objects (%s)",
             len(curated_highlights),
             resolved_unit_code or "all museums",
+            len(all_searched_objects),
             notes
         )
 

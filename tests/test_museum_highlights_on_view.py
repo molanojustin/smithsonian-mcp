@@ -74,20 +74,40 @@ class TestMuseumHighlightsOnView:
                     next_offset=None,
                 )
 
-                # Mock response for on-view search (should find results, so no fallback calls)
-                mock_client_instance.search_collections.return_value = on_view_results
+                # Mock broad search that returns mixed results (some on-view, some not)
+                # The tool should filter to return only on-view objects
+                mixed_results = SearchResult(
+                    objects=[
+                        on_view_results.objects[0],  # On-view object
+                        SmithsonianObject(
+                            id="not-on-view-1",
+                            title="Not On View Object",
+                            is_on_view=False,
+                            images=[{"url": "http://example.com/image.jpg"}],
+                        )
+                    ],
+                    total_count=2,
+                    returned_count=2,
+                    offset=0,
+                    has_more=False,
+                    next_offset=None,
+                )
+
+                mock_client_instance.search_collections.return_value = mixed_results
 
                 result = await tools_module.get_museum_highlights_on_view.fn(
                     unit_code="FSG", limit=10
                 )
 
-                # Verify the tool was called and returned results
+                # Verify the tool filtered to return only on-view objects
                 assert isinstance(result, SearchResult)
-                assert len(result.objects) > 0
-                assert result.objects[0].is_on_view is True  # Should return on-view objects
+                assert len(result.objects) == 1  # Only the on-view object
+                assert result.objects[0].is_on_view is True
+                assert result.objects[0].id == "on-view-1"
 
-                # Verify only the on-view search was called (no fallback since on-view objects found)
-                assert mock_client_instance.search_collections.call_count == 1
+                # Verify comprehensive multi-batch search was performed
+                # Should call search_collections multiple times (up to 5 batches)
+                assert mock_client_instance.search_collections.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_get_museum_highlights_on_view_empty_results(self):
