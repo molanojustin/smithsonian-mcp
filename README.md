@@ -267,6 +267,7 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 - `continue_explore` - Get more results about the same topic while avoiding duplicates
 - `search_collections` - Advanced search with filters (now includes `on_view` parameter)
 - `get_object_details` - Detailed object information
+- `get_object_url` - Get direct URL to an object's web page
 - `search_by_unit` - Museum-specific searches
 - `get_objects_on_view` - Find objects currently on physical exhibit
 - `check_object_on_view` - Check if a specific object is on display

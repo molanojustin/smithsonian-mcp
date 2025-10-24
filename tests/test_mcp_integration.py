@@ -48,6 +48,7 @@ class TestMCPProtocolAdherence:
             ("validate_object_id", tools_module.validate_object_id),
             ("resolve_museum_name", tools_module.resolve_museum_name),
             ("get_object_details", tools_module.get_object_details),
+            ("get_object_url", tools_module.get_object_url),
             ("get_smithsonian_units", tools_module.get_smithsonian_units),
             ("get_collection_statistics", tools_module.get_collection_statistics),
             ("search_by_unit", tools_module.search_by_unit),

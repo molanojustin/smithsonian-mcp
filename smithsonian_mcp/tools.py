@@ -87,6 +87,7 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         **Advanced:** Use search_collections with helper tools:
         - summarize_search_results() - Get readable summary
         - get_first_object_id() - Extract first object ID
+        - get_object_url() - Get direct link to object page
         - search_and_get_first_details() - Search and get details
 
     Examples:
@@ -101,6 +102,7 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         results = search_collections(query="Alma Thomas", object_type="painting")
         summary = summarize_search_results(search_result=results)
         object_id = get_first_object_id(search_result=results)
+        url = get_object_url(object_id=object_id)
         details = get_object_details(object_id=object_id)
     """
     try:
@@ -1184,6 +1186,7 @@ async def get_object_details(
         If the object is not found, the tool tries multiple ID formats automatically.
         For best results, use the 'id' field from search_collections results.
         Use validate_object_id() first to check if an ID exists.
+        Use get_object_url() if you only need the object's web page URL.
 
     Example:
         # First search for objects
@@ -1223,6 +1226,70 @@ async def get_object_details(
         logger.error("API error retrieving object %s: %s", object_id, e)
         raise RuntimeError(
             f"Failed to retrieve object '{object_id}': {e}. "
+            "Try using the exact ID from search results (e.g., 'edanmdm-hmsg_80.107')."
+        ) from e
+
+
+@mcp.tool()
+async def get_object_url(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    object_id: str = ""
+) -> Optional[str]:
+    """
+    Get the direct URL to an object's page on the Smithsonian website.
+
+    This tool provides the exact URL for viewing an object on the Smithsonian's website.
+    Use this when you need the object's web page URL for sharing or direct access.
+
+    The tool automatically tries multiple ID formats to handle different input styles:
+    - Full IDs like "edanmdm-hmsg_80.107"
+    - Partial IDs like "hmsg_80.107" (will be prefixed automatically)
+
+    Args:
+        object_id: Unique identifier for the object. This should be the 'id' field
+                  from a search result. Can be:
+                  - Full API ID (e.g., "edanmdm-hmsg_80.107")
+                  - Partial ID from object URLs (e.g., "hmsg_80.107")
+                  - Any format - the tool will try multiple variations automatically
+
+    Returns:
+        Direct URL to the object's page (e.g., "https://asia.si.edu/object/F1916.118/"),
+        or None if object not found
+
+    Note:
+        This tool returns only the URL string, not full object details.
+        Use get_object_details() if you need additional metadata.
+
+    Example:
+        # Get URL for an object
+        url = get_object_url(object_id="edanmdm-hmsg_80.107")
+        # Returns: "https://hirshhorn.si.edu/object/hmsg_80.107/"
+    """
+    # Input validation
+    if not object_id or object_id.strip() == "":
+        raise ValueError("object_id cannot be empty")
+
+    object_id = object_id.strip()
+
+    try:
+        api_client = await get_api_client(ctx)
+        result = await api_client.get_object_by_id(object_id)
+
+        if result and result.url:
+            logger.info("Retrieved object URL for %s: %s", object_id, result.url)
+            return str(result.url)
+        else:
+            logger.warning(
+                "Object URL not found: %s. This may indicate the object doesn't exist, "
+                "or the ID format needs adjustment. Try using the exact ID from search results.",
+                object_id
+            )
+            return None
+
+    except Exception as e:
+        logger.error("API error retrieving object URL %s: %s", object_id, e)
+        raise RuntimeError(
+            f"Failed to retrieve object URL '{object_id}': {e}. "
             "Try using the exact ID from search results (e.g., 'edanmdm-hmsg_80.107')."
         ) from e
 
