@@ -1024,7 +1024,7 @@ async def search_and_get_first_url(
 
         # Strategy 1: If object has record_id, construct URL directly (most reliable)
         if first_object.record_id:
-            constructed_url = construct_url_from_record_id(first_object.record_id)
+            constructed_url = await construct_url_from_record_id(first_object.record_id)
             if constructed_url:
                 logger.info("Constructed URL from record_id: %s -> %s", first_object.record_id, constructed_url)
                 url = constructed_url
@@ -1528,7 +1528,7 @@ async def get_object_url(
         # Strategy 1: If it looks like a record_id (contains underscore), construct URL directly
         if "_" in object_identifier and not object_identifier.startswith("ld1-"):
             from .utils import construct_url_from_record_id
-            constructed_url = construct_url_from_record_id(object_identifier)
+            constructed_url = await construct_url_from_record_id(object_identifier)
             if constructed_url:
                 logger.info("Constructed URL from record_id: %s -> %s", object_identifier, constructed_url)
                 return constructed_url
@@ -1850,8 +1850,137 @@ async def get_objects_on_view(
         return results
 
     except Exception as e:
-        logger.error("Error getting museum highlights: %s", e)
-        raise RuntimeError(f"Failed to get museum highlights: {e}") from e
+        logger.error("Error getting objects on view: %s", e)
+        raise RuntimeError(f"Failed to get objects on view: {e}") from e
+
+
+@mcp.tool()
+async def find_on_view_items(
+    query: str,
+    unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
+    limit: int = 500,
+    offset: int = 0,
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+) -> SearchResult:
+    """
+    Find objects currently on physical exhibit that match a specific search query.
+
+    This tool provides MORE RELIABLE results than basic search with on_view filter
+    for finding objects that are both relevant to your query AND currently on display.
+    Use this for comprehensive on-view searches that may require checking beyond 1000 results.
+
+    This tool automatically paginates through up to 10,000 results across multiple API calls
+    (default 5,000) to find on-view objects matching your query, ensuring comprehensive coverage
+    even when relevant objects don't appear in the first 1000 results.
+
+    Args:
+        query: Search query (required) - keywords, titles, descriptions to match
+        unit_code: Optional filter by specific Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM")
+        museum: Optional filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
+        limit: Maximum number of results to return (default: 500, max: 1000)
+        offset: Number of results to skip for pagination (default: 0)
+
+    Returns:
+        Search results containing objects matching the query that are currently on physical exhibit
+
+    Examples:
+        # Find paintings currently on view
+        find_on_view_items(query="painting", unit_code="SAAM")
+
+        # Find dinosaur exhibits at Natural History
+        find_on_view_items(query="dinosaur", museum="Natural History Museum")
+
+        # General search for on-view items matching "space"
+        find_on_view_items(query="space")
+    """
+    try:
+        # Validate inputs
+        limit = max(1, min(limit, 1000))
+
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
+
+        # Get API client
+        api_client = await get_api_client(ctx)
+
+        # For comprehensive on-view searches, we need to search beyond the 1000-result limit
+        # The API has a hard limit of 1000 results per search, so we use pagination
+        max_search_results = 5000  # Search up to 5000 results to find on-view items
+        all_matching_objects = []
+        current_offset = 0
+
+        while current_offset < max_search_results:
+            # Search with current pagination
+            search_filters = CollectionSearchFilter(
+                query=query,
+                unit_code=resolved_unit_code,
+                object_type=None,
+                date_start=None,
+                date_end=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                is_cc0=None,
+                on_view=None,
+                limit=min(1000, max_search_results - current_offset),
+                offset=current_offset,
+            )
+
+            batch_results = await api_client.search_collections(
+                filters=search_filters,
+            )
+
+            if not batch_results.objects:
+                break  # No more results
+
+            # Filter for on-view objects using enhanced detection
+            def is_effectively_on_view(obj):
+                if obj.is_on_view:  # Direct API flag
+                    return True
+                if obj.exhibition_title or obj.exhibition_location:  # Exhibition context
+                    return True
+                return False
+
+            on_view_matches = [obj for obj in batch_results.objects if is_effectively_on_view(obj)]
+            all_matching_objects.extend(on_view_matches)
+
+            # Check if we have enough results or if we've reached the end
+            if len(all_matching_objects) >= limit + offset or len(batch_results.objects) < 1000:
+                break
+
+            current_offset += len(batch_results.objects)
+
+        # Apply offset and limit to our collected results
+        final_objects = all_matching_objects[offset:offset + limit]
+
+        results = SearchResult(
+            objects=final_objects,
+            total_count=len(all_matching_objects),
+            returned_count=len(final_objects),
+            offset=offset,
+            has_more=(offset + len(final_objects)) < len(all_matching_objects),
+            next_offset=offset + limit if (offset + len(final_objects)) < len(all_matching_objects) else None,
+        )
+
+        logger.info(
+            "Comprehensive on-view search for '%s': found %d on-view matches out of %d total results searched",
+            query,
+            results.returned_count,
+            len(all_matching_objects),
+        )
+
+        return results
+
+    except Exception as e:
+        logger.error("Error in find_on_view_items: %s", e)
+        raise RuntimeError(f"Failed to find on-view items: {e}") from e
 
 
 @mcp.tool()

@@ -69,8 +69,8 @@ class TestGetObjectUrl:
                 # Test with Record ID
                 result = await tools_module.get_object_url.fn(object_identifier="fsg_F1900.47")
 
-                # Should return the record_link URL
-                assert result == "https://asia.si.edu/object/F1900.47/"
+                # Should return the constructed URL from record_id
+                assert result == "https://www.asia.si.edu/collections/object/fsg_F1900.47"
 
     @pytest.mark.asyncio
     async def test_get_object_url_internal_id(self, thunder_god_data, thunder_god_object):

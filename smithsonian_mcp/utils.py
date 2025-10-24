@@ -157,7 +157,7 @@ def prioritize_objects_by_unit_code(objects: List, unit_code: Optional[str]) -> 
     return prioritized + others
 
 
-def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str]:
+async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str]:
     """
     Construct a URL from a record_id using the museum's official website.
 
@@ -183,30 +183,19 @@ def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str]:
 
     # Import here to avoid circular imports
     from .api_client import SmithsonianAPIClient
-    import asyncio
 
-    async def get_museum_website():
-        client = SmithsonianAPIClient()
-        try:
-            await client.connect()
-            units = await client.get_units()
-            museum = next((u for u in units if u.code == museum_code), None)
-            return str(museum.website) if museum and museum.website else None
-        finally:
-            await client.disconnect()
-
-    # Run the async function (this is a bit of a hack, but utils functions should be sync)
+    client = SmithsonianAPIClient()
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        website = loop.run_until_complete(get_museum_website())
-        loop.close()
+        await client.connect()
+        units = await client.get_units()
+        museum = next((u for u in units if u.code == museum_code), None)
+        website = str(museum.website) if museum and museum.website else None
+    finally:
+        await client.disconnect()
 
-        if website:
-            # Remove trailing slash from website if present
-            website = website.rstrip("/")
-            return f"{website}/collections/object/{record_id}"
-    except Exception:
-        pass
+    if website:
+        # Remove trailing slash from website if present
+        website = website.rstrip("/")
+        return f"{website}/collections/object/{record_id}"
 
     return None

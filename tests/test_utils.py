@@ -5,6 +5,8 @@ Tests for the utils module.
 import logging
 from unittest.mock import MagicMock
 
+import pytest
+
 from smithsonian_mcp.utils import mask_api_key, resolve_museum_code
 
 def test_mask_api_key():
@@ -88,31 +90,34 @@ def test_resolve_museum_code_expanded_map():
     assert resolve_museum_code("National Museum of African American History and Culture") == "NMAAHC"
 
 
-def test_construct_url_from_record_id():
+@pytest.mark.asyncio
+async def test_construct_url_from_record_id():
     """Test URL construction from record_id."""
     from smithsonian_mcp.utils import construct_url_from_record_id
 
     # Test with valid record_id
-    url = construct_url_from_record_id("nmah_1448973")
+    url = await construct_url_from_record_id("nmah_1448973")
     assert url == "https://americanhistory.si.edu/collections/object/nmah_1448973"
 
     # Test with invalid record_id (no underscore)
-    url = construct_url_from_record_id("invalid")
+    url = await construct_url_from_record_id("invalid")
     assert url is None
 
     # Test with empty record_id
-    url = construct_url_from_record_id("")
+    url = await construct_url_from_record_id("")
     assert url is None
 
     # Test with None
-    url = construct_url_from_record_id(None)
+    url = await construct_url_from_record_id(None)
     assert url is None
 
 
-def test_bert_puppet_parsing():
+@pytest.mark.asyncio
+async def test_bert_puppet_parsing():
     """Test parsing of bert puppet response to validate record_id extraction."""
     import json
     from smithsonian_mcp.api_client import SmithsonianAPIClient
+    from smithsonian_mcp.api_client import create_client
 
     # Load the bert puppet response
     with open("tests/bert_puppet_response.json", "r") as f:
@@ -130,20 +135,13 @@ def test_bert_puppet_parsing():
 
     # Test URL construction from record_id
     from smithsonian_mcp.utils import construct_url_from_record_id
-    url = construct_url_from_record_id(obj.record_id)
+    url = await construct_url_from_record_id(obj.record_id)
     assert url == "https://americanhistory.si.edu/collections/object/nmah_1448973"
 
     # Test museum website lookup
-    import asyncio
-    from smithsonian_mcp.api_client import create_client
-
-    async def test_museum_website():
-        client = await create_client()
-        units = await client.get_units()
-        nmah_unit = next((u for u in units if u.code == "NMAH"), None)
-        assert nmah_unit is not None
-        assert str(nmah_unit.website) == "https://americanhistory.si.edu/"
-        await client.disconnect()
-
-    # Run the async test
-    asyncio.run(test_museum_website())
+    client = await create_client()
+    units = await client.get_units()
+    nmah_unit = next((u for u in units if u.code == "NMAH"), None)
+    assert nmah_unit is not None
+    assert str(nmah_unit.website) == "https://americanhistory.si.edu/"
+    await client.disconnect()
