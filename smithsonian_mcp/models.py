@@ -141,9 +141,9 @@ class SmithsonianObject(BaseModel):
         None, description="Last modification date"
     )
 
-    # Raw metadata
-    raw_metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Original API response"
+    # Raw metadata (removed to prevent context bloat - not used in codebase)
+    raw_metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Original API response (not populated to reduce context size)"
     )
 
 

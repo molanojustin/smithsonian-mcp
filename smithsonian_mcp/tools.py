@@ -1612,7 +1612,7 @@ async def get_museum_highlights_on_view(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     unit_code: Optional[str] = None,
     museum: Optional[str] = None,
-    limit: int = 20,
+    limit: int = 10,
 ) -> SearchResult:
     """
     Get HIGHLIGHTS of notable objects currently on view or with exhibition data at a Smithsonian museum.
@@ -1627,7 +1627,7 @@ async def get_museum_highlights_on_view(
     Args:
         unit_code: Optional museum code (e.g., "FSG", "SAAM", "NMNH")
         museum: Optional museum name (e.g., "Smithsonian Asian Art Museum")
-        limit: Number of highlights to return (default: 20, max: 50)
+        limit: Number of highlights to return (default: 10, max: 50)
 
     Returns:
         Curated selection of notable objects with exhibition data

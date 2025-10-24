@@ -507,6 +507,20 @@ class SmithsonianAPIClient:
 
 
 
+        # Limit notes to prevent excessive context bloat
+        notes_list = freetext.get("notes", [])
+        if notes_list:
+            # Take only the first 3 notes and limit each to 500 characters
+            limited_notes = []
+            for note in notes_list[:3]:
+                content = note.get("content", "")
+                if len(content) > 500:
+                    content = content[:497] + "..."
+                limited_notes.append(content)
+            notes_content = "\n".join(limited_notes)
+        else:
+            notes_content = None
+
         return SmithsonianObject(
             id=obj_id,
             title=title,
@@ -526,7 +540,7 @@ class SmithsonianAPIClient:
                 None,
             ),
             images=images,
-            raw_metadata=raw_data,
+            # Removed raw_metadata to prevent context bloat - not used anywhere in codebase
             date=descriptive_non_repeating.get("date", {}).get("content"),
             date_standardized=descriptive_non_repeating.get("date", {}).get(
                 "date_standardized"
@@ -543,11 +557,7 @@ class SmithsonianAPIClient:
                 if freetext.get("summary")
                 else None
             ),
-            notes=(
-                "\n".join(note.get("content", "") for note in freetext.get("notes", []))
-                if freetext.get("notes")
-                else None
-            ),
+            notes=notes_content,
             credit_line=descriptive_non_repeating.get("creditLine", ""),
             rights=descriptive_non_repeating.get("rights", ""),
             record_link=descriptive_non_repeating.get("record_link"),
