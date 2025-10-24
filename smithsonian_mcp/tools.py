@@ -57,9 +57,10 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
      appear in the first 1000 results), use the find_on_view_items tool which
      automatically paginates through up to 10,000 results.
 
-     NOTE: If you provide an invalid unit_code, this tool will automatically attempt to
-     resolve it as a museum name. For best results, use resolve_museum_name() first or
-     provide the museum name directly.
+     NOTE: When a unit_code is specified, results are automatically prioritized to show
+     objects from that museum first (IDs starting with the unit code). If you provide an
+     invalid unit_code, this tool will automatically attempt to resolve it as a museum name.
+     For best results, use resolve_museum_name() first or provide the museum name directly.
 
      Args:
          query: General search terms (keywords, titles, descriptions)
@@ -160,6 +161,12 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
+        # Prioritize objects by unit code if specified
+        if resolved_unit_code:
+            from .utils import prioritize_objects_by_unit_code
+            results.objects = prioritize_objects_by_unit_code(results.objects, resolved_unit_code)
+            logger.info(f"Prioritized {len(results.objects)} results for unit_code '{resolved_unit_code}'")
+
         if 1000 <= limit < results.total_count:
             logger.warning(
                 "Search completed: '%s' returned %d of %d results; only first %d returned.",
@@ -209,9 +216,10 @@ async def simple_search(
     Always use get_object_url(object_identifier=object_id) to get valid URLs.
     Manual URL construction like "https://collections.si.edu/search/detail/{id}" WILL FAIL.
 
-    NOTE: If you provide an invalid unit_code, this tool will automatically attempt to
-    resolve it as a museum name. For best results, use resolve_museum_name() first or
-    provide the museum name directly.
+    NOTE: When a unit_code is specified, results are automatically prioritized to show
+    objects from that museum first (IDs starting with the unit code). If you provide an
+    invalid unit_code, this tool will automatically attempt to resolve it as a museum name.
+    For best results, use resolve_museum_name() first or provide the museum name directly.
 
     Args:
         query: General search terms (keywords, titles, descriptions)
@@ -288,6 +296,12 @@ async def simple_search(
         # Get API client and perform search
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
+
+        # Prioritize objects by unit code if specified
+        if resolved_unit_code:
+            from .utils import prioritize_objects_by_unit_code
+            results.objects = prioritize_objects_by_unit_code(results.objects, resolved_unit_code)
+            logger.info(f"Prioritized {len(results.objects)} results for unit_code '{resolved_unit_code}'")
 
         # Convert to simple format
         simple_results = results.to_simple_result()
@@ -913,7 +927,10 @@ async def search_and_get_first_url(
 
     🚨 This tool exists because manual URL construction ALWAYS fails. Use this instead of:
     ❌ search_collections() + manual URL construction
-    ❌ simple_search() + guessing URLs like "https://collections.si.edu/search/detail/{id}"
+    ✅ search_collections() + get_object_url()
+
+    NOTE: When a unit_code is specified, results are automatically prioritized to show
+    objects from that museum first (IDs starting with the unit code).
 
     Args:
         query: General search terms (keywords, titles, descriptions)
@@ -989,10 +1006,16 @@ async def search_and_get_first_url(
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
+        # Prioritize objects by unit code if specified
+        if resolved_unit_code:
+            from .utils import prioritize_objects_by_unit_code
+            results.objects = prioritize_objects_by_unit_code(results.objects, resolved_unit_code)
+            logger.info(f"Prioritized {len(results.objects)} results for unit_code '{resolved_unit_code}'")
+
         if not results.objects:
             return f"No objects found matching: {query}"
 
-        # Get the first object
+        # Get the first object (now prioritized)
         first_object = results.objects[0]
         object_id = first_object.id
 

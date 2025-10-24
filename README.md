@@ -271,7 +271,7 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 
 - `simple_explore` - Smart diverse sampling across museums and object types (recommended for general discovery)
 - `continue_explore` - Get more results about the same topic while avoiding duplicates
-- `search_collections` - Advanced search with filters (now includes `on_view` parameter)
+- `search_collections` - Advanced search with filters (prioritizes museum-specific results when unit_code specified)
 - `search_and_get_first_url` - **Easiest option**: Search and get validated URL in one step (prevents manual URL construction)
 - `get_object_details` - Detailed object information
 - `get_object_url` - Get validated object URLs with flexible identifier support (MANDATORY: never construct URLs manually)

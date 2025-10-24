@@ -2,7 +2,7 @@
 Utility functions for the Smithsonian MCP server.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 def mask_api_key(params: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -121,3 +121,37 @@ def validate_url(url_str: Optional[str]) -> Optional[str]:
         pass
 
     return None
+
+
+def prioritize_objects_by_unit_code(objects: List, unit_code: Optional[str]) -> List:
+    """
+    Reorder search results to prioritize objects whose IDs start with the unit code.
+
+    This ensures that when searching with a specific unit_code (e.g., "NMAH"),
+    objects from that museum appear first, even if the API ordered them differently.
+
+    Args:
+        objects: List of SmithsonianObject instances from search results
+        unit_code: The unit code used in the search (e.g., "NMAH", "FSG")
+
+    Returns:
+        Reordered list with museum-specific objects first
+    """
+    if not unit_code or not objects:
+        return objects
+
+    # Convert unit_code to lowercase for case-insensitive matching
+    unit_prefix = f"{unit_code.lower()}_"
+
+    # Separate objects into prioritized and others
+    prioritized = []
+    others = []
+
+    for obj in objects:
+        if obj.id and obj.id.lower().startswith(unit_prefix):
+            prioritized.append(obj)
+        else:
+            others.append(obj)
+
+    # Return prioritized objects first, then others (maintaining their relative order)
+    return prioritized + others
