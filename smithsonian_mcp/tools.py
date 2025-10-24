@@ -87,7 +87,7 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         **Advanced:** Use search_collections with helper tools:
         - summarize_search_results() - Get readable summary
         - get_first_object_id() - Extract first object ID
-        - get_object_url() - Get direct link to object page
+        - get_object_url() - MANDATORY: Get validated object URL (never construct manually)
         - search_and_get_first_details() - Search and get details
 
     Examples:
@@ -102,7 +102,7 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         results = search_collections(query="Alma Thomas", object_type="painting")
         summary = summarize_search_results(search_result=results)
         object_id = get_first_object_id(search_result=results)
-        url = get_object_url(object_id=object_id)
+        url = get_object_url(object_identifier=object_id)  # MANDATORY: Never construct URLs manually
         details = get_object_details(object_id=object_id)
     """
     try:
@@ -1186,7 +1186,8 @@ async def get_object_details(
         If the object is not found, the tool tries multiple ID formats automatically.
         For best results, use the 'id' field from search_collections results.
         Use validate_object_id() first to check if an ID exists.
-        Use get_object_url() if you only need the object's web page URL.
+        IMPORTANT: Use get_object_url() if you need the object's web page URL.
+        NEVER construct URLs manually - always use the get_object_url() tool.
 
     Example:
         # First search for objects
@@ -1236,6 +1237,11 @@ async def get_object_url(
     object_identifier: str = ""
 ) -> Optional[str]:
     """
+    CRITICAL: Always use this tool to get object URLs. NEVER construct URLs manually.
+
+    Manual URL construction WILL FAIL due to case sensitivity, formatting changes, or API updates.
+    This tool ensures you get the correct, validated URL from Smithsonian's record_link field.
+
     Get the direct URL to an object's page on the Smithsonian website.
 
     This tool provides the exact URL for viewing an object on the Smithsonian's website.
@@ -1249,6 +1255,12 @@ async def get_object_url(
     - Partial ID from object URLs (e.g., "hmsg_80.107")
 
     The tool validates URLs and prefers the record_link field when it differs from the url field.
+
+    URL Validation Benefits:
+    - Handles case sensitivity (F1916.118 vs f1916.118)
+    - Uses authoritative record_link field over API identifier
+    - Validates HTTP/HTTPS URLs and filters invalid ones
+    - Adapts to API changes and formatting updates
 
     Args:
         object_identifier: Identifier for the object. Can be:
@@ -1266,10 +1278,16 @@ async def get_object_url(
         This tool returns only the URL string, not full object details.
         Use get_object_details() if you need additional metadata.
 
+    IMPORTANT: Never construct URLs like "https://asia.si.edu/object/{id}" yourself.
+    Always use this tool as manual construction often fails (wrong case, formatting, etc.).
+
     Examples:
-        # Get URL using Accession Number
+        # CORRECT: Always use the tool
         url = get_object_url(object_identifier="F1900.47")
         # Returns: "https://asia.si.edu/object/F1900.47/"
+
+        # WRONG: Don't do this - it will fail with wrong case/formatting
+        # url = "https://asia.si.edu/object/f1900.47"  # Wrong!
 
         # Get URL using Record ID
         url = get_object_url(object_identifier="fsg_F1900.47")
@@ -1365,7 +1383,8 @@ async def get_object_url(
         logger.error("API error retrieving object URL %s: %s", object_identifier, e)
         raise RuntimeError(
             f"Failed to retrieve object URL '{object_identifier}': {e}. "
-            "Try using a different identifier format (Accession Number, Record ID, or Internal ID)."
+            "Try using a different identifier format (Accession Number, Record ID, or Internal ID). "
+            "REMEMBER: Always use this tool for URLs - never construct them manually as they often fail due to case sensitivity."
         ) from e
 
 
