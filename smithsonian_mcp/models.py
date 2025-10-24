@@ -180,6 +180,9 @@ class SimpleSearchResult(BaseModel):
         if search_result.has_more:
             summary_lines.append(f"More results available (use offset={search_result.next_offset})")
 
+        # Add warning about using exact IDs
+        summary_lines.append("⚠️  IMPORTANT: Use obj.id field exactly for get_object_details/get_object_url")
+
         return cls(
             summary="\n".join(summary_lines),
             object_count=search_result.returned_count,

@@ -263,7 +263,7 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 
 ### Essential Tools (Use These First!)
 
-- `get_object_url` - **REQUIRED** for all Smithsonian object URLs (never construct manually!)
+- `get_object_url` - **REQUIRED** for all Smithsonian object URLs (use exact 'id' field from search results!)
 - `search_collections` - Find objects across museums
 - `get_object_details` - Get complete object information
 
