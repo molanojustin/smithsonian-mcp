@@ -1,0 +1,192 @@
+{
+    "status": 200,
+    "responseCode": 1,
+    "response": {
+        "id": "ld1-1643398912743-1643398933001-0",
+        "title": "Bert Puppet",
+        "unitCode": "NMAH",
+        "type": "edanmdm",
+        "url": "edanmdm:nmah_1448973",
+        "content": {
+            "freetext": {
+                "date": [
+                    {
+                        "label": "date made",
+                        "content": "1969"
+                    }
+                ],
+                "name": [
+                    {
+                        "label": "performer",
+                        "content": "Oz, Frank"
+                    },
+                    {
+                        "label": "performer",
+                        "content": "Jacobson, Eric"
+                    },
+                    {
+                        "label": "maker",
+                        "content": "Henson, Jim"
+                    },
+                    {
+                        "label": "maker",
+                        "content": "Sahlin, Don"
+                    }
+                ],
+                "notes": [
+                    {
+                        "label": "Description (Brief)",
+                        "content": "Bert is a hand-rod puppet originally performed by Frank Oz and currently performed by Eric Jacobson. In a hand-rod puppet, like Bert, the performer’s dominant hand goes into the puppet’s head and operates the mouth and sometimes other facial features. The less dominant hand controls the arm rods, which are thin rods connected to the puppet’s hands. Bert lives on Sesame Street with his best friend and roommate Ernie. He has a serious personality and a pet pigeon named Bernice. Bert, with Ernie, has been a part of <i>Sesame Street</i> since the first test pilot episodes and the premier in 1969, and this puppet is the original Bert used for those pilot episodes."
+                    }
+                ],
+                "topic": [
+                    {
+                        "label": "Subject",
+                        "content": "Sesame Street"
+                    },
+                    {
+                        "label": "Subject",
+                        "content": "Children's television programs"
+                    },
+                    {
+                        "label": "Subject",
+                        "content": "Puppetry"
+                    },
+                    {
+                        "label": "Subject",
+                        "content": "Television"
+                    },
+                    {
+                        "label": "Subject",
+                        "content": "Television broadcasts"
+                    }
+                ],
+                "setName": [
+                    {
+                        "label": "See more items in",
+                        "content": "Culture and the Arts: Entertainment"
+                    },
+                    {
+                        "label": "See more items in",
+                        "content": "Jim Henson"
+                    },
+                    {
+                        "label": "Exhibition",
+                        "content": "Entertainment Nation"
+                    },
+                    {
+                        "label": "Exhibition Location",
+                        "content": "National Museum of American History"
+                    }
+                ],
+                "creditLine": [
+                    {
+                        "label": "Credit Line",
+                        "content": "Gift of the Family of Jim Henson: Lisa Henson, Cheryl Henson, Brian Henson, John Henson and Heather Henson"
+                    }
+                ],
+                "dataSource": [
+                    {
+                        "label": "Data Source",
+                        "content": "National Museum of American History"
+                    }
+                ],
+                "identifier": [
+                    {
+                        "label": "ID Number",
+                        "content": "2013.0101.13"
+                    },
+                    {
+                        "label": "accession number",
+                        "content": "2013.0101"
+                    },
+                    {
+                        "label": "catalog number",
+                        "content": "2013.0101.13"
+                    }
+                ],
+                "objectType": [
+                    {
+                        "label": "Object Name",
+                        "content": "puppet"
+                    }
+                ],
+                "physicalDescription": [
+                    {
+                        "label": "Physical Description",
+                        "content": "foam (overall material)"
+                    },
+                    {
+                        "label": "Physical Description",
+                        "content": "felt (overall material)"
+                    },
+                    {
+                        "label": "Physical Description",
+                        "content": "plastic (overall material)"
+                    },
+                    {
+                        "label": "Physical Description",
+                        "content": "fabric (overall material)"
+                    },
+                    {
+                        "label": "Measurements",
+                        "content": "overall: 23 1/2 in x 23 in x 9 in; 59.69 cm x 58.42 cm x 22.86 cm"
+                    }
+                ]
+            },
+            "indexedStructured": {
+                "date": [
+                    "1960s"
+                ],
+                "name": [
+                    "Henson, Jim",
+                    "Oz, Frank",
+                    "Jacobson, Eric",
+                    "Sahlin, Don"
+                ],
+                "topic": [
+                    "Jim Henson",
+                    "Television",
+                    "Sesame Street",
+                    "Puppets",
+                    "Children's television programs",
+                    "Television broadcasts"
+                ],
+                "exhibition": [
+                    {
+                        "building": "NMAH",
+                        "exhibitionTitle": "Entertainment Nation"
+                    }
+                ],
+                "object_type": [
+                    "Puppets"
+                ],
+                "onPhysicalExhibit": [
+                    "Yes"
+                ],
+                "online_media_type": [
+                    "Images"
+                ]
+            },
+            "descriptiveNonRepeating": {
+                "guid": "https://n2t.net/ark:/65665/ng49ca746ad-d940-704b-e053-15f76fa0b4fa",
+                "title": {
+                    "label": "Title",
+                    "content": "Bert Puppet"
+                },
+                "record_ID": "nmah_1448973",
+                "unit_code": "NMAH",
+                "title_sort": "BERT PUPPET",
+                "data_source": "National Museum of American History",
+                "metadata_usage": {
+                    "access": "CC0"
+                }
+            }
+        },
+        "hash": "316fff9f677bef79821b3280e060cb1cd901333f",
+        "docSignature": "6671e6f0826e7483ab5bef9be40a9bee",
+        "timestamp": "1663782495",
+        "lastTimeUpdated": "1740741552",
+        "version": ""
+    }
+}

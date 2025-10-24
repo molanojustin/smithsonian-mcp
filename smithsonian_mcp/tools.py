@@ -1019,39 +1019,50 @@ async def search_and_get_first_url(
         first_object = results.objects[0]
         object_id = first_object.id
 
-        # Get the URL for the first object using the same logic as get_object_url tool
-        from .utils import validate_url
+        # Get the URL for the first object - prioritize record_id if available
+        from .utils import validate_url, construct_url_from_record_id
 
-        # Try multiple lookup strategies in order of user-friendliness
-        lookup_strategies = [object_id]  # Start with the object_id
+        # Strategy 1: If object has record_id, construct URL directly (most reliable)
+        if first_object.record_id:
+            constructed_url = construct_url_from_record_id(first_object.record_id)
+            if constructed_url:
+                logger.info("Constructed URL from record_id: %s -> %s", first_object.record_id, constructed_url)
+                url = constructed_url
+            else:
+                return f"Found object '{first_object.title or 'Untitled'}' but could not construct URL from record_id"
+        else:
+            # Fallback: Use same logic as get_object_url tool
+            # Try multiple lookup strategies in order of user-friendliness
+            lookup_strategies = [object_id]  # Start with the object_id
 
-        result = None
-        successful_lookup = None
+            result = None
+            successful_lookup = None
 
-        # Try each lookup strategy
-        for lookup_id in lookup_strategies:
-            try:
-                candidate_result = await api_client.get_object_by_id(lookup_id)
-                if candidate_result:
-                    result = candidate_result
-                    successful_lookup = lookup_id
-                    break
-            except Exception:
-                continue
+            # Try each lookup strategy
+            for lookup_id in lookup_strategies:
+                try:
+                    candidate_result = await api_client.get_object_by_id(lookup_id)
+                    if candidate_result:
+                        result = candidate_result
+                        successful_lookup = lookup_id
+                        break
+                except Exception:
+                    continue
 
-        if not result:
-            return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve URL"
+            if not result:
+                return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve URL"
 
-        # Validate and select the best URL (same logic as get_object_url)
-        valid_url = validate_url(str(result.url) if result.url else None)
-        valid_record_link = validate_url(str(result.record_link) if result.record_link else None)
+            # Validate and select the best URL (same logic as get_object_url)
+            valid_url = validate_url(str(result.url) if result.url else None)
+            valid_record_link = validate_url(str(result.record_link) if result.record_link else None)
 
-        # Prefer record_link if different and valid
-        selected_url = None
-        if valid_record_link and valid_record_link != valid_url:
-            selected_url = valid_record_link
-        elif valid_url:
-            selected_url = valid_url
+            # Prefer record_link if different and valid
+            if valid_record_link and valid_record_link != valid_url:
+                url = valid_record_link
+            elif valid_url:
+                url = valid_url
+            else:
+                return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve valid URL"
 
         if not selected_url:
             return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve valid URL"
@@ -1516,10 +1527,18 @@ async def get_object_url(
 
         api_client = await get_api_client(ctx)
 
-        # Try multiple lookup strategies in order of user-friendliness
+        # Try multiple lookup strategies in order of reliability
         lookup_strategies = []
 
-        # Strategy 1: Try as Accession Number (most user-friendly)
+        # Strategy 1: If it looks like a record_id (contains underscore), construct URL directly
+        if "_" in object_identifier and not object_identifier.startswith("ld1-"):
+            from .utils import construct_url_from_record_id
+            constructed_url = construct_url_from_record_id(object_identifier)
+            if constructed_url:
+                logger.info("Constructed URL from record_id: %s -> %s", object_identifier, constructed_url)
+                return constructed_url
+
+        # Strategy 2: Try as Accession Number (most user-friendly)
         lookup_strategies.append(object_identifier)
 
         # Strategy 2: Try as Record ID format (museum_code + accession)

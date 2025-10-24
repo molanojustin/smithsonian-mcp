@@ -72,6 +72,7 @@ class SmithsonianObject(BaseModel):
 
     # Core identification
     id: str = Field(..., description="Unique object identifier")
+    record_id: Optional[str] = Field(None, description="Official record identifier (e.g., nmah_1448973)")
     title: str = Field(..., description="Object title")
     url: Optional[HttpUrl] = Field(None, description="URL to object page")
 

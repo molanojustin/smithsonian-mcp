@@ -532,6 +532,7 @@ class SmithsonianAPIClient:
 
         return SmithsonianObject(
             id=obj_id,
+            record_id=descriptive_non_repeating.get("record_ID"),
             title=title,
             url=parsed_url,
             unit_code=unit_code,
