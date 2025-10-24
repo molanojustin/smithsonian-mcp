@@ -31,6 +31,7 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     query: str = "",
     unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
     object_type: Optional[str] = None,
     maker: Optional[str] = None,
     material: Optional[str] = None,
@@ -47,15 +48,16 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
     This tool allows comprehensive searching across all Smithsonian museums and
     collections with various filters for object type, creator, materials, and more.
 
-    IMPORTANT: This tool returns a maximum of 1000 results per call. If you need to
-    search through more results (e.g., to find specific on-view items that may not
-    appear in the first 1000 results), use the find_on_view_items tool which
-    automatically paginates through up to 10,000 results.
+     IMPORTANT: This tool returns a maximum of 1000 results per call. If you need to
+     search through more results (e.g., to find specific on-view items that may not
+     appear in the first 1000 results), use the find_on_view_items tool which
+     automatically paginates through up to 10,000 results.
 
-    Args:
-        query: General search terms (keywords, titles, descriptions)
-        unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
-        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+     Args:
+         query: General search terms (keywords, titles, descriptions)
+         unit_code: Filter by Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM")
+         museum: Filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
+         object_type: Type of object (e.g., "painting", "sculpture", "photograph")
         maker: Creator or maker name (artist, photographer, etc.)
         material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
         topic: Subject topic or theme
@@ -102,6 +104,13 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         details = get_object_details(object_id=object_id)
     """
     try:
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
 
         # Create search filter
         # pylint: disable=duplicate-code
@@ -154,6 +163,7 @@ async def simple_search(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     query: str = "",
     unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
     object_type: Optional[str] = None,
     maker: Optional[str] = None,
     material: Optional[str] = None,
@@ -171,7 +181,8 @@ async def simple_search(
 
     Args:
         query: General search terms (keywords, titles, descriptions)
-        unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
+        unit_code: Filter by Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM")
+        museum: Filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
         object_type: Type of object (e.g., "painting", "sculpture", "photograph")
         maker: Creator or maker name (artist, photographer, etc.)
         material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
@@ -195,6 +206,14 @@ async def simple_search(
     try:
         # Limit to reasonable number for simple format
         limit = max(1, min(limit, 50))
+
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
 
         # Create search filter
         filters = CollectionSearchFilter(
@@ -772,6 +791,60 @@ async def validate_object_id(
         return result is not None
     except (APIError, RuntimeError, ValueError):
         return False
+
+
+@mcp.tool()
+async def resolve_museum_name(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    museum_name: str = "",
+) -> str:
+    """
+    🔍 MUSEUM NAME RESOLVER - Use this FIRST when working with Smithsonian museums!
+
+    This essential tool converts natural language museum names into correct Smithsonian unit codes.
+    ALWAYS use this tool before calling search functions when you have a museum name instead of a code.
+
+    IMPORTANT: Common mistake - "Smithsonian Asian Art Museum" should be "FSG", not "SAAM"!
+
+    Args:
+        museum_name: Museum name in plain English (e.g., "Smithsonian Asian Art Museum",
+                    "American Art Museum", "Natural History Museum")
+
+    Returns:
+        Resolved unit code with full museum name, or error if not found.
+
+    Examples:
+        # CORRECT usage:
+        resolve_museum_name(museum_name="Smithsonian Asian Art Museum")
+        # Returns: "FSG - Freer|Sackler Galleries (Smithsonian Asian Art Museum)"
+
+        # Then use the resolved code:
+        search_collections(query="art", unit_code="FSG")
+
+        # INCORRECT (common mistake):
+        search_collections(query="art", unit_code="SAAM")  # Wrong! This is American Art
+    """
+    if not museum_name or museum_name.strip() == "":
+        return "Error: Museum name cannot be empty"
+
+    from .utils import resolve_museum_code
+
+    unit_code = resolve_museum_code(museum_name.strip())
+    if not unit_code:
+        return f"Error: Could not resolve museum name '{museum_name}'. Please try a different name or use a known unit code like 'SAAM', 'FSG', 'NMNH', etc."
+
+    # Get the full museum name for better user experience
+    try:
+        api_client = await get_api_client(ctx)
+        units = await api_client.get_units()
+        museum_info = next((u for u in units if u.code == unit_code), None)
+        if museum_info:
+            return f"{unit_code} - {museum_info.name} ({museum_name})"
+        else:
+            return f"{unit_code} ({museum_name})"
+    except Exception:
+        # Fallback if API call fails
+        return f"{unit_code} ({museum_name})"
 
 
 @mcp.tool()
@@ -1715,8 +1788,8 @@ async def check_museum_has_object_type(
 
         # Search for objects of this type in the museum
         filters = CollectionSearchFilter(
-            query="*",  # Get all objects
-            unit_code=unit_code,
+            query=query,
+            unit_code=resolved_unit_code,
             object_type=object_type,
             limit=10,  # Just need to check if any exist
             offset=0,

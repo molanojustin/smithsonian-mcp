@@ -74,3 +74,15 @@ def test_resolve_museum_code_edge_cases():
     # Should handle museum name variations
     assert resolve_museum_code("Freer and Sackler") == "FSG"
     assert resolve_museum_code("Cooper Hewitt") == "CHNDM"
+
+
+def test_resolve_museum_code_expanded_map():
+    """Test the expanded MUSEUM_MAP with full museum names."""
+    # Full Smithsonian museum names
+    assert resolve_museum_code("Smithsonian Asian Art Museum") == "FSG"
+    assert resolve_museum_code("Smithsonian American Art Museum") == "SAAM"
+    assert resolve_museum_code("Smithsonian Natural History Museum") == "NMNH"
+    assert resolve_museum_code("National Museum of Asian Art") == "FSG"
+    assert resolve_museum_code("Freer and Sackler Galleries") == "FSG"
+    assert resolve_museum_code("Hirshhorn Museum and Sculpture Garden") == "HMSG"
+    assert resolve_museum_code("National Museum of African American History and Culture") == "NMAAHC"

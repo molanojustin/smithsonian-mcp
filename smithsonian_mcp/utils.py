@@ -53,15 +53,20 @@ def resolve_museum_code(museum_name: str) -> Optional[str]:
     # Normalize input
     normalized = museum_name.lower().strip()
 
-    # Remove common prefixes that don't help with matching
-    prefixes_to_remove = ["smithsonian", "national museum of", "museum of"]
-    for prefix in prefixes_to_remove:
-        if normalized.startswith(prefix + " "):
-            normalized = normalized[len(prefix) + 1:].strip()
-
-    # Try exact match first
+    # Try exact match on original first
     if normalized in MUSEUM_MAP:
         return MUSEUM_MAP[normalized]
+
+    # Remove common prefixes that don't help with matching
+    cleaned = normalized
+    prefixes_to_remove = ["smithsonian", "national museum of", "museum of"]
+    for prefix in prefixes_to_remove:
+        if cleaned.startswith(prefix + " "):
+            cleaned = cleaned[len(prefix) + 1:].strip()
+
+    # Try exact match on cleaned version
+    if cleaned in MUSEUM_MAP:
+        return MUSEUM_MAP[cleaned]
 
     # Try direct code match
     if normalized.upper() in VALID_MUSEUM_CODES:
