@@ -813,15 +813,15 @@ async def resolve_museum_name(
                     "American Art Museum", "Natural History Museum")
 
     Returns:
-        Resolved unit code with full museum name, or error if not found.
+        The resolved unit code (e.g., "NMAH", "SAAM", "FSG"), or error message if not found.
 
     Examples:
         # CORRECT usage:
-        resolve_museum_name(museum_name="Smithsonian Asian Art Museum")
-        # Returns: "FSG - Freer|Sackler Galleries (Smithsonian Asian Art Museum)"
+        code = resolve_museum_name(museum_name="Smithsonian Asian Art Museum")
+        # Returns: "FSG"
 
         # Then use the resolved code:
-        search_collections(query="art", unit_code="FSG")
+        search_collections(query="art", unit_code=code)
 
         # INCORRECT (common mistake):
         search_collections(query="art", unit_code="SAAM")  # Wrong! This is American Art
@@ -835,18 +835,8 @@ async def resolve_museum_name(
     if not unit_code:
         return f"Error: Could not resolve museum name '{museum_name}'. Please try a different name or use a known unit code like 'SAAM', 'FSG', 'NMNH', etc."
 
-    # Get the full museum name for better user experience
-    try:
-        api_client = await get_api_client(ctx)
-        units = await api_client.get_units()
-        museum_info = next((u for u in units if u.code == unit_code), None)
-        if museum_info:
-            return f"{unit_code} - {museum_info.name} ({museum_name})"
-        else:
-            return f"{unit_code} ({museum_name})"
-    except Exception:
-        # Fallback if API call fails
-        return f"{unit_code} ({museum_name})"
+    # Return just the unit code for clear programmatic use
+    return unit_code
 
 
 @mcp.tool()
