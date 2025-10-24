@@ -28,19 +28,7 @@ class ImageData(BaseModel):
     is_cc0: bool = Field(default=False, description="Whether image is CC0 licensed")
 
 
-class Model3D(BaseModel):
-    """Represents 3D model data for collection objects."""
 
-    url: Optional[HttpUrl] = Field(None, description="URL to the 3D model file")
-    format: Optional[str] = Field(None, description="3D model format (gltf, obj, etc.)")
-    preview_url: Optional[HttpUrl] = Field(
-        None, description="URL to 3D model preview image"
-    )
-    file_size: Optional[int] = Field(None, description="Model file size in bytes")
-    polygons: Optional[int] = Field(None, description="Number of polygons in the model")
-    textures: Optional[List[str]] = Field(
-        default_factory=list, description="Available texture maps"
-    )
 
 
 class SmithsonianUnit(BaseModel):
@@ -71,7 +59,6 @@ class CollectionSearchFilter(BaseModel):
     material: Optional[str] = Field(None, description="Material or medium")
     topic: Optional[str] = Field(None, description="Subject topic or theme")
     has_images: Optional[bool] = Field(None, description="Filter objects with images")
-    has_3d: Optional[bool] = Field(None, description="Filter objects with 3D models")
     is_cc0: Optional[bool] = Field(None, description="Filter CC0 licensed objects")
     on_view: Optional[bool] = Field(
         None, description="Filter objects currently on physical exhibit"
@@ -131,9 +118,6 @@ class SmithsonianObject(BaseModel):
     images: Optional[List[ImageData]] = Field(
         default_factory=list, description="Associated images"
     )
-    models_3d: Optional[List[Model3D]] = Field(
-        default_factory=list, description="Associated 3D models"
-    )
 
     # Rights and access
     credit_line: Optional[str] = Field(None, description="Credit line")
@@ -157,10 +141,54 @@ class SmithsonianObject(BaseModel):
         None, description="Last modification date"
     )
 
-    # Raw metadata
-    raw_metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Original API response"
+    # Raw metadata (removed to prevent context bloat - not used in codebase)
+    raw_metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Original API response (not populated to reduce context size)"
     )
+
+
+class SimpleSearchResult(BaseModel):
+    """Simplified search results optimized for LLM parsing."""
+
+    summary: str = Field(..., description="Human-readable summary of results")
+    object_count: int = Field(..., description="Number of objects found")
+    total_available: int = Field(..., description="Total matching objects in database")
+    object_ids: List[str] = Field(..., description="List of object IDs for get_object_details")
+    first_object_id: Optional[str] = Field(None, description="ID of first result (easiest to use)")
+    has_more: bool = Field(..., description="Whether more results are available")
+    next_offset: Optional[int] = Field(None, description="Offset for next page if has_more is true")
+
+    @classmethod
+    def from_search_result(cls, search_result: "SearchResult") -> "SimpleSearchResult":
+        """Convert a SearchResult to a SimpleSearchResult."""
+        summary_lines = []
+        summary_lines.append(f"Found {search_result.returned_count} objects")
+
+        if search_result.total_count > search_result.returned_count:
+            summary_lines[0] += f" (out of {search_result.total_count} total matches)"
+
+        summary_lines[0] += ":"
+
+        for i, obj in enumerate(search_result.objects[:5], 1):  # Show first 5
+            title = obj.title or "Untitled"
+            maker = obj.maker[0] if obj.maker else "Unknown artist"
+            summary_lines.append(f"{i}. '{title}' by {maker}")
+
+        if search_result.returned_count > 5:
+            summary_lines.append(f"... and {search_result.returned_count - 5} more objects")
+
+        if search_result.has_more:
+            summary_lines.append(f"More results available (use offset={search_result.next_offset})")
+
+        return cls(
+            summary="\n".join(summary_lines),
+            object_count=search_result.returned_count,
+            total_available=search_result.total_count,
+            object_ids=search_result.object_ids,
+            first_object_id=search_result.first_object_id,
+            has_more=search_result.has_more,
+            next_offset=search_result.next_offset
+        )
 
 
 class SearchResult(BaseModel):
@@ -172,6 +200,20 @@ class SearchResult(BaseModel):
     offset: int = Field(default=0, description="Result offset")
     has_more: bool = Field(..., description="Whether more results are available")
     next_offset: Optional[int] = Field(None, description="Offset for next page")
+
+    @property
+    def object_ids(self) -> List[str]:
+        """List of object IDs for easy access. Use these with get_object_details."""
+        return [obj.id for obj in self.objects]
+
+    @property
+    def first_object_id(self) -> Optional[str]:
+        """The ID of the first object, or None if no results. Use with get_object_details."""
+        return self.object_ids[0] if self.objects else None
+
+    def to_simple_result(self) -> SimpleSearchResult:
+        """Convert to a simplified, LLM-friendly format."""
+        return SimpleSearchResult.from_search_result(self)
 
 
 class UnitStats(BaseModel):
@@ -187,9 +229,10 @@ class UnitStats(BaseModel):
     objects_with_images: Optional[int] = Field(
         None, description="Objects with images count"
     )
-    objects_with_3d: Optional[int] = Field(
-        None, description="Objects with 3D models count"
+    object_types: Optional[List[str]] = Field(
+        None, description="Available object types in this museum's Open Access collection"
     )
+
 
 
 class CollectionStats(BaseModel):
@@ -199,9 +242,35 @@ class CollectionStats(BaseModel):
     total_digitized: Optional[int] = Field(None, description="Total digitized objects")
     total_cc0: Optional[int] = Field(None, description="Total CC0 licensed objects")
     total_with_images: Optional[int] = Field(None, description="Objects with images")
-    total_with_3d: Optional[int] = Field(None, description="Objects with 3D models")
+
+    object_type_breakdown: Optional[Dict[str, int]] = Field(
+        None, description="Count of objects by type across all collections"
+    )
+
     units: List[UnitStats] = Field(..., description="Per-unit statistics")
     last_updated: datetime = Field(..., description="Statistics last updated")
+
+
+class MuseumCollectionTypes(BaseModel):
+    """Information about what types of objects are available in museum collections."""
+
+    museum_code: str = Field(..., description="Museum unit code")
+    museum_name: str = Field(..., description="Full museum name")
+    available_object_types: List[str] = Field(..., description="Object types available in Open Access")
+    total_sampled: int = Field(..., description="Number of objects sampled")
+    notes: Optional[str] = Field(None, description="Additional notes about collection scope")
+
+
+class ObjectTypeAvailability(BaseModel):
+    """Result of checking if a museum has objects of a specific type."""
+
+    museum_code: str = Field(..., description="Museum unit code")
+    museum_name: str = Field(..., description="Full museum name")
+    object_type: str = Field(..., description="Object type being checked")
+    available: bool = Field(..., description="Whether this object type is available")
+    count: Optional[int] = Field(None, description="Number of objects of this type")
+    sample_ids: Optional[List[str]] = Field(None, description="Sample object IDs")
+    message: str = Field(..., description="Human-readable explanation")
 
 
 class APIError(Exception):

@@ -9,6 +9,7 @@ from mcp.server.session import ServerSession
 from .app import mcp
 from .context import ServerContext, get_api_client
 from .models import CollectionSearchFilter, APIError
+from .constants import MUSEUM_MAP, VALID_MUSEUM_CODES
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,6 @@ async def get_search_context(
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
             on_view=None,
         )
@@ -105,9 +105,6 @@ async def get_object_context(
             output.append(f"\nDescription: {obj.description}")
 
         output.append(f"\nImages: {len(obj.images) if obj.images else 0} available")
-        output.append(
-            f"3D Models: {len(obj.models_3d) if obj.models_3d else 0} available"
-        )
 
         return "\n".join(output)
 
@@ -118,7 +115,7 @@ async def get_object_context(
 @mcp.tool()
 async def get_on_view_context(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
-    unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
     limit: int = 10,
 ) -> str:
     """
@@ -128,11 +125,21 @@ async def get_on_view_context(
     can be used as context data without explicitly calling search tools.
     The results are filtered to include only verified on-view objects.
 
+    IMPORTANT: Specify the museum parameter to get results from a specific museum.
+    Without it, results will be from all museums.
+
     Args:
-        unit_code: Optional filter by specific Smithsonian unit
+        museum: Optional filter by Smithsonian unit code (e.g., "NMAH", "HMSG") or museum name
+            (e.g., "hirshhorn", "natural history", "Smithsonian Asian Art Museum"). Highly recommended for targeted searches.
         limit: Maximum number of results to return (default: 10)
     """
     try:
+        # Map museum names to codes
+        museum_code = None
+        if museum:
+            from .utils import resolve_museum_code
+            museum_code = resolve_museum_code(museum)
+
         # Use reliable approach: search broadly then filter locally
         # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
@@ -140,7 +147,7 @@ async def get_on_view_context(
             limit=min(
                 limit * 5, 1000
             ),  # Search more broadly to get verified on-view items
-            unit_code=unit_code,
+            unit_code=museum_code,
             on_view=None,  # Don't use unreliable API filter
             object_type=None,
             date_start=None,
@@ -149,7 +156,6 @@ async def get_on_view_context(
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
         api_client = await get_api_client(ctx)
@@ -158,13 +164,16 @@ async def get_on_view_context(
         # Filter for verified on-view objects
         verified_on_view = [obj for obj in results.objects if obj.is_on_view][:limit]
 
-        if unit_code:
-            output = [f"Objects Currently On View at {unit_code}:\n"]
+        if museum:
+            output = [f"Objects Currently On View at {museum}:\n"]
         else:
-            output = ["Objects Currently On View:\n"]
+            output = ["Objects Currently On View (all museums):\n"]
 
         if not verified_on_view:
-            output.append("No objects are currently on view.")
+            if museum:
+                output.append(f"No objects are currently on view at {museum}.")
+            else:
+                output.append("No objects are currently on view.")
             return "\n".join(output)
 
         for obj in verified_on_view:
@@ -228,15 +237,18 @@ async def get_stats_context(
             f"Total Objects: {stats.total_objects:,}",
             f"Digitized Objects: {_format_optional_number(stats.total_digitized)}",
             f"CC0 Licensed Objects: {_format_optional_number(stats.total_cc0)}",
-            f"Objects with Images: {_format_optional_number(stats.total_with_images)}",
-            f"Objects with 3D Models: {_format_optional_number(stats.total_with_3d)}",
+            f"Objects with Images (est.): {_format_optional_number(stats.total_with_images)}",
+
             f"\nLast Updated: {stats.last_updated}\n",
-            "By Museum:",
+            "By Museum (estimates using overall collection proportions):",
+            "Note: Smithsonian API doesn't provide per-museum image statistics.",
+            "All museums show the same percentage due to API limitations.",
         ]
 
         for unit in stats.units:
             output.append(
-                f"  {unit.unit_code}: {_format_optional_number(unit.total_objects)}"
+                f"  {unit.unit_code}: {_format_optional_number(unit.total_objects)} total, "
+                f"{_format_optional_number(unit.objects_with_images)} with images (est.)"
             )
 
         return "\n".join(output)

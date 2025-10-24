@@ -7,7 +7,7 @@ interface that AI assistants can use.
 
 Key Features:
 - Search across 3+ million Smithsonian collection objects
-- Access detailed object metadata, images, and 3D models
+- Access detailed object metadata and images
 - Filter by museum/unit, object type, creator, materials, and more
 - Educational and research-oriented prompt templates
 - Full support for CC0 licensed content

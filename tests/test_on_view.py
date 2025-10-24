@@ -30,7 +30,6 @@ class TestOnViewDataModels:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
@@ -50,7 +49,6 @@ class TestOnViewDataModels:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
@@ -70,7 +68,6 @@ class TestOnViewDataModels:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
@@ -150,7 +147,6 @@ class TestOnViewAPIClient:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
@@ -174,7 +170,6 @@ class TestOnViewAPIClient:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
@@ -198,7 +193,6 @@ class TestOnViewAPIClient:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
@@ -221,16 +215,18 @@ class TestOnViewAPIClient:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
         params = client._build_search_params(filters)
 
+        # unitCode is now in the main query due to API bug workaround
+        assert "q" in params
+        assert "* AND unit_code:NMNH" == params["q"]
+
         assert "fq" in params
         assert 'onPhysicalExhibit:"Yes"' in params["fq"]
-        assert 'unit_code:"NMNH"' in params["fq"]
-        assert " AND " in params["fq"]
+        # unitCode is no longer in fq due to API bug
 
     def test_build_search_params_on_view_none(self):
         """Test building search params with on_view=None (no filter)."""
@@ -247,7 +243,6 @@ class TestOnViewAPIClient:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
@@ -359,7 +354,6 @@ class TestOnViewAPIClient:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
         )
 
@@ -389,17 +383,20 @@ class TestOnViewIntegration:
             maker=None,
             material=None,
             topic=None,
-            has_3d=None,
             is_cc0=None,
         )
 
         params = client._build_search_params(filters)
 
+        # unitCode is now in the main query due to API bug workaround
+        assert "q" in params
+        assert "* AND unit_code:NMNH" == params["q"]
+
         assert "fq" in params
         fq_value = params["fq"]
         assert 'onPhysicalExhibit:"Yes"' in fq_value
-        assert 'unit_code:"NMNH"' in fq_value
-        assert "online_media_type:Images" in fq_value
+        assert 'online_media_type:Images' in fq_value
+        # unitCode is no longer in fq due to API bug
 
     async def test_combined_filters_on_view_and_cc0(self):
         """Test combining on_view filter with CC0 license."""
@@ -417,7 +414,6 @@ class TestOnViewIntegration:
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
         )
 
         params = client._build_search_params(filters)

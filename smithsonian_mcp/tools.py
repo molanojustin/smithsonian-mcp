@@ -13,9 +13,13 @@ from .context import ServerContext, get_api_client
 from .models import (
     SmithsonianObject,
     SearchResult,
+    SimpleSearchResult,
     CollectionSearchFilter,
     SmithsonianUnit,
     CollectionStats,
+    MuseumCollectionTypes,
+    ObjectTypeAvailability,
+    APIError,
 )
 from .constants import MUSEUM_MAP, VALID_MUSEUM_CODES
 
@@ -27,12 +31,12 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     query: str = "",
     unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
     object_type: Optional[str] = None,
     maker: Optional[str] = None,
     material: Optional[str] = None,
     topic: Optional[str] = None,
     has_images: Optional[bool] = None,
-    has_3d: Optional[bool] = None,
     is_cc0: Optional[bool] = None,
     on_view: Optional[bool] = None,
     limit: int = 500,
@@ -44,20 +48,20 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
     This tool allows comprehensive searching across all Smithsonian museums and
     collections with various filters for object type, creator, materials, and more.
 
-    IMPORTANT: This tool returns a maximum of 1000 results per call. If you need to
-    search through more results (e.g., to find specific on-view items that may not
-    appear in the first 1000 results), use the find_on_view_items tool which
-    automatically paginates through up to 10,000 results.
+     IMPORTANT: This tool returns a maximum of 1000 results per call. If you need to
+     search through more results (e.g., to find specific on-view items that may not
+     appear in the first 1000 results), use the find_on_view_items tool which
+     automatically paginates through up to 10,000 results.
 
-    Args:
-        query: General search terms (keywords, titles, descriptions)
-        unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
-        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+     Args:
+         query: General search terms (keywords, titles, descriptions)
+         unit_code: Filter by Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM")
+         museum: Filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
+         object_type: Type of object (e.g., "painting", "sculpture", "photograph")
         maker: Creator or maker name (artist, photographer, etc.)
         material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
         topic: Subject topic or theme
         has_images: Filter objects that have associated images
-        has_3d: Filter objects that have 3D models available
         is_cc0: Filter objects with CC0 (public domain) licensing
         on_view: Filter objects currently on physical exhibit (NOTE: API filter may have
                  data quality issues. For most reliable on-view results, use get_objects_on_view
@@ -66,11 +70,47 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
-        Search results including objects, total count, and pagination info. Use the
-        has_more and next_offset fields to determine if there are additional results
-        beyond the returned set.
+        Search results including objects, total count, and pagination info. Each object
+        has an 'id' field that can be used with get_object_details. Use the has_more
+        and next_offset fields to determine if there are additional results beyond
+        the returned set.
+
+    Note:
+        **For the absolute simplest experience, use these LLM-optimized tools:**
+
+        **Easiest:** `find_and_describe(query="Alma Thomas Earth Sermon")`
+        - Returns complete description with download links in one call!
+
+        **Simple:** `simple_search(query="Alma Thomas")`
+        - Returns easy-to-read results with first_object_id ready to use
+
+        **Advanced:** Use search_collections with helper tools:
+        - summarize_search_results() - Get readable summary
+        - get_first_object_id() - Extract first object ID
+        - search_and_get_first_details() - Search and get details
+
+    Examples:
+        # Simplest: Get complete description with downloads
+        description = find_and_describe(query="Alma Thomas Earth Sermon")
+
+        # Simple: Easy search with readable results
+        results = simple_search(query="Alma Thomas Earth Sermon")
+        details = get_object_details(object_id=results.first_object_id)
+
+        # Advanced: Full control workflow
+        results = search_collections(query="Alma Thomas", object_type="painting")
+        summary = summarize_search_results(search_result=results)
+        object_id = get_first_object_id(search_result=results)
+        details = get_object_details(object_id=object_id)
     """
     try:
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
 
         # Create search filter
         # pylint: disable=duplicate-code
@@ -82,7 +122,6 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
             material=material,
             topic=topic,
             has_images=has_images,
-            has_3d=has_3d,
             is_cc0=is_cc0,
             on_view=on_view,
             limit=limit,
@@ -120,6 +159,101 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
 
 
 @mcp.tool()
+async def simple_search(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+    material: Optional[str] = None,
+    topic: Optional[str] = None,
+    has_images: Optional[bool] = None,
+    is_cc0: Optional[bool] = None,
+    on_view: Optional[bool] = None,
+    limit: int = 10,
+) -> SimpleSearchResult:
+    """
+    Search Smithsonian collections and return results in a simple, easy-to-understand format.
+
+    This tool is optimized for LLMs - it returns a human-readable summary along with
+    the key information you need. Use the first_object_id with get_object_details().
+
+    Args:
+        query: General search terms (keywords, titles, descriptions)
+        unit_code: Filter by Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM")
+        museum: Filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
+        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+        maker: Creator or maker name (artist, photographer, etc.)
+        material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
+        topic: Subject topic or theme
+        has_images: Filter objects that have associated images
+        is_cc0: Filter objects with CC0 (public domain) licensing
+        on_view: Filter objects currently on physical exhibit
+        limit: Number of results to return (default: 10, max: 50)
+
+    Returns:
+        Simplified search results with summary, object IDs, and easy-to-use fields
+
+    Example:
+        # Simple search for Alma Thomas
+        results = simple_search(query="Alma Thomas Earth Sermon")
+
+        # Get details for the first result
+        if results.first_object_id:
+            details = get_object_details(object_id=results.first_object_id)
+    """
+    try:
+        # Limit to reasonable number for simple format
+        limit = max(1, min(limit, 50))
+
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
+
+        # Create search filter
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=material,
+            topic=topic,
+            has_images=has_images,
+            is_cc0=is_cc0,
+            on_view=on_view,
+            limit=limit,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        # Convert to simple format
+        simple_results = results.to_simple_result()
+
+        logger.info(
+            "Simple search completed: '%s' returned %d of %d results",
+            query,
+            results.returned_count,
+            results.total_count,
+        )
+
+        return simple_results
+
+    except Exception as e:
+        logger.error("API error during simple search: %s", e)
+        raise RuntimeError(f"Simple search failed: {e}") from e
+
+
+@mcp.tool()
 async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     topic: str = "",
@@ -139,7 +273,7 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
 
     Args:
         topic: What you want to explore (e.g., "dinosaurs", "computers", "space exploration")
-        museum: Optional museum or museum code to focus on
+        museum: Optional museum or museum code to focus on (e.g., "asian art", "SAAM", "Smithsonian Asian Art Museum")
         max_samples: How many diverse examples to return (default 50, max 200)
 
     Returns:
@@ -156,13 +290,8 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
         # Map museum names to codes
         museum_code = None
         if museum:
-            museum_lower = museum.lower().strip()
-            if museum_lower in MUSEUM_MAP:
-                museum_code = MUSEUM_MAP[museum_lower]
-            elif museum_upper := museum.upper():
-                # Try to match codes directly
-                if museum_upper in VALID_MUSEUM_CODES:
-                    museum_code = museum_upper
+            from .utils import resolve_museum_code
+            museum_code = resolve_museum_code(museum)
 
         # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
@@ -175,7 +304,6 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
             on_view=None,
             date_start=None,
@@ -189,7 +317,7 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
             # Get a broader set first to sample from
             # pylint: disable=duplicate-code
             filters = CollectionSearchFilter(
-                query=topic,
+                query="*",
                 unit_code=museum_code,
                 limit=min(max_samples * 2, 400),
                 offset=0,
@@ -198,7 +326,6 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
                 material=None,
                 topic=None,
                 has_images=None,
-                has_3d=None,
                 is_cc0=None,
                 on_view=None,
                 date_start=None,
@@ -330,7 +457,6 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
                 material=None,
                 topic=None,
                 has_images=None,
-                has_3d=None,
                 is_cc0=None,
                 on_view=None,
                 date_start=None,
@@ -365,7 +491,7 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
     Args:
         topic: The same topic you explored before
         previously_seen_ids: List of object IDs you've already seen (from previous results)
-        museum: Optional museum focus (same as before)
+        museum: Optional museum focus (e.g., "asian art", "SAAM", "Smithsonian Asian Art Museum")
         max_samples: How many new examples to return (default 50, max 200)
 
     Returns:
@@ -381,15 +507,11 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
         if len(topic.strip()) < 2:
             raise ValueError("Search topic must be at least 2 characters long")
 
-        # Map museum names to codes (same logic as simple_explore)
+        # Map museum names to codes
         museum_code = None
         if museum:
-            museum_lower = museum.lower().strip()
-            if museum_lower in MUSEUM_MAP:
-                museum_code = MUSEUM_MAP[museum_lower]
-            elif museum_upper := museum.upper():
-                if museum_upper in VALID_MUSEUM_CODES:
-                    museum_code = museum_upper
+            from .utils import resolve_museum_code
+            museum_code = resolve_museum_code(museum)
 
         api_client = await get_api_client(ctx)
         seen_ids = set(previously_seen_ids or [])
@@ -410,7 +532,6 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
             on_view=None,
             date_start=None,
@@ -519,14 +640,13 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
             filters = CollectionSearchFilter(
                 query=topic[:100],
                 limit=min(max_samples, 100),
-                offset=len(previously_seen_ids or []),
+                offset=0,
                 unit_code=None,
                 object_type=None,
                 maker=None,
                 material=None,
                 topic=None,
                 has_images=None,
-                has_3d=None,
                 is_cc0=None,
                 on_view=None,
                 date_start=None,
@@ -545,6 +665,498 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
 
 
 @mcp.tool()
+async def summarize_search_results(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    search_result: Optional[SearchResult] = None
+) -> Optional[str]:
+    """
+    Provide a human-readable summary of search results.
+
+    This tool creates a clear, readable summary of what objects were found in a search,
+    making it easy to understand the results without parsing complex data structures.
+
+    Args:
+        search_result: The result from a search_collections call
+
+    Returns:
+        A readable summary of the search results, or None if no results provided
+
+    Example:
+        results = search_collections(query="Alma Thomas Earth Sermon")
+        summary = summarize_search_results(search_result=results)
+        # Returns: "Found 3 objects: 1. 'Earth Sermon—Beauty, Love and Peace' by Alma Thomas (edanmdm-hmsg_80.107), ..."
+    """
+    if search_result is None or not search_result.objects:
+        return "No search results to summarize."
+
+    summary_lines = []
+    summary_lines.append(f"Found {search_result.returned_count} objects (out of {search_result.total_count} total matches):")
+
+    for i, obj in enumerate(search_result.objects[:5], 1):  # Show first 5 objects
+        title = obj.title or "Untitled"
+        maker = obj.maker[0] if obj.maker else "Unknown artist"
+        object_id = obj.id
+        summary_lines.append(f"{i}. '{title}' by {maker} (ID: {object_id})")
+
+    if search_result.returned_count > 5:
+        summary_lines.append(f"... and {search_result.returned_count - 5} more objects")
+
+    if search_result.has_more:
+        summary_lines.append(f"More results available (use offset={search_result.next_offset} for next page)")
+
+    return "\n".join(summary_lines)
+
+
+@mcp.tool()
+async def get_object_ids(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    search_result: Optional[SearchResult] = None
+) -> Optional[List[str]]:
+    """
+    Extract object IDs from search results for use with get_object_details.
+
+    This is a helper tool to make it easier to get the correct object IDs
+    from search results. Use this if you're having trouble extracting IDs manually.
+
+    Args:
+        search_result: The result from a search_collections call
+
+    Returns:
+        List of object IDs that can be used with get_object_details, or None if no search_result provided
+
+    Example:
+        results = search_collections(query="Alma Thomas")
+        ids = get_object_ids(search_result=results)
+        # ids[0] can now be used with get_object_details
+    """
+    if search_result is None:
+        return None
+    return search_result.object_ids
+
+
+@mcp.tool()
+async def get_first_object_id(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    search_result: Optional[SearchResult] = None
+) -> Optional[str]:
+    """
+    Get the ID of the first object from search results.
+
+    This is the easiest way to get an object ID for get_object_details.
+    Use this right after search_collections to get the most relevant result.
+
+    Args:
+        search_result: The result from a search_collections call
+
+    Returns:
+        The object ID of the first result, or None if no results
+
+    Example:
+        results = search_collections(query="Alma Thomas Earth Sermon")
+        object_id = get_first_object_id(search_result=results)
+        details = get_object_details(object_id=object_id)
+    """
+    if search_result is None:
+        return None
+    return search_result.first_object_id
+
+
+@mcp.tool()
+async def validate_object_id(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    object_id: str = ""
+) -> bool:
+    """
+    Check if an object ID exists in the Smithsonian collection.
+
+    Use this to verify an object ID before calling get_object_details.
+    This is faster than get_object_details since it doesn't fetch full metadata.
+
+    Args:
+        object_id: The object ID to validate
+
+    Returns:
+        True if the object exists, False otherwise
+
+    Example:
+        if validate_object_id(object_id="edanmdm-hmsg_80.107"):
+            details = get_object_details(object_id="edanmdm-hmsg_80.107")
+    """
+    if not object_id or object_id.strip() == "":
+        return False
+
+    try:
+        api_client = await get_api_client(ctx)
+        result = await api_client.get_object_by_id(object_id.strip())
+        return result is not None
+    except (APIError, RuntimeError, ValueError):
+        return False
+
+
+@mcp.tool()
+async def resolve_museum_name(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    museum_name: str = "",
+) -> str:
+    """
+    🔍 MUSEUM NAME RESOLVER - Use this FIRST when working with Smithsonian museums!
+
+    This essential tool converts natural language museum names into correct Smithsonian unit codes.
+    ALWAYS use this tool before calling search functions when you have a museum name instead of a code.
+
+    IMPORTANT: Common mistake - "Smithsonian Asian Art Museum" should be "FSG", not "SAAM"!
+
+    Args:
+        museum_name: Museum name in plain English (e.g., "Smithsonian Asian Art Museum",
+                    "American Art Museum", "Natural History Museum")
+
+    Returns:
+        Resolved unit code with full museum name, or error if not found.
+
+    Examples:
+        # CORRECT usage:
+        resolve_museum_name(museum_name="Smithsonian Asian Art Museum")
+        # Returns: "FSG - Freer|Sackler Galleries (Smithsonian Asian Art Museum)"
+
+        # Then use the resolved code:
+        search_collections(query="art", unit_code="FSG")
+
+        # INCORRECT (common mistake):
+        search_collections(query="art", unit_code="SAAM")  # Wrong! This is American Art
+    """
+    if not museum_name or museum_name.strip() == "":
+        return "Error: Museum name cannot be empty"
+
+    from .utils import resolve_museum_code
+
+    unit_code = resolve_museum_code(museum_name.strip())
+    if not unit_code:
+        return f"Error: Could not resolve museum name '{museum_name}'. Please try a different name or use a known unit code like 'SAAM', 'FSG', 'NMNH', etc."
+
+    # Get the full museum name for better user experience
+    try:
+        api_client = await get_api_client(ctx)
+        units = await api_client.get_units()
+        museum_info = next((u for u in units if u.code == unit_code), None)
+        if museum_info:
+            return f"{unit_code} - {museum_info.name} ({museum_name})"
+        else:
+            return f"{unit_code} ({museum_name})"
+    except Exception:
+        # Fallback if API call fails
+        return f"{unit_code} ({museum_name})"
+
+
+@mcp.tool()
+async def find_and_describe(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+) -> str:
+    """
+    Find an object and provide a complete description with download information.
+
+    This is the easiest way to get information about a Smithsonian object from their
+    Open Access collections.
+
+    IMPORTANT: The Smithsonian Open Access API primarily contains archival/library
+    materials (books, manuscripts, catalogs) and some digitized objects. Most museum
+    artwork collections (paintings, sculptures, artifacts) are NOT available through
+    this API - they require visiting museum websites directly.
+
+    Use get_museum_collection_types() first to see what's available in each museum,
+    or check_museum_has_object_type() to verify if a specific type is available.
+
+    Args:
+        query: What you're looking for (e.g., "Alma Thomas Earth Sermon")
+        unit_code: Museum code (e.g., "HMSG" for Hirshhorn)
+        object_type: Type of object (e.g., "painting")
+        maker: Artist or creator name
+
+    Returns:
+        Complete description of the object including title, artist, description,
+        and download information if available
+
+    Example:
+        # First check what's available
+        types = get_museum_collection_types(unit_code="HMSG")
+        # Then search if appropriate
+        description = find_and_describe(query="Alma Thomas Earth Sermon", unit_code="HMSG")
+    """
+    try:
+        # Perform search directly
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=None,
+            topic=None,
+            has_images=None,
+            is_cc0=None,
+            on_view=None,
+            limit=1,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        api_client = await get_api_client(ctx)
+        search_results = await api_client.search_collections(filters)
+
+        if not search_results.objects:
+            return f"No objects found matching: {query}"
+
+        # Get detailed information
+        object_id = search_results.first_object_id
+        if not object_id:
+            return f"Found object but could not determine ID for: {query}"
+
+        details = await api_client.get_object_by_id(object_id)
+
+        if not details:
+            return f"Found object but could not retrieve details for: {query}"
+
+        # Build comprehensive description
+        description_parts = []
+
+        # Basic info
+        title = details.title or "Untitled"
+        maker_text = ", ".join(details.maker) if details.maker else "Unknown artist"
+        description_parts.append(f"**{title}** by {maker_text}")
+
+        # Date and dimensions
+        if details.date:
+            description_parts.append(f"**Date:** {details.date}")
+        if details.dimensions:
+            description_parts.append(f"**Dimensions:** {details.dimensions}")
+
+        # Description
+        if details.description:
+            description_parts.append(f"**Description:** {details.description}")
+        elif details.summary:
+            description_parts.append(f"**Summary:** {details.summary}")
+
+        # Materials and type
+        if details.materials:
+            description_parts.append(f"**Materials:** {', '.join(details.materials)}")
+        if details.object_type:
+            description_parts.append(f"**Type:** {details.object_type}")
+
+        # Location and exhibition
+        if details.is_on_view and details.exhibition_location:
+            description_parts.append(f"**Currently on view:** {details.exhibition_location}")
+        elif details.unit_name:
+            description_parts.append(f"**Collection:** {details.unit_name}")
+
+        # Images and downloads
+        if details.images:
+            image_count = len(details.images)
+            description_parts.append(f"**Images available:** {image_count}")
+
+            # Check for downloadable images
+            downloadable = [img for img in details.images if img.url and (img.is_cc0 or img.url)]
+            if downloadable:
+                description_parts.append("**Download options:**")
+                for i, img in enumerate(downloadable[:3], 1):  # Show first 3
+                    format_info = f" ({img.format})" if img.format else ""
+                    size_info = f" [{img.size_bytes} bytes]" if img.size_bytes else ""
+                    description_parts.append(f"  {i}. {img.url}{format_info}{size_info}")
+                if len(downloadable) > 3:
+                    description_parts.append(f"  ... and {len(downloadable) - 3} more")
+            else:
+                description_parts.append("**Note:** High-resolution downloads may require special permissions")
+        else:
+            description_parts.append("**Images:** None available")
+
+        # Rights and usage
+        if details.is_cc0:
+            description_parts.append("**Usage rights:** CC0 (public domain)")
+        elif details.rights:
+            description_parts.append(f"**Rights:** {details.rights}")
+
+        # Object ID for reference
+        description_parts.append(f"**Object ID:** {details.id}")
+
+        return "\n".join(description_parts)
+
+    except (APIError, RuntimeError, ValueError) as e:
+        logger.error("Error in find_and_describe: %s", e)
+        return f"Error retrieving information for: {query}. {str(e)}"
+
+
+@mcp.tool()
+async def search_and_get_first_details(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+    material: Optional[str] = None,
+    topic: Optional[str] = None,
+    has_images: Optional[bool] = None,
+    is_cc0: Optional[bool] = None,
+    on_view: Optional[bool] = None,
+) -> Optional[SmithsonianObject]:
+    """
+    Search for objects and automatically get details for the first result.
+
+    This is the simplest way to get detailed information about a specific object.
+    It combines searching and detail retrieval in one step, automatically selecting
+    the most relevant result.
+
+    Args:
+        query: General search terms (keywords, titles, descriptions)
+        unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
+        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+        maker: Creator or maker name (artist, photographer, etc.)
+        material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
+        topic: Subject topic or theme
+        has_images: Filter objects that have associated images
+        is_cc0: Filter objects with CC0 (public domain) licensing
+        on_view: Filter objects currently on physical exhibit
+
+    Returns:
+        Detailed information for the first search result, or None if no results found
+
+    Example:
+        # Get details for the most relevant Alma Thomas work
+        details = search_and_get_first_details(
+            query="Alma Thomas Earth Sermon",
+            object_type="painting",
+            has_images=True
+        )
+        # Returns full object details including images, description, etc.
+    """
+    try:
+        # Search with limit 1 to get just the first result
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=material,
+            topic=topic,
+            has_images=has_images,
+            is_cc0=is_cc0,
+            on_view=on_view,
+            limit=1,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        if not results.objects:
+            logger.info("No results found for query: %s", query)
+            return None
+
+        # Get details for the first (and only) result
+        first_object_id = results.first_object_id
+        if first_object_id:
+            logger.info("Found object, getting details for: %s", first_object_id)
+            return await api_client.get_object_by_id(first_object_id)
+        else:
+            logger.warning("Search returned results but no valid object ID found")
+            return None
+
+    except Exception as e:
+        logger.error("Error in search_and_get_first_details: %s", e)
+        raise RuntimeError(f"Search and get details failed: {e}") from e
+
+
+@mcp.tool()
+async def search_and_get_details(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+    material: Optional[str] = None,
+    topic: Optional[str] = None,
+    has_images: Optional[bool] = None,
+    is_cc0: Optional[bool] = None,
+    on_view: Optional[bool] = None,
+    limit: int = 1,
+) -> Optional[SmithsonianObject]:
+    """
+    Search for objects and get detailed information for the first result.
+
+    This combines search_collections and get_object_details into one convenient tool.
+    Use this when you want details for the most relevant search result.
+
+    Args:
+        query: General search terms (keywords, titles, descriptions)
+        unit_code: Filter by Smithsonian unit (e.g., "NMNH", "NPG", "SAAM")
+        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+        maker: Creator or maker name (artist, photographer, etc.)
+        material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
+        topic: Subject topic or theme
+        has_images: Filter objects that have associated images
+        is_cc0: Filter objects with CC0 (public domain) licensing
+        on_view: Filter objects currently on physical exhibit
+        limit: Number of results to search through (default: 1, max: 10)
+
+    Returns:
+        Detailed information for the first search result, or None if no results found
+
+    Example:
+        # Get details for the most relevant Alma Thomas work
+        details = search_and_get_details(
+            query="Alma Thomas Earth Sermon",
+            object_type="painting",
+            has_images=True
+        )
+    """
+    try:
+        # Limit to reasonable number for this combined operation
+        limit = max(1, min(limit, 10))
+
+        # Create search filter
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=material,
+            topic=topic,
+            has_images=has_images,
+            is_cc0=is_cc0,
+            on_view=on_view,
+            limit=limit,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
+        api_client = await get_api_client(ctx)
+        results = await api_client.search_collections(filters)
+
+        if not results.objects:
+            logger.info("No results found for query: %s", query)
+            return None
+
+        # Get details for the first result
+        first_object_id = results.first_object_id
+        if first_object_id:
+            logger.info("Found %d results, getting details for first: %s", results.returned_count, first_object_id)
+            return await api_client.get_object_by_id(first_object_id)
+        else:
+            logger.warning("Search returned results but no valid object ID found")
+            return None
+
+    except Exception as e:
+        logger.error("Error in search_and_get_details: %s", e)
+        raise RuntimeError(f"Search and get details failed: {e}") from e
+
+
+@mcp.tool()
 async def get_object_details(
     ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
 ) -> Optional[SmithsonianObject]:
@@ -554,12 +1166,44 @@ async def get_object_details(
     This tool retrieves comprehensive metadata, descriptions, images, and other
     details for a single object using its unique identifier.
 
+    The tool automatically tries multiple ID formats to handle different input styles:
+    - Full IDs like "edanmdm-hmsg_80.107"
+    - Partial IDs like "hmsg_80.107" (will be prefixed automatically)
+
     Args:
-        object_id: Unique identifier for the object (found in search results)
+        object_id: Unique identifier for the object. This should be the 'id' field
+                  from a search result. Can be:
+                  - Full API ID (e.g., "edanmdm-hmsg_80.107")
+                  - Partial ID from object URLs (e.g., "hmsg_80.107")
+                  - Any format - the tool will try multiple variations automatically
 
     Returns:
         Detailed object information, or None if object not found
+
+    Note:
+        If the object is not found, the tool tries multiple ID formats automatically.
+        For best results, use the 'id' field from search_collections results.
+        Use validate_object_id() first to check if an ID exists.
+
+    Example:
+        # First search for objects
+        results = search_collections(query="Alma Thomas")
+
+        # Easy way: Use helper to get first ID
+        object_id = get_first_object_id(search_result=results)
+        if object_id and validate_object_id(object_id=object_id):
+            details = get_object_details(object_id=object_id)
+
+        # Alternative: Manual extraction
+        if results.objects:
+            details = get_object_details(object_id=results.objects[0].id)
     """
+    # Input validation
+    if not object_id or object_id.strip() == "":
+        raise ValueError("object_id cannot be empty")
+
+    object_id = object_id.strip()
+
     try:
         api_client = await get_api_client(ctx)
         result = await api_client.get_object_by_id(object_id)
@@ -567,13 +1211,20 @@ async def get_object_details(
         if result:
             logger.info("Retrieved object details: %s", object_id)
         else:
-            logger.warning("Object not found: %s", object_id)
+            logger.warning(
+                "Object not found: %s. This may indicate the object doesn't exist, "
+                "or the ID format needs adjustment. Try using the exact ID from search results.",
+                object_id
+            )
 
         return result
 
     except Exception as e:
         logger.error("API error retrieving object %s: %s", object_id, e)
-        raise RuntimeError(f"Failed to retrieve object: {e}") from e
+        raise RuntimeError(
+            f"Failed to retrieve object '{object_id}': {e}. "
+            "Try using the exact ID from search results (e.g., 'edanmdm-hmsg_80.107')."
+        ) from e
 
 
 @mcp.tool()
@@ -609,10 +1260,15 @@ async def get_collection_statistics(
     Get comprehensive statistics about the Smithsonian Open Access collections.
 
     This tool provides overview statistics including total objects, digitized items,
-    CC0 licensed materials, and breakdowns by museum/unit.
+    CC0 licensed materials, and breakdowns by museum/unit and object type.
+
+    IMPORTANT: The Smithsonian Open Access API primarily contains archival/library
+    materials (books, manuscripts, catalogs) and some digitized objects. Most museum
+    artwork collections (paintings, sculptures, artifacts) are NOT available through
+    this API - they require visiting museum websites directly.
 
     Returns:
-        Collection statistics and metrics
+        Collection statistics including object type breakdowns
     """
     try:
         api_client = await get_api_client(ctx)
@@ -667,7 +1323,6 @@ async def search_by_unit(
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
             on_view=None,
             date_start=None,
@@ -697,12 +1352,14 @@ async def search_by_unit(
 async def get_objects_on_view(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
     limit: int = 500,
     offset: int = 0,
 ) -> SearchResult:
     """
     Get objects that are currently on physical exhibit at Smithsonian museums.
 
+    FOR GENERAL overviews of what's on view at a museum, use this tool.
     This tool finds objects that are verified to be on display for the public,
     which is useful for planning museum visits or finding currently accessible objects.
 
@@ -710,23 +1367,39 @@ async def get_objects_on_view(
     verified exhibition status, ensuring reliable results.
 
     Args:
-        unit_code: Optional filter by specific Smithsonian unit (e.g., "NMAH", "FSG", "SAAM")
+        unit_code: Optional filter by specific Smithsonian unit code (e.g., "NMAH", "FSG", "SAAM")
+        museum: Optional filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
         limit: Maximum number of results to return (default: 500, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
         Search results containing objects actually marked as on physical exhibit
+
+    Examples:
+        # General overview of what's on view
+        get_objects_on_view(unit_code="FSG")
+        get_objects_on_view(museum="Smithsonian Asian Art Museum")
     """
     try:
         # Validate inputs
         limit = max(1, min(limit, 1000))
 
-        # Use the same reliable approach as find_on_view_items: search broadly then filter locally
-        # pylint: disable=duplicate-code
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
+
+        # Try API-level filtering first, fall back to local filtering
+        api_client = await get_api_client(ctx)
+
+        # Strategy 1: Use API filter for on-view objects
         filters = CollectionSearchFilter(
             query="*",
-            unit_code=unit_code,
-            on_view=None,  # Don't use unreliable API filter
+            unit_code=resolved_unit_code,
+            on_view=True,  # Use API filter
             limit=limit,
             offset=offset,
             object_type=None,
@@ -734,188 +1407,489 @@ async def get_objects_on_view(
             material=None,
             topic=None,
             has_images=None,
-            has_3d=None,
             is_cc0=None,
             date_start=None,
             date_end=None,
         )
 
-        # Get API client and perform search
-        api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
-        # Filter for verified on-view objects
-        verified_on_view = [obj for obj in results.objects if obj.is_on_view]
-
-        logger.info(
-            "On-view search completed: %d verified on-view out of %d returned",
-            len(verified_on_view),
-            results.returned_count,
-        )
-
-        # Return verified on-view objects
-        return SearchResult(
-            objects=verified_on_view,
-            total_count=len(verified_on_view),
-            returned_count=len(verified_on_view),
-            offset=offset,
-            has_more=False,
-            next_offset=None,
-        )
-
-    except Exception as e:
-        logger.error("API error during on-view search: %s", e)
-        raise RuntimeError(f"On-view search failed: {e}") from e
-
-
-@mcp.tool()
-async def check_object_on_view(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
-) -> Optional[SmithsonianObject]:
-    """
-    Check if a specific object is currently on physical exhibit.
-
-    This tool retrieves detailed information about an object including
-    its current exhibition status.
-
-    Args:
-        object_id: Unique identifier for the object
-
-    Returns:
-        Object details including on-view status, or None if object not found
-    """
-    try:
-        api_client = await get_api_client(ctx)
-        result = await api_client.get_object_by_id(object_id)
-
-        if result:
-            status = "on view" if result.is_on_view else "not on view"
-            logger.info("Object %s is %s", object_id, status)
-        else:
-            logger.warning("Object not found: %s", object_id)
-
-        return result
-
-    except Exception as e:
-        logger.error("API error checking object %s: %s", object_id, e)
-        raise RuntimeError(f"Failed to check object status: {e}") from e
-
-
-@mcp.tool()
-async def find_on_view_items(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
-    query: str = "",
-    unit_code: Optional[str] = None,
-    max_results: int = 5000,
-) -> SearchResult:
-    """
-    Find ALL items currently on physical exhibit matching a search query.
-
-    This tool automatically handles pagination to search through large result sets
-    and filters them to return only those with verified exhibition status. Unlike
-    other search tools limited to 1000 results, this tool will paginate through
-    multiple API calls to search up to max_results items.
-
-    Important: This tool searches up to max_results items across multiple API calls
-    and filters to only those with verified exhibition data, which is more reliable
-    than using the on_view parameter in other search functions. This ensures items
-    like "Bert and Ernie" are found even if they appear beyond the first 1000 results.
-
-    Args:
-        query: Search terms (e.g., "muppet", "Hokusai", "dinosaur fossils")
-        unit_code: Optional museum code (e.g., "NMAH", "FSG", "NMNH", "NASM")
-        max_results: Maximum items to search through (default: 5000, max: 10000)
-
-    Returns:
-        Search results with only verified on-view items, including exhibition details.
-        The total_count reflects how many on-view items were found, not the total
-        matching items in the database.
-
-    Examples:
-        find_on_view_items(query="muppet", unit_code="NMAH")
-        find_on_view_items(query="Hokusai", unit_code="FSG", max_results=10000)
-    """
-    try:
-        if not query or query.strip() == "":
-            raise ValueError("Search query cannot be empty")
-        max_results = max(1, min(max_results, 10000))
-
-        logger.info(
-            "Finding on-view items for '%s' at %s (searching up to %d items)",
-            query,
-            unit_code or "all museums",
-            max_results,
-        )
-
-        api_client = await get_api_client(ctx)
-
-        batch_size = 1000
-        all_objects = []
-        offset = 0
-        total_available = None
-
-        while offset < max_results:
-            current_batch_size = min(batch_size, max_results - offset)
-
-            # pylint: disable=duplicate-code
-            filters = CollectionSearchFilter(
-                query=query,
-                unit_code=unit_code,
-                on_view=None,
-                limit=current_batch_size,
-                offset=offset,
+        # If API filtering returns no results, try local approach
+        if not results.objects:
+            local_filters = CollectionSearchFilter(
+                query="*",
+                unit_code=resolved_unit_code,
+                on_view=None,  # No API filter, filter locally
+                limit=min(limit * 2, 200),  # Get more to find on-view objects
+                offset=0,
                 object_type=None,
                 maker=None,
                 material=None,
                 topic=None,
                 has_images=None,
-                has_3d=None,
                 is_cc0=None,
                 date_start=None,
                 date_end=None,
             )
 
-            batch_results = await api_client.search_collections(filters)
-            all_objects.extend(batch_results.objects)
+            local_results = await api_client.search_collections(local_filters)
 
-            if total_available is None:
-                total_available = batch_results.total_count
+            # Enhanced on-view detection
+            def is_effectively_on_view(obj):
+                if obj.is_on_view:
+                    return True
+                if obj.exhibition_title or obj.exhibition_location:
+                    return True
+                return False
 
-            logger.info(
-                "Fetched batch at offset %d: %d items (total searched so far: %d/%s)",
-                offset,
-                len(batch_results.objects),
-                len(all_objects),
-                str(total_available),
+            on_view_objects = [obj for obj in local_results.objects if is_effectively_on_view(obj)]
+            results = SearchResult(
+                objects=on_view_objects[:limit],
+                total_count=len(on_view_objects),
+                returned_count=min(len(on_view_objects), limit),
+                offset=0,
+                has_more=len(on_view_objects) > limit,
+                next_offset=limit if len(on_view_objects) > limit else None,
             )
 
-            if not batch_results.has_more:
-                logger.info("Reached end of available results at offset %d", offset)
+        logger.info(
+            "On-view search completed: %d verified on-view out of %d returned",
+            results.returned_count,
+            results.total_count,
+        )
+
+        return results
+
+    except Exception as e:
+        logger.error("Error getting museum highlights: %s", e)
+        raise RuntimeError(f"Failed to get museum highlights: {e}") from e
+
+
+@mcp.tool()
+async def get_museum_collection_types(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    unit_code: Optional[str] = None,
+    sample_size: int = 100,
+    use_cache: bool = True
+) -> List[MuseumCollectionTypes]:
+    """
+    Discover what types of objects are available in Smithsonian museums' Open Access collections.
+
+    This tool returns known object types from cached data when available, or samples
+    collections to identify object types available in each museum's Open Access contributions.
+
+    IMPORTANT: The Smithsonian Open Access API primarily contains archival/library
+    materials and technical objects. Traditional museum artworks (paintings, sculptures)
+    are generally NOT available through this API.
+
+    Args:
+        unit_code: Specific museum code (e.g., "SAAM", "NASM"), or None for all museums
+        sample_size: Number of objects to sample per museum when not using cache (default: 100, max: 500)
+        use_cache: Whether to use cached known object types (default: True)
+
+    Returns:
+        List of museums with their available object types in Open Access collections
+
+    Examples:
+        # Check what types are available at SAAM (uses cache)
+        types = get_museum_collection_types(unit_code="SAAM")
+
+        # Check all museums with fresh sampling
+        all_types = get_museum_collection_types(use_cache=False)
+    """
+    from .museum_data import MUSEUM_OBJECT_TYPES, get_museum_object_types
+
+    try:
+        sample_size = max(10, min(sample_size, 500))  # Reasonable bounds
+        api_client = await get_api_client(ctx)
+
+        # Get list of units to check
+        if unit_code:
+            # Validate unit code exists
+            all_units = await api_client.get_units()
+            unit_codes = [unit_code] if any(u.code == unit_code for u in all_units) else []
+            if not unit_codes:
+                raise ValueError(f"Unknown museum code: {unit_code}")
+        else:
+            # Get all unit codes
+            all_units = await api_client.get_units()
+            unit_codes = [u.code for u in all_units]
+
+        results = []
+
+        for code in unit_codes:
+            try:
+                # First try to get from cache
+                cached_types = get_museum_object_types(code) if use_cache else []
+
+                if cached_types:
+                    # Use cached data
+                    available_types = cached_types
+                    source = "cached"
+                    sampled_count = 0
+                    search_results = None
+                else:
+                    # Fall back to API sampling
+                    filters = CollectionSearchFilter(
+                        query="*",  # Get all objects
+                        unit_code=code,
+                        limit=sample_size,
+                        offset=0,
+                        object_type=None,
+                        maker=None,
+                        material=None,
+                        topic=None,
+                        has_images=None,
+                        is_cc0=None,
+                        on_view=None,
+                        date_start=None,
+                        date_end=None,
+                    )
+
+                    search_results = await api_client.search_collections(filters)
+
+                    # Extract unique object types
+                    object_types = set()
+                    for obj in search_results.objects:
+                        if obj.object_type:
+                            object_types.add(obj.object_type.lower().strip())
+
+                    # Sort for consistency
+                    available_types = sorted(list(object_types))
+                    source = "sampled"
+                    sampled_count = len(search_results.objects)
+
+                # Get museum name
+                museum_name = next((u.name for u in all_units if u.code == code), code)
+
+                # Create notes about scope and source
+                notes = None
+                if not available_types:
+                    notes = "No objects found in Open Access collection"
+                elif "painting" not in available_types and "sculpture" not in available_types:
+                    notes = "Primarily archival/library materials; traditional artwork may not be available in Open Access"
+
+                if source == "cached":
+                    notes = (notes + "; " if notes else "") + "Data from cached known types"
+                elif source == "sampled":
+                    notes = (notes + "; " if notes else "") + f"Sampled {sampled_count} objects"
+
+                results.append(MuseumCollectionTypes(
+                    museum_code=code,
+                    museum_name=museum_name,
+                    available_object_types=available_types,
+                    total_sampled=sampled_count,
+                    notes=notes
+                ))
+
+                if source == "sampled" and search_results:
+                    logger.info(
+                        "Sampled %d objects from %s (%s): found types %s",
+                        len(search_results.objects), code, museum_name, available_types
+                    )
+
+            except Exception as e:
+                logger.warning("Failed to sample museum %s: %s", code, e)
+                # Add empty result for failed museums
+                museum_name = next((u.name for u in all_units if u.code == code), code)
+                results.append(MuseumCollectionTypes(
+                    museum_code=code,
+                    museum_name=museum_name,
+                    available_object_types=[],
+                    total_sampled=0,
+                    notes=f"Failed to sample: {str(e)}"
+                ))
+
+        return results
+
+    except Exception as e:
+        logger.error("Error getting museum collection types: %s", e)
+        raise RuntimeError(f"Failed to get museum collection types: {e}") from e
+
+
+@mcp.tool()
+async def get_museum_highlights_on_view(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
+    limit: int = 10,
+) -> SearchResult:
+    """
+    Get HIGHLIGHTS of notable objects currently on view at a Smithsonian museum.
+
+    FOR questions like "what are the highlights on view" or "featured exhibits".
+    This tool performs comprehensive on-view detection across up to 5000 objects
+    and returns ONLY objects that are currently on physical exhibit or have active
+    exhibition data. It uses multi-batch searching and local filtering to reliably
+    identify on-view objects even when API data is incomplete or sparsely populated.
+
+    Returns an empty result if no on-view objects are found after thorough searching -
+    no fallbacks to non-on-view objects.
+
+    Args:
+        unit_code: Optional museum code (e.g., "FSG", "SAAM", "NMNH")
+        museum: Optional museum name (e.g., "Smithsonian Asian Art Museum")
+        limit: Number of highlights to return (default: 10, max: 50)
+
+    Returns:
+        Curated selection of verified on-view objects, or empty result if none found
+
+    Examples:
+        get_museum_highlights_on_view(unit_code="FSG")
+        get_museum_highlights_on_view(museum="Smithsonian Asian Art Museum", limit=10)
+    """
+    try:
+        limit = max(5, min(limit, 50))
+
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
+
+        api_client = await get_api_client(ctx)
+
+        # Reliable on-view detection function
+        def is_effectively_on_view(obj):
+            if obj.is_on_view:  # Direct API flag
+                return True
+            if obj.exhibition_title or obj.exhibition_location:  # Exhibition context
+                return True
+            return False
+
+        # Comprehensive multi-search approach for thorough on-view detection
+        all_searched_objects = []
+        max_searches = 5  # Search up to 5 batches of 1000 objects each
+
+        for search_batch in range(max_searches):
+            batch_filters = CollectionSearchFilter(
+                query="*",
+                unit_code=resolved_unit_code,
+                on_view=None,  # Don't rely on potentially unreliable API filter
+                limit=1000,  # Large batch size for comprehensive coverage
+                offset=search_batch * 1000,  # Different offset for each batch
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                is_cc0=None,
+                date_start=None,
+                date_end=None,
+            )
+
+            batch_results = await api_client.search_collections(batch_filters)
+
+            # Add new objects (avoid duplicates across batches)
+            existing_ids = {obj.id for obj in all_searched_objects}
+            new_objects = [obj for obj in batch_results.objects if obj.id not in existing_ids]
+            all_searched_objects.extend(new_objects)
+
+            # Check if we found any on-view objects in this batch
+            batch_on_view = [obj for obj in new_objects if is_effectively_on_view(obj)]
+            if batch_on_view:
+                # Found on-view objects, no need to search further batches
                 break
 
-            offset += current_batch_size
+        # Find ALL objects with on-view indicators from all searched objects
+        on_view_candidates = [
+            obj for obj in all_searched_objects
+            if is_effectively_on_view(obj)
+        ]
 
-        on_view_items = [obj for obj in all_objects if obj.is_on_view]
+        candidate_objects = on_view_candidates
+
+        # If no on-view objects found after comprehensive multi-batch search, return empty result
+        if len(on_view_candidates) == 0:
+            logger.info("No on-view objects found at %s after searching %d objects across %d batches",
+                       resolved_unit_code, len(all_searched_objects), max_searches)
+            return SearchResult(
+                objects=[],
+                total_count=0,
+                returned_count=0,
+                offset=0,
+                has_more=False,
+                next_offset=None,
+            )
+
+        # Apply highlight curation to the verified on-view objects
+
+        # Curate highlights: prioritize objects with images and descriptions
+        def highlight_score(obj):
+            score = 0
+            if obj.is_on_view: score += 5  # Truly on view
+            if obj.exhibition_title or obj.exhibition_location: score += 3  # Exhibition data
+            if obj.images: score += 3
+            if obj.description or obj.summary: score += 2
+            if obj.title and len(obj.title) > 10: score += 1
+            if obj.maker: score += 1
+            return score
+
+        # Sort by highlight score and take top results
+        curated_highlights = sorted(candidate_objects, key=highlight_score, reverse=True)[:limit]
+
+        # Add metadata about the curation strategy used
+        curation_notes = []
+        on_view_count = sum(1 for obj in curated_highlights if obj.is_on_view)
+        exhibition_count = sum(1 for obj in curated_highlights if (obj.exhibition_title or obj.exhibition_location) and not obj.is_on_view)
+
+        if on_view_count > 0:
+            curation_notes.append(f"{on_view_count} currently on view")
+        if exhibition_count > 0:
+            curation_notes.append(f"{exhibition_count} with exhibition data")
+
+        notes = f"On-view highlights from {resolved_unit_code or 'all museums'}: {', '.join(curation_notes) if curation_notes else 'no on-view objects found'}"
 
         logger.info(
-            "Found %d verified on-view items out of %d total items searched",
-            len(on_view_items),
-            len(all_objects),
-        )
-        logger.info(
-            "%s items available in database for this query",
-            str(total_available),
+            "Found %d on-view highlight objects at %s from %d searched objects (%s)",
+            len(curated_highlights),
+            resolved_unit_code or "all museums",
+            len(all_searched_objects),
+            notes
         )
 
         return SearchResult(
-            objects=on_view_items,
-            total_count=len(on_view_items),
-            returned_count=len(on_view_items),
+            objects=curated_highlights,
+            total_count=len(curated_highlights),
+            returned_count=len(curated_highlights),
             offset=0,
-            has_more=False,
+            has_more=len(candidate_objects) > limit,
             next_offset=None,
         )
 
     except Exception as e:
-        logger.error("Error finding on-view items: %s", e)
-        raise RuntimeError(f"Failed to find on-view items: {e}") from e
+        logger.error("Error getting museum highlights: %s", e)
+        raise RuntimeError(f"Failed to get museum highlights: {e}") from e
+
+
+@mcp.tool()
+async def check_museum_has_object_type(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    unit_code: str = "",
+    object_type: str = "",
+    use_cache: bool = True
+) -> ObjectTypeAvailability:
+    """
+    Check if a Smithsonian museum has objects of a specific type in their Open Access collection.
+
+    This tool uses cached known data when available, or samples the collection to determine
+    whether a particular type of object is available in a museum's Open Access contributions.
+
+    IMPORTANT: Most museum artwork collections are NOT available through the Open Access API.
+    This API primarily contains archival/library materials and some digitized objects.
+
+    Args:
+        unit_code: Museum code (e.g., "SAAM" for American Art Museum, "NASM" for Air & Space)
+        object_type: Object type to check (e.g., "painting", "sculpture", "aircraft")
+        use_cache: Whether to use cached known data (default: True)
+
+    Returns:
+        Availability information with explanation
+
+    Examples:
+        # Check if SAAM has paintings (uses cache)
+        result = check_museum_has_object_type(unit_code="SAAM", object_type="painting")
+
+        # Check if NASM has aircraft with fresh sampling
+        result = check_museum_has_object_type(unit_code="NASM", object_type="aircraft", use_cache=False)
+    """
+    if not unit_code or not object_type:
+        raise ValueError("Both unit_code and object_type are required")
+
+    unit_code = unit_code.strip().upper()
+    object_type = object_type.strip().lower()
+
+    try:
+        api_client = await get_api_client(ctx)
+
+        # Validate museum exists
+        all_units = await api_client.get_units()
+        museum_info = next((u for u in all_units if u.code == unit_code), None)
+        if not museum_info:
+            return ObjectTypeAvailability(
+                museum_code=unit_code,
+                museum_name=f"Unknown Museum ({unit_code})",
+                object_type=object_type,
+                available=False,
+                count=None,
+                sample_ids=None,
+                message=f"Unknown museum code: {unit_code}"
+            )
+
+        # Check cached data first if enabled
+        if use_cache:
+            from .museum_data import museum_has_object_type as cached_check
+            cached_result = cached_check(unit_code, object_type)
+
+            if cached_result:
+                return ObjectTypeAvailability(
+                    museum_code=unit_code,
+                    museum_name=museum_info.name,
+                    object_type=object_type,
+                    available=True,
+                    count=None,  # We don't cache counts, just presence
+                    sample_ids=None,
+                    message=f"Yes, {museum_info.name} has {object_type}(s) in their Open Access collection (confirmed by cached data)"
+                )
+
+        # Search for objects of this type in the museum
+        filters = CollectionSearchFilter(
+            query=None,  # No general query, just filter by object_type and unit_code
+            unit_code=unit_code,
+            object_type=object_type,
+            limit=10,  # Just need to check if any exist
+            offset=0,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            is_cc0=None,
+            on_view=None,
+            date_start=None,
+            date_end=None,
+        )
+
+        search_results = await api_client.search_collections(filters)
+
+        available = search_results.returned_count > 0
+        sample_ids = search_results.object_ids[:3] if available else None  # First 3 examples
+
+        # Craft helpful message
+        if available:
+            message = f"Yes, {museum_info.name} has {search_results.total_count} {object_type}(s) in their Open Access collection"
+            if search_results.total_count > search_results.returned_count:
+                message += f" ({search_results.returned_count} shown)"
+            if not use_cache:
+                message += " (sampled)"
+        else:
+            # Provide guidance based on object type
+            if object_type in ["painting", "sculpture", "artifact", "pottery", "textile"]:
+                message = f"No {object_type}s found in {museum_info.name}'s Open Access collection. Most museum artwork requires visiting {museum_info.website or 'the museum website'} directly."
+            else:
+                message = f"No {object_type}s found in {museum_info.name}'s Open Access collection."
+            if not use_cache:
+                message += " (sampled)"
+
+        return ObjectTypeAvailability(
+            museum_code=unit_code,
+            museum_name=museum_info.name,
+            object_type=object_type,
+            available=available,
+            count=search_results.total_count if available else None,
+            sample_ids=sample_ids,
+            message=message
+        )
+
+    except Exception as e:
+        logger.error("Error checking object type availability: %s", e)
+        return ObjectTypeAvailability(
+            museum_code=unit_code,
+            museum_name=f"Error checking {unit_code}",
+            object_type=object_type,
+            available=False,
+            count=None,
+            sample_ids=None,
+            message=f"Error checking availability: {str(e)}"
+        )

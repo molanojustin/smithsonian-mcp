@@ -447,3 +447,5 @@ dev/*
 # But do not ignore /dev/documentation/ and its contents
 !dev/documentation/
 !dev/documentation/**
+
+*_response.json

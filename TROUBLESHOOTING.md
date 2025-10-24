@@ -27,6 +27,25 @@ This guide covers common issues and solutions for the Smithsonian Open Access MC
 - Upgrade to the latest server build so the corrected facet name is used automatically
 - Re-run your maker search; the API should now accept the corrected filter
 
+### Understanding Museum Collections and Object Types
+
+**"What types of objects are available in each museum?"**
+
+The Smithsonian Open Access API provides access to diverse collections across all Smithsonian museums, with each institution having unique object types. Use the discovery tools to explore what's available:
+
+1. **Discover museum collections**: Use `get_museum_collection_types()` to see what types of objects each museum has in their Open Access collections
+2. **Check specific object types**: Use `check_museum_has_object_type(museum_code, object_type)` to verify if a museum has specific types like "paintings", "aircraft", or "historical artifacts"
+3. **Understand museum focus**: Each museum's collection reflects its institutional mission:
+   - **SAAM**: American art and decorative arts
+   - **NASM**: Aviation and space artifacts
+   - **NMAH**: American history and technology
+   - **CHNDM**: Design and decorative arts
+
+**Example workflow:**
+- First: Call `get_museum_collection_types()` to discover available object types across museums
+- Then: Use `check_museum_has_object_type("NASM", "aircraft")` to verify aviation artifacts
+- Finally: Search with informed expectations based on each museum's collection focus
+
 ### Service Startup Issues
 
 **"Service failed to start"**

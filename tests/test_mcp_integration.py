@@ -6,6 +6,7 @@ This module tests end-to-end MCP workflows, protocol adherence, and cross-tool d
 # TODO: DEBUG THIS TEST. STILL PASSING, BUT WE NEED TO FIGURE OUT THE 21 ISSUES.
 import pytest
 import asyncio
+from datetime import datetime
 from unittest.mock import AsyncMock, patch, MagicMock
 from typing import List, Dict, Any, Optional
 
@@ -35,15 +36,25 @@ class TestMCPProtocolAdherence:
         # Get the actual function implementations (the decorated tools are directly callable)
         tools_to_test = [
             ("search_collections", tools_module.search_collections),
+            ("simple_search", tools_module.simple_search),
+            ("find_and_describe", tools_module.find_and_describe),
+            ("search_and_get_first_details", tools_module.search_and_get_first_details),
+            ("search_and_get_details", tools_module.search_and_get_details),
             ("simple_explore", tools_module.simple_explore),
             ("continue_explore", tools_module.continue_explore),
+            ("summarize_search_results", tools_module.summarize_search_results),
+            ("get_object_ids", tools_module.get_object_ids),
+            ("get_first_object_id", tools_module.get_first_object_id),
+            ("validate_object_id", tools_module.validate_object_id),
+            ("resolve_museum_name", tools_module.resolve_museum_name),
             ("get_object_details", tools_module.get_object_details),
             ("get_smithsonian_units", tools_module.get_smithsonian_units),
             ("get_collection_statistics", tools_module.get_collection_statistics),
             ("search_by_unit", tools_module.search_by_unit),
             ("get_objects_on_view", tools_module.get_objects_on_view),
-            ("check_object_on_view", tools_module.check_object_on_view),
-            ("find_on_view_items", tools_module.find_on_view_items),
+            ("get_museum_highlights_on_view", tools_module.get_museum_highlights_on_view),
+            ("get_museum_collection_types", tools_module.get_museum_collection_types),
+            ("check_museum_has_object_type", tools_module.check_museum_has_object_type),
             ("get_search_context", resources_module.get_search_context),
             ("get_object_context", resources_module.get_object_context),
             ("get_on_view_context", resources_module.get_on_view_context),
@@ -105,8 +116,7 @@ class TestMCPProtocolAdherence:
                         total_digitized=500,
                         total_cc0=200,
                         total_with_images=400,
-                        total_with_3d=50,
-                        last_updated="2024-01-01",
+                        last_updated=datetime(2024, 1, 1),
                         units=[],
                     )
                 )
@@ -226,7 +236,7 @@ class TestEndToEndMCPWorkflows:
 
                 # Step 3: Get on-view context
                 context_result = await resources_module.get_on_view_context.fn(
-                    unit_code="NMAH"
+                    museum="NMAH"
                 )
                 assert "Currently on exhibit" in context_result
 
@@ -465,6 +475,10 @@ class TestErrorHandlingAndEdgeCases:
 
                 on_view_result = await tools_module.get_objects_on_view.fn()
                 assert on_view_result.objects == []
+
+                # Test get_museum_highlights_on_view with empty results
+                highlights_result = await tools_module.get_museum_highlights_on_view.fn()
+                assert highlights_result.objects == []
 
     @pytest.mark.asyncio
     async def test_invalid_object_id_handling(self):
