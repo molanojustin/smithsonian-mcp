@@ -82,6 +82,11 @@ python scripts/verify-setup.py
 - **Collection Analytics**: Per-museum statistics with sampling-based accuracy
 - **Multi-Model Compatible**: Works well with both advanced and simpler AI models through simplified tool interfaces
 
+### URL Validation & Anti-Guessing
+- **Mandatory Tool Usage**: LLM must use `get_object_url()` tool for any URL retrieval - manual construction fails due to case sensitivity
+- **Flexible Identifiers**: Supports Accession Numbers (F1900.47), Record IDs (fsg_F1900.47), and Internal IDs (ld1-...)
+- **URL Validation**: Automatically selects authoritative record_link over API identifiers, handles case sensitivity
+
 ## Integration
 
 ### Claude Desktop
@@ -267,7 +272,7 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 - `continue_explore` - Get more results about the same topic while avoiding duplicates
 - `search_collections` - Advanced search with filters (now includes `on_view` parameter)
 - `get_object_details` - Detailed object information
-- `get_object_url` - Get direct URL to an object's web page
+- `get_object_url` - Get validated object URLs with flexible identifier support (MANDATORY: never construct URLs manually)
 - `search_by_unit` - Museum-specific searches
 - `get_objects_on_view` - Find objects currently on physical exhibit
 - `check_object_on_view` - Check if a specific object is on display
@@ -291,6 +296,7 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 - **Scholarly Research**: Multi-step academic investigation
 - **Lesson Planning**: Educational content creation
 - **Object Analysis**: In-depth cultural object study
+- **URL Retrieval**: Get validated object web page URLs (with anti-guessing protection)
 
 ### Curation & Exhibition
 
