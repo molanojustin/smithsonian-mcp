@@ -46,13 +46,15 @@ class TestMCPProtocolAdherence:
             ("get_object_ids", tools_module.get_object_ids),
             ("get_first_object_id", tools_module.get_first_object_id),
             ("validate_object_id", tools_module.validate_object_id),
+            ("resolve_museum_name", tools_module.resolve_museum_name),
             ("get_object_details", tools_module.get_object_details),
             ("get_smithsonian_units", tools_module.get_smithsonian_units),
             ("get_collection_statistics", tools_module.get_collection_statistics),
             ("search_by_unit", tools_module.search_by_unit),
             ("get_objects_on_view", tools_module.get_objects_on_view),
-            ("check_object_on_view", tools_module.check_object_on_view),
-            ("find_on_view_items", tools_module.find_on_view_items),
+            ("get_museum_highlights_on_view", tools_module.get_museum_highlights_on_view),
+            ("get_museum_collection_types", tools_module.get_museum_collection_types),
+            ("check_museum_has_object_type", tools_module.check_museum_has_object_type),
             ("get_search_context", resources_module.get_search_context),
             ("get_object_context", resources_module.get_object_context),
             ("get_on_view_context", resources_module.get_on_view_context),
@@ -473,6 +475,10 @@ class TestErrorHandlingAndEdgeCases:
 
                 on_view_result = await tools_module.get_objects_on_view.fn()
                 assert on_view_result.objects == []
+
+                # Test get_museum_highlights_on_view with empty results
+                highlights_result = await tools_module.get_museum_highlights_on_view.fn()
+                assert highlights_result.objects == []
 
     @pytest.mark.asyncio
     async def test_invalid_object_id_handling(self):

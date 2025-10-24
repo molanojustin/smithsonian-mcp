@@ -1352,12 +1352,14 @@ async def search_by_unit(
 async def get_objects_on_view(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
     limit: int = 500,
     offset: int = 0,
 ) -> SearchResult:
     """
     Get objects that are currently on physical exhibit at Smithsonian museums.
 
+    FOR GENERAL overviews of what's on view at a museum, use this tool.
     This tool finds objects that are verified to be on display for the public,
     which is useful for planning museum visits or finding currently accessible objects.
 
@@ -1365,23 +1367,39 @@ async def get_objects_on_view(
     verified exhibition status, ensuring reliable results.
 
     Args:
-        unit_code: Optional filter by specific Smithsonian unit (e.g., "NMAH", "FSG", "SAAM")
+        unit_code: Optional filter by specific Smithsonian unit code (e.g., "NMAH", "FSG", "SAAM")
+        museum: Optional filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
         limit: Maximum number of results to return (default: 500, max: 1000)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
         Search results containing objects actually marked as on physical exhibit
+
+    Examples:
+        # General overview of what's on view
+        get_objects_on_view(unit_code="FSG")
+        get_objects_on_view(museum="Smithsonian Asian Art Museum")
     """
     try:
         # Validate inputs
         limit = max(1, min(limit, 1000))
 
-        # Use the same reliable approach as find_on_view_items: search broadly then filter locally
-        # pylint: disable=duplicate-code
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
+
+        # Try API-level filtering first, fall back to local filtering
+        api_client = await get_api_client(ctx)
+
+        # Strategy 1: Use API filter for on-view objects
         filters = CollectionSearchFilter(
             query="*",
-            unit_code=unit_code,
-            on_view=None,  # Don't use unreliable API filter
+            unit_code=resolved_unit_code,
+            on_view=True,  # Use API filter
             limit=limit,
             offset=offset,
             object_type=None,
@@ -1394,130 +1412,16 @@ async def get_objects_on_view(
             date_end=None,
         )
 
-        # Get API client and perform search
-        api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
 
-        # Filter for verified on-view objects
-        verified_on_view = [obj for obj in results.objects if obj.is_on_view]
-
-        logger.info(
-            "On-view search completed: %d verified on-view out of %d returned",
-            len(verified_on_view),
-            results.returned_count,
-        )
-
-        # Return verified on-view objects
-        return SearchResult(
-            objects=verified_on_view,
-            total_count=len(verified_on_view),
-            returned_count=len(verified_on_view),
-            offset=offset,
-            has_more=False,
-            next_offset=None,
-        )
-
-    except Exception as e:
-        logger.error("API error during on-view search: %s", e)
-        raise RuntimeError(f"On-view search failed: {e}") from e
-
-
-@mcp.tool()
-async def check_object_on_view(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
-) -> Optional[SmithsonianObject]:
-    """
-    Check if a specific object is currently on physical exhibit.
-
-    This tool retrieves detailed information about an object including
-    its current exhibition status.
-
-    Args:
-        object_id: Unique identifier for the object
-
-    Returns:
-        Object details including on-view status, or None if object not found
-    """
-    try:
-        api_client = await get_api_client(ctx)
-        result = await api_client.get_object_by_id(object_id)
-
-        if result:
-            status = "on view" if result.is_on_view else "not on view"
-            logger.info("Object %s is %s", object_id, status)
-        else:
-            logger.warning("Object not found: %s", object_id)
-
-        return result
-
-    except Exception as e:
-        logger.error("API error checking object %s: %s", object_id, e)
-        raise RuntimeError(f"Failed to check object status: {e}") from e
-
-
-@mcp.tool()
-async def find_on_view_items(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
-    query: str = "",
-    unit_code: Optional[str] = None,
-    max_results: int = 5000,
-) -> SearchResult:
-    """
-    Find ALL items currently on physical exhibit matching a search query.
-
-    This tool automatically handles pagination to search through large result sets
-    and filters them to return only those with verified exhibition status. Unlike
-    other search tools limited to 1000 results, this tool will paginate through
-    multiple API calls to search up to max_results items.
-
-    Important: This tool searches up to max_results items across multiple API calls
-    and filters to only those with verified exhibition data, which is more reliable
-    than using the on_view parameter in other search functions. This ensures items
-    like "Bert and Ernie" are found even if they appear beyond the first 1000 results.
-
-    Args:
-        query: Search terms (e.g., "muppet", "Hokusai", "dinosaur fossils")
-        unit_code: Optional museum code (e.g., "NMAH", "FSG", "NMNH", "NASM")
-        max_results: Maximum items to search through (default: 5000, max: 10000)
-
-    Returns:
-        Search results with only verified on-view items, including exhibition details.
-        The total_count reflects how many on-view items were found, not the total
-        matching items in the database.
-
-    Examples:
-        find_on_view_items(query="muppet", unit_code="NMAH")
-        find_on_view_items(query="Hokusai", unit_code="FSG", max_results=10000)
-    """
-    try:
-        if not query or query.strip() == "":
-            raise ValueError("Search query cannot be empty")
-        max_results = max(1, min(max_results, 10000))
-
-        logger.info(
-            "Finding on-view items for '%s' at %s (searching up to %d items)",
-            query,
-            unit_code or "all museums",
-            max_results,
-        )
-
-        api_client = await get_api_client(ctx)
-
-        batch_size = 1000
-        all_objects = []
-        offset = 0
-        total_available = None
-
-        while offset < max_results:
-            current_batch_size = min(batch_size, max_results - offset)
-
-            # pylint: disable=duplicate-code
-            filters = CollectionSearchFilter(
-                query=query,
-                unit_code=unit_code,
-                on_view=None,
-                limit=current_batch_size,
-                offset=offset,
+        # If API filtering returns no results, try local approach
+        if not results.objects:
+            local_filters = CollectionSearchFilter(
+                query="*",
+                unit_code=resolved_unit_code,
+                on_view=None,  # No API filter, filter locally
+                limit=min(limit * 2, 200),  # Get more to find on-view objects
+                offset=0,
                 object_type=None,
                 maker=None,
                 material=None,
@@ -1528,50 +1432,37 @@ async def find_on_view_items(
                 date_end=None,
             )
 
-            batch_results = await api_client.search_collections(filters)
-            all_objects.extend(batch_results.objects)
+            local_results = await api_client.search_collections(local_filters)
 
-            if total_available is None:
-                total_available = batch_results.total_count
+            # Enhanced on-view detection
+            def is_effectively_on_view(obj):
+                if obj.is_on_view:
+                    return True
+                if obj.exhibition_title or obj.exhibition_location:
+                    return True
+                return False
 
-            logger.info(
-                "Fetched batch at offset %d: %d items (total searched so far: %d/%s)",
-                offset,
-                len(batch_results.objects),
-                len(all_objects),
-                str(total_available),
+            on_view_objects = [obj for obj in local_results.objects if is_effectively_on_view(obj)]
+            results = SearchResult(
+                objects=on_view_objects[:limit],
+                total_count=len(on_view_objects),
+                returned_count=min(len(on_view_objects), limit),
+                offset=0,
+                has_more=len(on_view_objects) > limit,
+                next_offset=limit if len(on_view_objects) > limit else None,
             )
 
-            if not batch_results.has_more:
-                logger.info("Reached end of available results at offset %d", offset)
-                break
-
-            offset += current_batch_size
-
-        on_view_items = [obj for obj in all_objects if obj.is_on_view]
-
         logger.info(
-            "Found %d verified on-view items out of %d total items searched",
-            len(on_view_items),
-            len(all_objects),
-        )
-        logger.info(
-            "%s items available in database for this query",
-            str(total_available),
+            "On-view search completed: %d verified on-view out of %d returned",
+            results.returned_count,
+            results.total_count,
         )
 
-        return SearchResult(
-            objects=on_view_items,
-            total_count=len(on_view_items),
-            returned_count=len(on_view_items),
-            offset=0,
-            has_more=False,
-            next_offset=None,
-        )
+        return results
 
     except Exception as e:
-        logger.error("Error finding on-view items: %s", e)
-        raise RuntimeError(f"Failed to find on-view items: {e}") from e
+        logger.error("Error getting museum highlights: %s", e)
+        raise RuntimeError(f"Failed to get museum highlights: {e}") from e
 
 
 @mcp.tool()
@@ -1717,6 +1608,179 @@ async def get_museum_collection_types(
 
 
 @mcp.tool()
+async def get_museum_highlights_on_view(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
+    limit: int = 20,
+) -> SearchResult:
+    """
+    Get HIGHLIGHTS of notable objects currently on view or with exhibition data at a Smithsonian museum.
+
+    FOR questions like "what are the highlights on view" or "featured exhibits".
+    This tool returns a curated selection of notable objects that are either truly on view
+    or have exhibition information, prioritizing objects with images and detailed descriptions.
+
+    This is more flexible than get_objects_on_view and will return results even when
+    the museum doesn't have objects marked as currently on physical exhibit.
+
+    Args:
+        unit_code: Optional museum code (e.g., "FSG", "SAAM", "NMNH")
+        museum: Optional museum name (e.g., "Smithsonian Asian Art Museum")
+        limit: Number of highlights to return (default: 20, max: 50)
+
+    Returns:
+        Curated selection of notable objects with exhibition data
+
+    Examples:
+        get_museum_highlights_on_view(unit_code="FSG")
+        get_museum_highlights_on_view(museum="Smithsonian Asian Art Museum", limit=10)
+    """
+    try:
+        limit = max(5, min(limit, 50))
+
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
+
+        api_client = await get_api_client(ctx)
+
+        # Strategy 1: Try API-level on-view filtering
+        on_view_filters = CollectionSearchFilter(
+            query="*",
+            unit_code=resolved_unit_code,
+            on_view=True,
+            limit=min(limit * 2, 100),
+            offset=0,
+            object_type=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            is_cc0=None,
+            date_start=None,
+            date_end=None,
+        )
+
+        on_view_results = await api_client.search_collections(on_view_filters)
+        candidate_objects = list(on_view_results.objects)
+
+        # Strategy 2: If few on-view objects, add objects with exhibition data
+        if len(candidate_objects) < limit:
+            exhibition_filters = CollectionSearchFilter(
+                query="*",
+                unit_code=resolved_unit_code,
+                on_view=None,
+                limit=min(limit * 3, 150),
+                offset=0,
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                is_cc0=None,
+                date_start=None,
+                date_end=None,
+            )
+
+            exhibition_results = await api_client.search_collections(exhibition_filters)
+
+            # Find objects with exhibition data
+            exhibition_objects = [
+                obj for obj in exhibition_results.objects
+                if obj.exhibition_title or obj.exhibition_location
+            ]
+
+            # Add exhibition objects that aren't already in candidates
+            existing_ids = {obj.id for obj in candidate_objects}
+            new_exhibition_objects = [
+                obj for obj in exhibition_objects
+                if obj.id not in existing_ids
+            ]
+
+            candidate_objects.extend(new_exhibition_objects)
+
+        # Strategy 3: If still few objects, add recent/popular objects
+        if len(candidate_objects) < limit // 2:
+            recent_filters = CollectionSearchFilter(
+                query="*",
+                unit_code=resolved_unit_code,
+                on_view=None,
+                limit=min(limit * 2, 100),
+                offset=0,
+                object_type=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=True,  # Prioritize objects with images
+                is_cc0=None,
+                date_start=None,
+                date_end=None,
+            )
+
+            recent_results = await api_client.search_collections(recent_filters)
+
+            # Add objects with images that aren't already candidates
+            existing_ids = {obj.id for obj in candidate_objects}
+            new_recent_objects = [
+                obj for obj in recent_results.objects
+                if obj.id not in existing_ids and obj.images
+            ]
+
+            candidate_objects.extend(new_recent_objects[:limit])
+
+        # Curate highlights: prioritize objects with images and descriptions
+        def highlight_score(obj):
+            score = 0
+            if obj.is_on_view: score += 5  # Truly on view
+            if obj.exhibition_title or obj.exhibition_location: score += 3  # Exhibition data
+            if obj.images: score += 3
+            if obj.description or obj.summary: score += 2
+            if obj.title and len(obj.title) > 10: score += 1
+            if obj.maker: score += 1
+            return score
+
+        # Sort by highlight score and take top results
+        curated_highlights = sorted(candidate_objects, key=highlight_score, reverse=True)[:limit]
+
+        # Add metadata about the curation strategy used
+        curation_notes = []
+        on_view_count = sum(1 for obj in curated_highlights if obj.is_on_view)
+        exhibition_count = sum(1 for obj in curated_highlights if (obj.exhibition_title or obj.exhibition_location) and not obj.is_on_view)
+
+        if on_view_count > 0:
+            curation_notes.append(f"{on_view_count} currently on view")
+        if exhibition_count > 0:
+            curation_notes.append(f"{exhibition_count} with exhibition data")
+
+        notes = f"Highlights from {resolved_unit_code or 'all museums'}: {', '.join(curation_notes) if curation_notes else 'general collection highlights'}"
+
+        logger.info(
+            "Found %d highlight objects at %s (%s)",
+            len(curated_highlights),
+            resolved_unit_code or "all museums",
+            notes
+        )
+
+        return SearchResult(
+            objects=curated_highlights,
+            total_count=len(curated_highlights),
+            returned_count=len(curated_highlights),
+            offset=0,
+            has_more=len(candidate_objects) > limit,
+            next_offset=None,
+        )
+
+    except Exception as e:
+        logger.error("Error getting museum highlights: %s", e)
+        raise RuntimeError(f"Failed to get museum highlights: {e}") from e
+
+
+@mcp.tool()
 async def check_museum_has_object_type(
     ctx: Optional[Context[ServerSession, ServerContext]] = None,
     unit_code: str = "",
@@ -1788,8 +1852,8 @@ async def check_museum_has_object_type(
 
         # Search for objects of this type in the museum
         filters = CollectionSearchFilter(
-            query=query,
-            unit_code=resolved_unit_code,
+            query=None,  # No general query, just filter by object_type and unit_code
+            unit_code=unit_code,
             object_type=object_type,
             limit=10,  # Just need to check if any exist
             offset=0,
