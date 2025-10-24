@@ -521,10 +521,19 @@ class SmithsonianAPIClient:
         else:
             notes_content = None
 
+        # Parse URL - handle cases where it's not a valid HTTP URL
+        url_value = raw_data.get("url")
+        parsed_url = None
+        if url_value:
+            try:
+                parsed_url = HttpUrl(url_value)
+            except (ValueError, TypeError):
+                parsed_url = None
+
         return SmithsonianObject(
             id=obj_id,
             title=title,
-            url=descriptive_non_repeating.get("record_link"),
+            url=parsed_url,
             unit_code=unit_code,
             unit_name=(
                 indexed_structured.get("unit_name", [{}])[0].get("content")
