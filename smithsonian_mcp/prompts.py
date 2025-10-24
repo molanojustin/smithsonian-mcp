@@ -262,3 +262,27 @@ def museum_object_search_prompt(object_name: str, museum_name: str) -> List[base
             f"Do not use external search engines or construct URLs manually."
         )
     ]
+
+
+@mcp.prompt(title="Search and Get URL")
+def search_and_get_url_prompt(object_description: str, museum: Optional[str] = None) -> List[base.Message]:
+    """
+    Find a Smithsonian object and get its web page URL in one step.
+
+    This prompt guides users to use the combined search_and_get_first_url tool
+    to avoid the common mistake of manual URL construction.
+
+    Args:
+        object_description: Description or name of the object to find
+        museum: Optional museum name to restrict search
+    """
+    museum_text = f" at the {museum}" if museum else ""
+    return [
+        base.Message(
+            role="user",
+            content=f"Find the Smithsonian object '{object_description}'{museum_text} and get its official web page URL. "
+            f"Use the search_and_get_first_url() tool - this combines search and URL retrieval in one step "
+            f"and prevents manual URL construction errors. "
+            f"Do NOT use separate search + get_object_url calls, and NEVER construct URLs manually."
+        )
+    ]

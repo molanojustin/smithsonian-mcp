@@ -9,6 +9,7 @@ SERVER_VERSION = __version__
 
 MUSEUM_MAP: Dict[str, str] = {
     "american history": "NMAH",
+    "ahm": "NMAH",  # Common wrong abbreviation for American History Museum
     "natural history": "NMNH",
     "american art": "SAAM",
     "american indian": "NMAI",
