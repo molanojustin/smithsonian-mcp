@@ -204,7 +204,7 @@ async def simple_search(
     has_images: Optional[bool] = None,
     is_cc0: Optional[bool] = None,
     on_view: Optional[bool] = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> SimpleSearchResult:
     """
     Search Smithsonian collections and return results in a simple, easy-to-understand format.
@@ -232,7 +232,7 @@ async def simple_search(
         has_images: Filter objects that have associated images
         is_cc0: Filter objects with CC0 (public domain) licensing
         on_view: Filter objects currently on physical exhibit
-        limit: Number of results to return (default: 10, max: 50)
+        limit: Number of results to return (default: 20, max: 50)
 
     Returns:
         Simplified search results with summary, object IDs, and easy-to-use fields
@@ -1063,11 +1063,6 @@ async def search_and_get_first_url(
                 url = valid_url
             else:
                 return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve valid URL"
-
-        if not selected_url:
-            return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve valid URL"
-
-        url = selected_url
 
         # Build a nice summary
         title = first_object.title or "Untitled"
