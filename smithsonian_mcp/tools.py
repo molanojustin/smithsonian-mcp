@@ -75,6 +75,9 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         and next_offset fields to determine if there are additional results beyond
         the returned set.
 
+        ⚠️  WARNING: Do NOT construct URLs manually from the returned data!
+        Use get_object_url(object_id=object.id) to get correct URLs.
+
     Note:
         **For the absolute simplest experience, use these LLM-optimized tools:**
 
@@ -1182,6 +1185,9 @@ async def get_object_details(
     Returns:
         Detailed object information, or None if object not found
 
+        ⚠️  Note: The returned object includes a 'url' field, but for reliable URL access,
+        always use get_object_url() instead of constructing URLs manually.
+
     Note:
         If the object is not found, the tool tries multiple ID formats automatically.
         For best results, use the 'id' field from search_collections results.
@@ -1236,10 +1242,17 @@ async def get_object_url(
     object_id: str = ""
 ) -> Optional[str]:
     """
-    Get the direct URL to an object's page on the Smithsonian website.
+    🔗 REQUIRED: Get the direct URL to an object's page on the Smithsonian website.
 
-    This tool provides the exact URL for viewing an object on the Smithsonian's website.
-    Use this when you need the object's web page URL for sharing or direct access.
+    ⚠️  IMPORTANT: NEVER construct Smithsonian URLs manually! Always use this tool.
+
+    This tool provides the EXACT, CORRECT URL for viewing an object on the Smithsonian's website.
+    Manual URL construction (like combining unit codes with object IDs) WILL BE WRONG.
+
+    Use this tool whenever you need:
+    - Object page URLs for sharing
+    - Direct links to museum objects
+    - URLs from search results
 
     The tool automatically tries multiple ID formats to handle different input styles:
     - Full IDs like "edanmdm-hmsg_80.107"
@@ -1261,15 +1274,26 @@ async def get_object_url(
         Use get_object_details() if you need additional metadata.
 
     Example:
-        # Get URL for an object
-        url = get_object_url(object_id="edanmdm-hmsg_80.107")
-        # Returns: "https://hirshhorn.si.edu/object/hmsg_80.107/"
+        # ❌ WRONG - Don't do this!
+        # url = "https://asia.si.edu/object/" + result.unit_code + "-" + result.id
+
+        # ✅ CORRECT - Always use this tool!
+        url = get_object_url(object_id=result.id)
+        # Returns: "https://asia.si.edu/object/F1916.118/"
     """
     # Input validation
     if not object_id or object_id.strip() == "":
         raise ValueError("object_id cannot be empty")
 
     object_id = object_id.strip()
+
+    # Detect if someone passed a URL instead of an object ID
+    if "://" in object_id or object_id.startswith("http"):
+        raise ValueError(
+            "object_id should be an object ID from search results, not a URL. "
+            "Use the 'id' field from search_collections results with this tool. "
+            "Example: get_object_url(object_id='edanmdm-hmsg_80.107')"
+        )
 
     try:
         api_client = await get_api_client(ctx)
