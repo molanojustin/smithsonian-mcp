@@ -130,19 +130,15 @@ async def get_on_view_context(
 
     Args:
         museum: Optional filter by Smithsonian unit code (e.g., "NMAH", "HMSG") or museum name
-            (e.g., "hirshhorn", "natural history"). Highly recommended for targeted searches.
+            (e.g., "hirshhorn", "natural history", "Smithsonian Asian Art Museum"). Highly recommended for targeted searches.
         limit: Maximum number of results to return (default: 10)
     """
     try:
         # Map museum names to codes
         museum_code = None
         if museum:
-            museum_lower = museum.lower().strip()
-            if museum_lower in MUSEUM_MAP:
-                museum_code = MUSEUM_MAP[museum_lower]
-            elif museum_upper := museum.upper():
-                if museum_upper in VALID_MUSEUM_CODES:
-                    museum_code = museum_upper
+            from .utils import resolve_museum_code
+            museum_code = resolve_museum_code(museum)
 
         # Use reliable approach: search broadly then filter locally
         # pylint: disable=duplicate-code

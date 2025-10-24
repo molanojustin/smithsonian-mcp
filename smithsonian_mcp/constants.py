@@ -29,6 +29,19 @@ MUSEUM_MAP: Dict[str, str] = {
     "smithsonian archives": "SIA",
     "anacostia": "ACM",
     "american art archives": "AAA",
+    # Additional common variations for better matching
+    "smithsonian asian art": "FSG",
+    "smithsonian american art": "SAAM",
+    "smithsonian natural history": "NMNH",
+    "smithsonian air and space": "NASM",
+    "smithsonian portrait gallery": "NPG",
+    "smithsonian african art": "NMAfA",
+    "smithsonian hirshhorn": "HMSG",
+    "smithsonian cooper hewitt": "CHNDM",
+    "smithsonian african american history": "NMAAHC",
+    "smithsonian postal": "NPM",
+    "smithsonian zoo": "NZP",
+    "smithsonian anacostia": "ACM",
 }
 
 VALID_MUSEUM_CODES: List[str] = [

@@ -254,7 +254,7 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
 
     Args:
         topic: What you want to explore (e.g., "dinosaurs", "computers", "space exploration")
-        museum: Optional museum or museum code to focus on
+        museum: Optional museum or museum code to focus on (e.g., "asian art", "SAAM", "Smithsonian Asian Art Museum")
         max_samples: How many diverse examples to return (default 50, max 200)
 
     Returns:
@@ -271,13 +271,8 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
         # Map museum names to codes
         museum_code = None
         if museum:
-            museum_lower = museum.lower().strip()
-            if museum_lower in MUSEUM_MAP:
-                museum_code = MUSEUM_MAP[museum_lower]
-            elif museum_upper := museum.upper():
-                # Try to match codes directly
-                if museum_upper in VALID_MUSEUM_CODES:
-                    museum_code = museum_upper
+            from .utils import resolve_museum_code
+            museum_code = resolve_museum_code(museum)
 
         # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
@@ -477,7 +472,7 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
     Args:
         topic: The same topic you explored before
         previously_seen_ids: List of object IDs you've already seen (from previous results)
-        museum: Optional museum focus (same as before)
+        museum: Optional museum focus (e.g., "asian art", "SAAM", "Smithsonian Asian Art Museum")
         max_samples: How many new examples to return (default 50, max 200)
 
     Returns:
@@ -493,15 +488,11 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
         if len(topic.strip()) < 2:
             raise ValueError("Search topic must be at least 2 characters long")
 
-        # Map museum names to codes (same logic as simple_explore)
+        # Map museum names to codes
         museum_code = None
         if museum:
-            museum_lower = museum.lower().strip()
-            if museum_lower in MUSEUM_MAP:
-                museum_code = MUSEUM_MAP[museum_lower]
-            elif museum_upper := museum.upper():
-                if museum_upper in VALID_MUSEUM_CODES:
-                    museum_code = museum_upper
+            from .utils import resolve_museum_code
+            museum_code = resolve_museum_code(museum)
 
         api_client = await get_api_client(ctx)
         seen_ids = set(previously_seen_ids or [])
@@ -1627,10 +1618,11 @@ async def get_museum_collection_types(
                     notes=notes
                 ))
 
-                logger.info(
-                    "Sampled %d objects from %s (%s): found types %s",
-                    len(search_results.objects), code, museum_name, available_types
-                )
+                if source == "sampled" and search_results:
+                    logger.info(
+                        "Sampled %d objects from %s (%s): found types %s",
+                        len(search_results.objects), code, museum_name, available_types
+                    )
 
             except Exception as e:
                 logger.warning("Failed to sample museum %s: %s", code, e)
