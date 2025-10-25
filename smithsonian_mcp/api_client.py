@@ -532,6 +532,7 @@ class SmithsonianAPIClient:
 
         return SmithsonianObject(
             id=obj_id,
+            record_id=descriptive_non_repeating.get("record_ID"),
             title=title,
             url=parsed_url,
             unit_code=unit_code,
@@ -679,9 +680,10 @@ class SmithsonianAPIClient:
             id_formats_to_try.append(object_id.replace("-", ":", 1))  # Convert dash to colon
             id_formats_to_try.append(object_id[8:])  # Remove "edanmdm-" prefix
 
-        # If it starts with "edanmdm:", try the dash version
+        # If it starts with "edanmdm:", try the dash version and base ID
         elif object_id.startswith("edanmdm:"):
             id_formats_to_try.append(object_id.replace(":", "-", 1))  # Convert colon to dash
+            id_formats_to_try.append(object_id[8:])  # Remove "edanmdm:" prefix
 
         for attempt_id in id_formats_to_try:
             endpoint = f"/content/{attempt_id}"

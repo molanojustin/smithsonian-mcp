@@ -48,10 +48,19 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
     This tool allows comprehensive searching across all Smithsonian museums and
     collections with various filters for object type, creator, materials, and more.
 
+     🚨 CRITICAL: NEVER construct URLs from the returned object IDs!
+     Always use get_object_url(object_identifier=object_id) to get valid URLs.
+     Manual URL construction like "https://collections.si.edu/search/detail/{id}" WILL FAIL.
+
      IMPORTANT: This tool returns a maximum of 1000 results per call. If you need to
      search through more results (e.g., to find specific on-view items that may not
      appear in the first 1000 results), use the find_on_view_items tool which
      automatically paginates through up to 10,000 results.
+
+     NOTE: When a unit_code is specified, results are automatically prioritized to show
+     objects from that museum first (IDs starting with the unit code). If you provide an
+     invalid unit_code, this tool will automatically attempt to resolve it as a museum name.
+     For best results, use resolve_museum_name() first or provide the museum name directly.
 
      Args:
          query: General search terms (keywords, titles, descriptions)
@@ -84,10 +93,10 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         **Simple:** `simple_search(query="Alma Thomas")`
         - Returns easy-to-read results with first_object_id ready to use
 
-        **Advanced:** Use search_collections with helper tools:
+        **Advanced:** Use search_collections with helper tools (ALWAYS search first, never construct URLs manually):
         - summarize_search_results() - Get readable summary
         - get_first_object_id() - Extract first object ID
-        - get_object_url() - MANDATORY: Get validated object URL (never construct manually)
+        - get_object_url() - Get validated object URL (use IDs from search results only)
         - search_and_get_first_details() - Search and get details
 
     Examples:
@@ -107,18 +116,34 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
     """
     try:
         # Resolve museum name to unit code if provided
-        resolved_unit_code = unit_code
-        if museum and not unit_code:
+        resolved_unit_code = None
+
+        if museum:
+            # If museum name provided, resolve it
             from .utils import resolve_museum_code
             resolved_unit_code = resolve_museum_code(museum)
+            if resolved_unit_code:
+                logger.info(f"Resolved museum name '{museum}' to unit code '{resolved_unit_code}'")
         elif unit_code:
-            resolved_unit_code = unit_code
+            # If unit_code provided, validate it
+            if unit_code.upper() in VALID_MUSEUM_CODES:
+                resolved_unit_code = unit_code.upper()
+            else:
+                # Try to resolve invalid unit_code as a museum name
+                from .utils import resolve_museum_code
+                attempted_resolution = resolve_museum_code(unit_code)
+                if attempted_resolution:
+                    logger.warning(f"Invalid unit_code '{unit_code}' resolved as museum name to '{attempted_resolution}'")
+                    resolved_unit_code = attempted_resolution
+                else:
+                    logger.warning(f"Invalid unit_code '{unit_code}' provided and could not resolve as museum name")
+                    resolved_unit_code = unit_code.upper()  # Use as-is but warn
 
         # Create search filter
         # pylint: disable=duplicate-code
         filters = CollectionSearchFilter(
             query=query,
-            unit_code=unit_code,
+            unit_code=resolved_unit_code,
             object_type=object_type,
             maker=maker,
             material=material,
@@ -135,6 +160,12 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
         # Get API client and perform search
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
+
+        # Prioritize objects by unit code if specified
+        if resolved_unit_code:
+            from .utils import prioritize_objects_by_unit_code
+            results.objects = prioritize_objects_by_unit_code(results.objects, resolved_unit_code)
+            logger.info(f"Prioritized {len(results.objects)} results for unit_code '{resolved_unit_code}'")
 
         if 1000 <= limit < results.total_count:
             logger.warning(
@@ -173,13 +204,27 @@ async def simple_search(
     has_images: Optional[bool] = None,
     is_cc0: Optional[bool] = None,
     on_view: Optional[bool] = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> SimpleSearchResult:
     """
     Search Smithsonian collections and return results in a simple, easy-to-understand format.
 
     This tool is optimized for LLMs - it returns a human-readable summary along with
     the key information you need. Use the first_object_id with get_object_details().
+
+    🚨 CRITICAL: NEVER construct URLs from the returned object IDs!
+    For URLs: Use get_object_url(object_identifier=first_object_id) OR
+    search_and_get_first_url() for one-step search + URL retrieval.
+    Manual URL construction like "https://collections.si.edu/search/detail/{id}" WILL FAIL.
+
+    NOTE: When a unit_code is specified, results are automatically prioritized to show
+    objects from that museum first (IDs starting with the unit code). If you provide an
+    invalid unit_code, this tool will automatically attempt to resolve it as a museum name.
+    For best results, use resolve_museum_name() first or provide the museum name directly.
+
+    IMPORTANT: For complex museum names like "Smithsonian National Zoo" or "Smithsonian Asian Art Museum",
+    ALWAYS use resolve_museum_name() first to ensure correct resolution and avoid confusion between
+    similar museum names (e.g., Asian Art FSG vs American Art SAAM, National Zoo NZP vs Natural History NMNH).
 
     Args:
         query: General search terms (keywords, titles, descriptions)
@@ -192,35 +237,54 @@ async def simple_search(
         has_images: Filter objects that have associated images
         is_cc0: Filter objects with CC0 (public domain) licensing
         on_view: Filter objects currently on physical exhibit
-        limit: Number of results to return (default: 10, max: 50)
+        limit: Number of results to return (default: 20, max: 50)
 
     Returns:
         Simplified search results with summary, object IDs, and easy-to-use fields
 
     Example:
-        # Simple search for Alma Thomas
+        # Search for objects
         results = simple_search(query="Alma Thomas Earth Sermon")
 
-        # Get details for the first result
+        # ✅ CORRECT: Use get_object_url for URLs
         if results.first_object_id:
-            details = get_object_details(object_id=results.first_object_id)
+            url = get_object_url(object_identifier=results.first_object_id)
+
+        # ❌ WRONG: Don't construct URLs manually
+        # url = f"https://collections.si.edu/search/detail/{results.first_object_id}"
     """
     try:
         # Limit to reasonable number for simple format
         limit = max(1, min(limit, 50))
 
         # Resolve museum name to unit code if provided
-        resolved_unit_code = unit_code
-        if museum and not unit_code:
+        resolved_unit_code = None
+
+        if museum:
+            # If museum name provided, resolve it
             from .utils import resolve_museum_code
             resolved_unit_code = resolve_museum_code(museum)
+            if resolved_unit_code:
+                logger.info(f"Resolved museum name '{museum}' to unit code '{resolved_unit_code}'")
         elif unit_code:
-            resolved_unit_code = unit_code
+            # If unit_code provided, validate it
+            if unit_code.upper() in VALID_MUSEUM_CODES:
+                resolved_unit_code = unit_code.upper()
+            else:
+                # Try to resolve invalid unit_code as a museum name
+                from .utils import resolve_museum_code
+                attempted_resolution = resolve_museum_code(unit_code)
+                if attempted_resolution:
+                    logger.warning(f"Invalid unit_code '{unit_code}' resolved as museum name to '{attempted_resolution}'")
+                    resolved_unit_code = attempted_resolution
+                else:
+                    logger.warning(f"Invalid unit_code '{unit_code}' provided and could not resolve as museum name")
+                    resolved_unit_code = unit_code.upper()  # Use as-is but warn
 
         # Create search filter
         filters = CollectionSearchFilter(
             query=query,
-            unit_code=unit_code,
+            unit_code=resolved_unit_code,
             object_type=object_type,
             maker=maker,
             material=material,
@@ -237,6 +301,12 @@ async def simple_search(
         # Get API client and perform search
         api_client = await get_api_client(ctx)
         results = await api_client.search_collections(filters)
+
+        # Prioritize objects by unit code if specified
+        if resolved_unit_code:
+            from .utils import prioritize_objects_by_unit_code
+            results.objects = prioritize_objects_by_unit_code(results.objects, resolved_unit_code)
+            logger.info(f"Prioritized {len(results.objects)} results for unit_code '{resolved_unit_code}'")
 
         # Convert to simple format
         simple_results = results.to_simple_result()
@@ -813,15 +883,15 @@ async def resolve_museum_name(
                     "American Art Museum", "Natural History Museum")
 
     Returns:
-        Resolved unit code with full museum name, or error if not found.
+        The resolved unit code (e.g., "NMAH", "SAAM", "FSG"), or error message if not found.
 
     Examples:
         # CORRECT usage:
-        resolve_museum_name(museum_name="Smithsonian Asian Art Museum")
-        # Returns: "FSG - Freer|Sackler Galleries (Smithsonian Asian Art Museum)"
+        code = resolve_museum_name(museum_name="Smithsonian Asian Art Museum")
+        # Returns: "FSG"
 
         # Then use the resolved code:
-        search_collections(query="art", unit_code="FSG")
+        search_collections(query="art", unit_code=code)
 
         # INCORRECT (common mistake):
         search_collections(query="art", unit_code="SAAM")  # Wrong! This is American Art
@@ -835,18 +905,197 @@ async def resolve_museum_name(
     if not unit_code:
         return f"Error: Could not resolve museum name '{museum_name}'. Please try a different name or use a known unit code like 'SAAM', 'FSG', 'NMNH', etc."
 
-    # Get the full museum name for better user experience
+    # Return just the unit code for clear programmatic use
+    return unit_code
+
+
+@mcp.tool()
+async def search_and_get_first_url(
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    query: str = "",
+    unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
+    object_type: Optional[str] = None,
+    maker: Optional[str] = None,
+    material: Optional[str] = None,
+    topic: Optional[str] = None,
+    has_images: Optional[bool] = None,
+    is_cc0: Optional[bool] = None,
+    on_view: Optional[bool] = None,
+    limit: int = 1,
+) -> str:
+    """
+    Search for Smithsonian objects and get the URL for the first result in one step.
+
+    This is the easiest way to find an object and get its web page URL without manual URL construction.
+    It combines searching with URL retrieval to prevent the common mistake of guessing URL formats.
+
+    🚨 This tool exists because manual URL construction ALWAYS fails. Use this instead of:
+    ❌ search_collections() + manual URL construction
+    ✅ search_collections() + get_object_url()
+
+    NOTE: When a unit_code is specified, results are automatically prioritized to show
+    objects from that museum first (IDs starting with the unit code).
+
+    IMPORTANT: For complex museum names like "Smithsonian National Zoo" or "Smithsonian Asian Art Museum",
+    use resolve_museum_name() first to ensure correct resolution.
+
+    Args:
+        query: General search terms (keywords, titles, descriptions)
+        unit_code: Filter by Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM")
+        museum: Filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
+        object_type: Type of object (e.g., "painting", "sculpture", "photograph")
+        maker: Creator or maker name (artist, photographer, etc.)
+        material: Materials or medium (e.g., "oil on canvas", "bronze", "silver")
+        topic: Subject topic or theme
+        has_images: Filter objects that have associated images
+        is_cc0: Filter objects with CC0 (public domain) licensing
+        on_view: Filter objects currently on physical exhibit
+        limit: Number of results to search through (default: 1, max: 10)
+
+    Returns:
+        Search summary and validated URL for the first result, or error message if no results
+
+    Example:
+        # ✅ CORRECT: One-step search and URL retrieval
+        result = search_and_get_first_url(query="Alma Thomas Earth Sermon", unit_code="HMSG")
+        # Returns: "Found: Alma Thomas 'Earth Sermon' - https://hirshhorn.si.edu/object/..."
+
+        # ❌ WRONG: Don't do this multi-step manual process
+        # results = search_collections(query="Alma Thomas")
+        # url = f"https://collections.si.edu/search/detail/{results.first_object_id}"  # FAILS!
+    """
     try:
+        # Limit to reasonable number for this combined operation
+        limit = max(1, min(limit, 10))
+
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = None
+
+        if museum:
+            # If museum name provided, resolve it
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+            if resolved_unit_code:
+                logger.info(f"Resolved museum name '{museum}' to unit code '{resolved_unit_code}'")
+        elif unit_code:
+            # If unit_code provided, validate it
+            if unit_code.upper() in VALID_MUSEUM_CODES:
+                resolved_unit_code = unit_code.upper()
+            else:
+                # Try to resolve invalid unit_code as a museum name
+                from .utils import resolve_museum_code
+                attempted_resolution = resolve_museum_code(unit_code)
+                if attempted_resolution:
+                    logger.warning(f"Invalid unit_code '{unit_code}' resolved as museum name to '{attempted_resolution}'")
+                    resolved_unit_code = attempted_resolution
+                else:
+                    logger.warning(f"Invalid unit_code '{unit_code}' provided and could not resolve as museum name")
+                    resolved_unit_code = unit_code.upper()  # Use as-is but warn
+
+        # Create search filter
+        filters = CollectionSearchFilter(
+            query=query,
+            unit_code=resolved_unit_code,
+            object_type=object_type,
+            maker=maker,
+            material=material,
+            topic=topic,
+            has_images=has_images,
+            is_cc0=is_cc0,
+            on_view=on_view,
+            limit=limit,
+            offset=0,
+            date_start=None,
+            date_end=None,
+        )
+
+        # Get API client and perform search
         api_client = await get_api_client(ctx)
-        units = await api_client.get_units()
-        museum_info = next((u for u in units if u.code == unit_code), None)
-        if museum_info:
-            return f"{unit_code} - {museum_info.name} ({museum_name})"
-        else:
-            return f"{unit_code} ({museum_name})"
-    except Exception:
-        # Fallback if API call fails
-        return f"{unit_code} ({museum_name})"
+        results = await api_client.search_collections(filters)
+
+        # Prioritize objects by unit code if specified
+        if resolved_unit_code:
+            from .utils import prioritize_objects_by_unit_code
+            results.objects = prioritize_objects_by_unit_code(results.objects, resolved_unit_code)
+            logger.info(f"Prioritized {len(results.objects)} results for unit_code '{resolved_unit_code}'")
+
+        if not results.objects:
+            return f"No objects found matching: {query}"
+
+        # Get the first object (now prioritized)
+        first_object = results.objects[0]
+        object_id = first_object.id
+
+        # Get the URL for the first object - prioritize record_id if available
+        from .utils import validate_url, construct_url_from_record_id
+
+        # Strategy 1: Try to construct URL from record_id if available (most reliable)
+        url = None
+        if first_object.record_id:
+            constructed_url = await construct_url_from_record_id(first_object.record_id)
+            if constructed_url:
+                logger.info("Constructed URL from record_id: %s -> %s", first_object.record_id, constructed_url)
+                url = constructed_url
+        
+        # Strategy 2: If record_id construction failed, use fallback logic
+        if not url:
+            # Try multiple lookup strategies in order of user-friendliness
+            lookup_strategies = [object_id]  # Start with the object_id
+
+            result = None
+            successful_lookup = None
+
+            # Try each lookup strategy
+            for lookup_id in lookup_strategies:
+                try:
+                    candidate_result = await api_client.get_object_by_id(lookup_id)
+                    if candidate_result:
+                        result = candidate_result
+                        successful_lookup = lookup_id
+                        break
+                except Exception:
+                    continue
+
+            if not result:
+                return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve URL"
+
+            # Special handling for NZP - construct URL from idsId in record_id
+            # NZP uses a different URL pattern: https://ids.si.edu/ids/deliveryService?id={idsId}
+            # The idsId is extracted from record_id format: nzp_{idsId}
+            if result.unit_code == "NZP" and result.record_id:
+                parts = result.record_id.split("_", 1)
+                if len(parts) == 2:
+                    idsId = parts[1]  # Extract idsId from record_id (format: nzp_{idsId})
+                    constructed_nzp_url = f"https://ids.si.edu/ids/deliveryService?id={idsId}"
+                    if validate_url(constructed_nzp_url):
+                        url = constructed_nzp_url
+                        logger.info("Constructed NZP URL from record_id: %s -> %s", result.record_id, url)
+
+            # If we didn't construct a URL for NZP, use normal validation logic
+            if not url:
+                # Validate and select the best URL (same logic as get_object_url)
+                valid_url = validate_url(str(result.url) if result.url else None)
+                valid_record_link = validate_url(str(result.record_link) if result.record_link else None)
+
+                # Prefer record_link if different and valid
+                if valid_record_link and valid_record_link != valid_url:
+                    url = valid_record_link
+                elif valid_url:
+                    url = valid_url
+                else:
+                    return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve valid URL"
+
+        # Build a nice summary
+        title = first_object.title or "Untitled"
+        maker_text = f" by {first_object.maker[0]}" if first_object.maker else ""
+        museum_text = f" at {first_object.unit_name}" if first_object.unit_name else ""
+
+        return f"Found: {title}{maker_text}{museum_text} - {url}"
+
+    except Exception as e:
+        logger.error("Error in search_and_get_first_url: %s", e)
+        raise RuntimeError(f"Search and get URL failed: {e}") from e
 
 
 @mcp.tool()
@@ -1187,7 +1436,7 @@ async def get_object_details(
         For best results, use the 'id' field from search_collections results.
         Use validate_object_id() first to check if an ID exists.
         IMPORTANT: Use get_object_url() if you need the object's web page URL.
-        NEVER construct URLs manually - always use the get_object_url() tool.
+        NEVER construct URLs manually - always use search tools first to find the correct ID, then get_object_url().
 
     Example:
         # First search for objects
@@ -1237,63 +1486,51 @@ async def get_object_url(
     object_identifier: str = ""
 ) -> Optional[str]:
     """
-    CRITICAL: Always use this tool to get object URLs. NEVER construct URLs manually.
+    🚨 CRITICAL WARNING: NEVER construct Smithsonian URLs manually! 🚨
 
-    Manual URL construction WILL FAIL due to case sensitivity, formatting changes, or API updates.
-    This tool ensures you get the correct, validated URL from Smithsonian's record_link field.
+    Manual URL construction ALWAYS FAILS due to:
+    - Case sensitivity issues (F1916.118 vs f1916.118)
+    - Changing URL formats over time
+    - Different museums using different URL patterns
+    - API updates that break old URL structures
 
-    Get the direct URL to an object's page on the Smithsonian website.
+    ✅ RECOMMENDED: Use search_and_get_first_url() for one-step search + URL retrieval
+    ✅ ALTERNATIVE: Use this tool with IDs from search_collections() or simple_search()
+    ❌ WRONG: Manual construction or guessing URL patterns
 
-    This tool provides the exact URL for viewing an object on the Smithsonian's website.
-    Use this when you need the object's web page URL for sharing or direct access.
+    Example:
+    url = get_object_url(object_identifier="edanmdm-hmsg_80.107")
 
-    The tool accepts multiple identifier formats for maximum flexibility:
+    This tool provides the exact, validated URL from Smithsonian's authoritative record_link field.
+    It handles all the complexity of URL formatting, case sensitivity, and API changes automatically.
+
+    The tool accepts multiple identifier formats:
     - Accession Number (e.g., "F1900.47")
     - Record ID (e.g., "fsg_F1900.47")
     - Internal ID (e.g., "ld1-1643390182193-1643390183699-0")
     - Full API ID (e.g., "edanmdm-hmsg_80.107")
     - Partial ID from object URLs (e.g., "hmsg_80.107")
 
-    The tool validates URLs and prefers the record_link field when it differs from the url field.
-
-    URL Validation Benefits:
-    - Handles case sensitivity (F1916.118 vs f1916.118)
-    - Uses authoritative record_link field over API identifier
-    - Validates HTTP/HTTPS URLs and filters invalid ones
-    - Adapts to API changes and formatting updates
-
     Args:
-        object_identifier: Identifier for the object. Can be:
-                  - Accession Number (e.g., "F1900.47")
-                  - Record ID (e.g., "fsg_F1900.47")
-                  - Internal ID (e.g., "ld1-1643390182193-1643390183699-0")
-                  - Full API ID (e.g., "edanmdm-hmsg_80.107")
-                  - Partial ID (e.g., "hmsg_80.107")
+        object_identifier: Identifier for the object (NEVER a manually constructed URL)
 
     Returns:
-        Direct URL to the object's page (e.g., "https://asia.si.edu/object/F1900.47/"),
-        or None if object not found
+        Validated URL to the object's page, or None if object not found
 
-    Note:
-        This tool returns only the URL string, not full object details.
-        Use get_object_details() if you need additional metadata.
-
-    IMPORTANT: Never construct URLs like "https://asia.si.edu/object/{id}" yourself.
-    Always use this tool as manual construction often fails (wrong case, formatting, etc.).
+    IMPORTANT: This tool exists because manual URL construction consistently fails.
+    Smithsonian URLs change frequently and have complex formatting rules that only this
+    tool knows how to handle correctly.
 
     Examples:
-        # CORRECT: Always use the tool
+        # ✅ CORRECT: Use the tool
         url = get_object_url(object_identifier="F1900.47")
         # Returns: "https://asia.si.edu/object/F1900.47/"
 
-        # WRONG: Don't do this - it will fail with wrong case/formatting
-        # url = "https://asia.si.edu/object/f1900.47"  # Wrong!
+        # ❌ WRONG: Manual construction (will fail)
+        # url = "https://collections.si.edu/search/detail/edanmdm-hmsg_80.107"  # FAILS!
 
-        # Get URL using Record ID
-        url = get_object_url(object_identifier="fsg_F1900.47")
-
-        # Get URL using Internal ID
-        url = get_object_url(object_identifier="ld1-1643390182193-1643390183699-0")
+        # ✅ CORRECT: Use tool with any valid identifier
+        url = get_object_url(object_identifier="edanmdm-hmsg_80.107")
     """
     # Input validation
     if not object_identifier or object_identifier.strip() == "":
@@ -1306,10 +1543,18 @@ async def get_object_url(
 
         api_client = await get_api_client(ctx)
 
-        # Try multiple lookup strategies in order of user-friendliness
+        # Try multiple lookup strategies in order of reliability
         lookup_strategies = []
 
-        # Strategy 1: Try as Accession Number (most user-friendly)
+        # Strategy 1: If it looks like a record_id (contains underscore), construct URL directly
+        if "_" in object_identifier and not object_identifier.startswith("ld1-"):
+            from .utils import construct_url_from_record_id
+            constructed_url = await construct_url_from_record_id(object_identifier)
+            if constructed_url:
+                logger.info("Constructed URL from record_id: %s -> %s", object_identifier, constructed_url)
+                return constructed_url
+
+        # Strategy 2: Try as Accession Number (most user-friendly)
         lookup_strategies.append(object_identifier)
 
         # Strategy 2: Try as Record ID format (museum_code + accession)
@@ -1383,8 +1628,12 @@ async def get_object_url(
         logger.error("API error retrieving object URL %s: %s", object_identifier, e)
         raise RuntimeError(
             f"Failed to retrieve object URL '{object_identifier}': {e}. "
-            "Try using a different identifier format (Accession Number, Record ID, or Internal ID). "
-            "REMEMBER: Always use this tool for URLs - never construct them manually as they often fail due to case sensitivity."
+            "This may be due to an invalid ID format or the object not existing. "
+            "Try these solutions: "
+            "1. Use search tools (search_collections, simple_explore) first to find the correct object ID "
+            "2. Try different identifier formats (Accession Number like 'F1900.47', Record ID like 'nmah_1448973', or full API ID) "
+            "3. Verify the museum name and object name are correct "
+            "REMEMBER: Never construct URLs manually - always use this tool with IDs from search results."
         ) from e
 
 
@@ -1622,8 +1871,137 @@ async def get_objects_on_view(
         return results
 
     except Exception as e:
-        logger.error("Error getting museum highlights: %s", e)
-        raise RuntimeError(f"Failed to get museum highlights: {e}") from e
+        logger.error("Error getting objects on view: %s", e)
+        raise RuntimeError(f"Failed to get objects on view: {e}") from e
+
+
+@mcp.tool()
+async def find_on_view_items(
+    query: str,
+    unit_code: Optional[str] = None,
+    museum: Optional[str] = None,
+    limit: int = 500,
+    offset: int = 0,
+    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+) -> SearchResult:
+    """
+    Find objects currently on physical exhibit that match a specific search query.
+
+    This tool provides MORE RELIABLE results than basic search with on_view filter
+    for finding objects that are both relevant to your query AND currently on display.
+    Use this for comprehensive on-view searches that may require checking beyond 1000 results.
+
+    This tool automatically paginates through up to 10,000 results across multiple API calls
+    (default 5,000) to find on-view objects matching your query, ensuring comprehensive coverage
+    even when relevant objects don't appear in the first 1000 results.
+
+    Args:
+        query: Search query (required) - keywords, titles, descriptions to match
+        unit_code: Optional filter by specific Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM")
+        museum: Optional filter by museum name (e.g., "Smithsonian Asian Art Museum", "Natural History")
+        limit: Maximum number of results to return (default: 500, max: 1000)
+        offset: Number of results to skip for pagination (default: 0)
+
+    Returns:
+        Search results containing objects matching the query that are currently on physical exhibit
+
+    Examples:
+        # Find paintings currently on view
+        find_on_view_items(query="painting", unit_code="SAAM")
+
+        # Find dinosaur exhibits at Natural History
+        find_on_view_items(query="dinosaur", museum="Natural History Museum")
+
+        # General search for on-view items matching "space"
+        find_on_view_items(query="space")
+    """
+    try:
+        # Validate inputs
+        limit = max(1, min(limit, 1000))
+
+        # Resolve museum name to unit code if provided
+        resolved_unit_code = unit_code
+        if museum and not unit_code:
+            from .utils import resolve_museum_code
+            resolved_unit_code = resolve_museum_code(museum)
+        elif unit_code:
+            resolved_unit_code = unit_code
+
+        # Get API client
+        api_client = await get_api_client(ctx)
+
+        # For comprehensive on-view searches, we need to search beyond the 1000-result limit
+        # The API has a hard limit of 1000 results per search, so we use pagination
+        max_search_results = 5000  # Search up to 5000 results to find on-view items
+        all_matching_objects = []
+        current_offset = 0
+
+        while current_offset < max_search_results:
+            # Search with current pagination
+            search_filters = CollectionSearchFilter(
+                query=query,
+                unit_code=resolved_unit_code,
+                object_type=None,
+                date_start=None,
+                date_end=None,
+                maker=None,
+                material=None,
+                topic=None,
+                has_images=None,
+                is_cc0=None,
+                on_view=None,
+                limit=min(1000, max_search_results - current_offset),
+                offset=current_offset,
+            )
+
+            batch_results = await api_client.search_collections(
+                filters=search_filters,
+            )
+
+            if not batch_results.objects:
+                break  # No more results
+
+            # Filter for on-view objects using enhanced detection
+            def is_effectively_on_view(obj):
+                if obj.is_on_view:  # Direct API flag
+                    return True
+                if obj.exhibition_title or obj.exhibition_location:  # Exhibition context
+                    return True
+                return False
+
+            on_view_matches = [obj for obj in batch_results.objects if is_effectively_on_view(obj)]
+            all_matching_objects.extend(on_view_matches)
+
+            # Check if we have enough results or if we've reached the end
+            if len(all_matching_objects) >= limit + offset or len(batch_results.objects) < 1000:
+                break
+
+            current_offset += len(batch_results.objects)
+
+        # Apply offset and limit to our collected results
+        final_objects = all_matching_objects[offset:offset + limit]
+
+        results = SearchResult(
+            objects=final_objects,
+            total_count=len(all_matching_objects),
+            returned_count=len(final_objects),
+            offset=offset,
+            has_more=(offset + len(final_objects)) < len(all_matching_objects),
+            next_offset=offset + limit if (offset + len(final_objects)) < len(all_matching_objects) else None,
+        )
+
+        logger.info(
+            "Comprehensive on-view search for '%s': found %d on-view matches out of %d total results searched",
+            query,
+            results.returned_count,
+            len(all_matching_objects),
+        )
+
+        return results
+
+    except Exception as e:
+        logger.error("Error in find_on_view_items: %s", e)
+        raise RuntimeError(f"Failed to find on-view items: {e}") from e
 
 
 @mcp.tool()
