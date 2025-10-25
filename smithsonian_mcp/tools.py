@@ -213,7 +213,8 @@ async def simple_search(
     the key information you need. Use the first_object_id with get_object_details().
 
     🚨 CRITICAL: NEVER construct URLs from the returned object IDs!
-    Always use get_object_url(object_identifier=object_id) to get valid URLs.
+    For URLs: Use get_object_url(object_identifier=first_object_id) OR
+    search_and_get_first_url() for one-step search + URL retrieval.
     Manual URL construction like "https://collections.si.edu/search/detail/{id}" WILL FAIL.
 
     NOTE: When a unit_code is specified, results are automatically prioritized to show
@@ -1053,6 +1054,8 @@ async def search_and_get_first_url(
                 return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve URL"
 
             # Special handling for NZP - construct URL from idsId in record_id
+            # NZP uses a different URL pattern: https://ids.si.edu/ids/deliveryService?id={idsId}
+            # The idsId is extracted from record_id format: nzp_{idsId}
             if result.unit_code == "NZP" and result.record_id:
                 parts = result.record_id.split("_", 1)
                 if len(parts) == 2:
@@ -1075,14 +1078,6 @@ async def search_and_get_first_url(
                     url = valid_url
                 else:
                     return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve valid URL"
-
-            # Prefer record_link if different and valid
-            if valid_record_link and valid_record_link != valid_url:
-                url = valid_record_link
-            elif valid_url:
-                url = valid_url
-            else:
-                return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve valid URL"
 
         # Build a nice summary
         title = first_object.title or "Untitled"
@@ -1492,12 +1487,11 @@ async def get_object_url(
     - Different museums using different URL patterns
     - API updates that break old URL structures
 
-    ❌ WRONG - These will FAIL:
-    "https://collections.si.edu/search/detail/{id}"
-    "https://asia.si.edu/object/{id}"
-    "https://americanhistory.si.edu/collections/{id}"
+    ✅ RECOMMENDED: Use search_and_get_first_url() for one-step search + URL retrieval
+    ✅ ALTERNATIVE: Use this tool with IDs from search_collections() or simple_search()
+    ❌ WRONG: Manual construction or guessing URL patterns
 
-    ✅ CORRECT - Always use this tool:
+    Example:
     url = get_object_url(object_identifier="edanmdm-hmsg_80.107")
 
     This tool provides the exact, validated URL from Smithsonian's authoritative record_link field.

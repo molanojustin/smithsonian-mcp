@@ -170,7 +170,8 @@ def get_object_url_prompt(object_name: str) -> List[base.Message]:
         base.Message(
             role="user",
             content=f"Find the Smithsonian object called '{object_name}' and get its official web page URL. "
-            f"Use the get_object_url() tool with the object's identifier - do not construct URLs manually."
+            f"Use the search_and_get_first_url() tool for one-step search + URL retrieval, "
+            f"or use get_object_url() with the object's identifier - do not construct URLs manually."
         )
     ]
 
@@ -233,9 +234,9 @@ def find_object_url_prompt(object_description: str, museum: Optional[str] = None
         base.Message(
             role="user",
             content=f"To find the URL for '{object_description}'{museum_text}: "
-            f"1. Use search tools (search_collections, simple_explore) to find the correct object "
-            f"2. Get the object's ID from search results "
-            f"3. Use get_object_url() with that exact ID "
+            f"1. **Easiest**: Use search_and_get_first_url() for one-step search + URL retrieval "
+            f"2. **Alternative**: Use search tools (search_collections, simple_explore) to find the correct object, "
+            f"then get_object_url() with that exact ID "
             f"Never construct URLs manually or use external Smithsonian search - always use our tools first."
         )
     ]
