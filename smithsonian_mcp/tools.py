@@ -1052,9 +1052,29 @@ async def search_and_get_first_url(
             if not result:
                 return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve URL"
 
-            # Validate and select the best URL (same logic as get_object_url)
-            valid_url = validate_url(str(result.url) if result.url else None)
-            valid_record_link = validate_url(str(result.record_link) if result.record_link else None)
+            # Special handling for NZP - construct URL from idsId in record_id
+            if result.unit_code == "NZP" and result.record_id:
+                parts = result.record_id.split("_", 1)
+                if len(parts) == 2:
+                    idsId = parts[1]  # Extract idsId from record_id (format: nzp_{idsId})
+                    constructed_nzp_url = f"https://ids.si.edu/ids/deliveryService?id={idsId}"
+                    if validate_url(constructed_nzp_url):
+                        url = constructed_nzp_url
+                        logger.info("Constructed NZP URL from record_id: %s -> %s", result.record_id, url)
+
+            # If we didn't construct a URL for NZP, use normal validation logic
+            if not url:
+                # Validate and select the best URL (same logic as get_object_url)
+                valid_url = validate_url(str(result.url) if result.url else None)
+                valid_record_link = validate_url(str(result.record_link) if result.record_link else None)
+
+                # Prefer record_link if different and valid
+                if valid_record_link and valid_record_link != valid_url:
+                    url = valid_record_link
+                elif valid_url:
+                    url = valid_url
+                else:
+                    return f"Found object '{first_object.title or 'Untitled'}' but could not retrieve valid URL"
 
             # Prefer record_link if different and valid
             if valid_record_link and valid_record_link != valid_url:
