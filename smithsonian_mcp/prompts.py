@@ -234,8 +234,9 @@ def find_object_url_prompt(object_description: str, museum: Optional[str] = None
         base.Message(
             role="user",
             content=f"To find the URL for '{object_description}'{museum_text}: "
-            f"1. **Easiest**: Use search_and_get_first_url() for one-step search + URL retrieval "
-            f"2. **Alternative**: Use search tools (search_collections, simple_explore) to find the correct object, "
+            f"1. If using a museum name, FIRST call resolve_museum_name() to get the correct unit code "
+            f"2. **Easiest**: Use search_and_get_first_url() with the resolved museum code for one-step search + URL retrieval "
+            f"3. **Alternative**: Use search tools (search_collections, simple_explore) with the resolved unit_code to find the correct object, "
             f"then get_object_url() with that exact ID "
             f"Never construct URLs manually or use external Smithsonian search - always use our tools first."
         )
@@ -258,8 +259,9 @@ def museum_object_search_prompt(object_name: str, museum_name: str) -> List[base
         base.Message(
             role="user",
             content=f"Find '{object_name}' at the {museum_name}. "
-            f"Use search tools with proper museum filtering to locate the correct object, "
-            f"then use get_object_details() or get_object_url() with the ID from results. "
+            f"First use resolve_museum_name() to validate the museum name and get the correct unit code, "
+            f"then use search tools with the resolved unit_code to locate the correct object. "
+            f"Finally use get_object_details() or get_object_url() with the ID from results. "
             f"Do not use external search engines or construct URLs manually."
         )
     ]
@@ -287,3 +289,26 @@ def search_and_get_url_prompt(object_description: str, museum: Optional[str] = N
             f"Do NOT use separate search + get_object_url calls, and NEVER construct URLs manually."
         )
     ]
+
+
+@mcp.prompt(title="Resolve Museum Name")
+def resolve_museum_prompt(museum_name: str) -> List[base.Message]:
+    """
+    Convert a museum name to the correct Smithsonian unit code.
+
+    This prompt ensures proper museum name resolution before search operations,
+    preventing common mistakes like confusing similar museum names.
+
+    Args:
+        museum_name: Museum name in plain English (e.g., "Smithsonian Asian Art Museum")
+    """
+    return [
+        base.Message(
+            role="user",
+            content=f"Convert '{museum_name}' to the correct Smithsonian unit code. "
+            f"Use resolve_museum_name() - this prevents common mistakes like confusing "
+            f"'Smithsonian Asian Art Museum' (FSG) with 'Smithsonian American Art Museum' (SAAM), "
+            f"or 'National Zoo' (NZP) with 'Natural History Museum' (NMNH)."
+        )
+    ]
+

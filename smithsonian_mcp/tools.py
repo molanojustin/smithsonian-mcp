@@ -222,6 +222,10 @@ async def simple_search(
     invalid unit_code, this tool will automatically attempt to resolve it as a museum name.
     For best results, use resolve_museum_name() first or provide the museum name directly.
 
+    IMPORTANT: For complex museum names like "Smithsonian National Zoo" or "Smithsonian Asian Art Museum",
+    ALWAYS use resolve_museum_name() first to ensure correct resolution and avoid confusion between
+    similar museum names (e.g., Asian Art FSG vs American Art SAAM, National Zoo NZP vs Natural History NMNH).
+
     Args:
         query: General search terms (keywords, titles, descriptions)
         unit_code: Filter by Smithsonian unit code (e.g., "NMNH", "NPG", "SAAM")
@@ -932,6 +936,9 @@ async def search_and_get_first_url(
 
     NOTE: When a unit_code is specified, results are automatically prioritized to show
     objects from that museum first (IDs starting with the unit code).
+
+    IMPORTANT: For complex museum names like "Smithsonian National Zoo" or "Smithsonian Asian Art Museum",
+    use resolve_museum_name() first to ensure correct resolution.
 
     Args:
         query: General search terms (keywords, titles, descriptions)
