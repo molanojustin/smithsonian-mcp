@@ -1022,16 +1022,16 @@ async def search_and_get_first_url(
         # Get the URL for the first object - prioritize record_id if available
         from .utils import validate_url, construct_url_from_record_id
 
-        # Strategy 1: If object has record_id, construct URL directly (most reliable)
+        # Strategy 1: Try to construct URL from record_id if available (most reliable)
+        url = None
         if first_object.record_id:
             constructed_url = await construct_url_from_record_id(first_object.record_id)
             if constructed_url:
                 logger.info("Constructed URL from record_id: %s -> %s", first_object.record_id, constructed_url)
                 url = constructed_url
-            else:
-                return f"Found object '{first_object.title or 'Untitled'}' but could not construct URL from record_id"
-        else:
-            # Fallback: Use same logic as get_object_url tool
+        
+        # Strategy 2: If record_id construction failed, use fallback logic
+        if not url:
             # Try multiple lookup strategies in order of user-friendliness
             lookup_strategies = [object_id]  # Start with the object_id
 
