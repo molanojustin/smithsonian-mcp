@@ -157,16 +157,39 @@ def prioritize_objects_by_unit_code(objects: List, unit_code: Optional[str]) -> 
     return prioritized + others
 
 
+def _normalize_museum_code(record_id_prefix: str) -> str:
+    """Normalize record_id prefix to museum code key used in MUSEUM_URL_PATTERNS."""
+    prefix = record_id_prefix.lower()
+
+    # Handle NMNH sub-museums with long prefixes
+    if prefix.startswith("nmnh"):
+        if "invertebratezoology" in prefix:
+            return "NMNHINV"
+        elif "anthropology" in prefix:
+            return "NMNHANTHRO"
+        elif "education" in prefix:
+            return "NMNHEDUCATION"
+        elif "mineralsciences" in prefix:
+            return "NMNHMINSCI"
+        elif "paleobiology" in prefix:
+            return "NMNHPALEO"
+        # Add more as needed
+        else:
+            return prefix.upper()  # fallback
+
+    return prefix.upper()
+
+
 async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str]:
     """
-    Construct a URL from a record_id using the museum's official website.
+    Construct a URL from a record_id using museum-specific URL patterns.
 
-    This function extracts the museum code from the record_id (e.g., "nmah" from "nmah_1448973"),
-    looks up the museum's website, and constructs the URL using the format:
-    website + "/collections/object/" + record_id
+    This function uses predefined URL construction patterns for each Smithsonian museum
+    to generate accurate object URLs. Different museums have different URL formats and
+    identifier requirements.
 
     Args:
-        record_id: The record identifier (e.g., "nmah_1448973")
+        record_id: The record identifier (e.g., "nmah_1448973", "fsg_F1900.47")
 
     Returns:
         Constructed URL string, or None if museum not found or record_id malformed
@@ -174,28 +197,116 @@ async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str
     Examples:
         construct_url_from_record_id("nmah_1448973")
         # Returns: "https://americanhistory.si.edu/collections/object/nmah_1448973"
+
+        construct_url_from_record_id("fsg_F1900.47")
+        # Returns: "https://asia.si.edu/object/F1900.47"
+
+        construct_url_from_record_id("nmnhinvertebratezoology_14688577")
+        # Returns: "https://naturalhistory.si.edu/object/nmnhinvertebratezoology_14688577"
     """
     if not record_id or "_" not in record_id:
         return None
 
-    # Extract museum code (part before first underscore)
-    museum_code = record_id.split("_", 1)[0].upper()
+    # Extract components from record_id
+    parts = record_id.split("_", 1)
+    if len(parts) != 2:
+        return None
 
-    # Import here to avoid circular imports
+    record_id_prefix = parts[0]
+    accession = parts[1]
+
+    # Normalize to museum code
+    museum_code = _normalize_museum_code(record_id_prefix)
+
+    # Import patterns
+    from .constants import MUSEUM_URL_PATTERNS
+
+    pattern = MUSEUM_URL_PATTERNS.get(museum_code)
+    if not pattern:
+        # Unknown museum, fall back to API lookup
+        return await _get_url_from_api_record_id(record_id)
+
+    # Handle different identifier types
+    identifier_type = pattern["identifier"]
+    base_url = pattern["base_url"]
+    path_template = pattern["path_template"]
+
+    if identifier_type == "record_ID":
+        # Use the full record_id
+        identifier = record_id
+    elif identifier_type == "accession":
+        # Use just the accession part
+        identifier = accession
+    elif identifier_type in ["record_link", "guid", "url", "idsId"]:
+        # Need to get this from API
+        return await _get_url_from_api_record_id(record_id)
+    else:
+        # Unknown identifier type, fall back to API
+        return await _get_url_from_api_record_id(record_id)
+
+    # Handle template variables in base_url
+    if "{record_link}" in base_url or "{guid}" in base_url:
+        # Need API data for these
+        return await _get_url_from_api_record_id(record_id)
+
+    # Construct the URL
+    try:
+        url = base_url.rstrip("/")
+        if path_template:
+            # Format the path template with available variables
+            formatted_path = path_template.format(
+                record_ID=record_id,
+                accession=accession,
+                url=record_id,  # fallback
+                idsId=record_id,  # fallback
+                guid=record_id,  # fallback
+            )
+            url += formatted_path
+        return url
+    except (KeyError, ValueError):
+        # Template formatting failed, fall back to API
+        return await _get_url_from_api_record_id(record_id)
+
+
+async def _get_url_from_api_record_id(record_id: str) -> Optional[str]:
+    """
+    Fallback function to get URL from API when pattern-based construction fails
+    or when API data is required (record_link, guid, etc.).
+    """
     from .api_client import SmithsonianAPIClient
+    from .models import CollectionSearchFilter
 
     client = SmithsonianAPIClient()
     try:
         await client.connect()
-        units = await client.get_units()
-        museum = next((u for u in units if u.code == museum_code), None)
-        website = str(museum.website) if museum and museum.website else None
+
+        # Try to find the object by record_id
+        # First, search for it
+        filters = CollectionSearchFilter(
+            query=record_id,
+            unit_code=None,
+            object_type=None,
+            date_start=None,
+            date_end=None,
+            maker=None,
+            material=None,
+            topic=None,
+            has_images=None,
+            is_cc0=None,
+            on_view=None,
+            limit=1,
+            offset=0,
+        )
+
+        results = await client.search_collections(filters=filters)
+        if results.objects and results.objects[0].record_link:
+            return str(results.objects[0].record_link)
+
+        # If that doesn't work, try direct lookup if the API supports it
+        # For now, return None if we can't construct it
+        return None
+
+    except Exception:
+        return None
     finally:
         await client.disconnect()
-
-    if website:
-        # Remove trailing slash from website if present
-        website = website.rstrip("/")
-        return f"{website}/collections/object/{record_id}"
-
-    return None

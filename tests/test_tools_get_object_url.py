@@ -2,8 +2,9 @@
 Tests for get_object_url tool functionality.
 """
 
-import pytest
 import json
+
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from smithsonian_mcp.api_client import SmithsonianAPIClient
@@ -70,7 +71,7 @@ class TestGetObjectUrl:
                 result = await tools_module.get_object_url.fn(object_identifier="fsg_F1900.47")
 
                 # Should return the constructed URL from record_id
-                assert result == "https://www.asia.si.edu/collections/object/fsg_F1900.47"
+                assert result == "https://asia.si.edu/object/F1900.47"
 
     @pytest.mark.asyncio
     async def test_get_object_url_internal_id(self, thunder_god_data, thunder_god_object):
@@ -87,7 +88,9 @@ class TestGetObjectUrl:
                 from smithsonian_mcp import tools as tools_module
 
                 # Test with Internal ID
-                result = await tools_module.get_object_url.fn(object_identifier="ld1-1643390182193-1643390183699-0")
+                result = await tools_module.get_object_url.fn(
+                    object_identifier="ld1-1643390182193-1643390183699-0"
+                )
 
                 # Should return the record_link URL
                 assert result == "https://asia.si.edu/object/F1900.47/"
@@ -146,6 +149,7 @@ class TestGetObjectUrl:
         # Create object with invalid URLs
         invalid_object = SmithsonianObject(
             id="test-id",
+            record_id="test_record_id",
             title="Test Object",
             url=None,  # No valid URL
             record_link=None,  # No valid record_link

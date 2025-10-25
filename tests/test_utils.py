@@ -94,10 +94,57 @@ def test_resolve_museum_code_expanded_map():
 async def test_construct_url_from_record_id():
     """Test URL construction from record_id."""
     from smithsonian_mcp.utils import construct_url_from_record_id
+    from unittest.mock import patch, AsyncMock
 
-    # Test with valid record_id
+    # Test with valid record_id - NMAH
     url = await construct_url_from_record_id("nmah_1448973")
     assert url == "https://americanhistory.si.edu/collections/object/nmah_1448973"
+
+    # Test FSG (uses accession identifier)
+    url = await construct_url_from_record_id("fsg_F1900.47")
+    assert url == "https://asia.si.edu/object/F1900.47"
+
+    # Test museums that construct URLs directly (record_ID and accession identifiers with plain base_url)
+    test_cases = [
+        ("nmaahc_2022.91.10ab", "https://nmaahc.si.edu/object/nmaahc_2022.91.10ab"),
+        ("nmnhmineralsciences_17183750", "https://naturalhistory.si.edu/object/nmnhmineralsciences_17183750"),
+        ("nmnhpaleobiology_17134484", "https://naturalhistory.si.edu/object/nmnhpaleobiology_17134484"),
+        ("nmnhanthropology_8352715", "https://naturalhistory.si.edu/object/nmnhanthropology_8352715"),
+        ("nmnheducation_10841904", "https://naturalhistory.si.edu/object/nmnheducation_10841904"),
+        ("nmnhinvertebratezoology_14688577", "https://naturalhistory.si.edu/object/nmnhinvertebratezoology_14688577"),
+        ("npg_NPG.2002.184", "https://npg.si.edu/object/npg_NPG.2002.184"),
+        ("npm_0.293996.232", "https://postalmuseum.si.edu/object/npm_0.293996.232"),
+        ("siris_arc_403511", "https://siarchives.si.edu/collections/siris_arc_403511"),
+    ]
+
+    for record_id, expected_url in test_cases:
+        url = await construct_url_from_record_id(record_id)
+        assert url == expected_url, f"Failed for {record_id}: expected {expected_url}, got {url}"
+
+    # Test museums that require API data (guid, record_link, url, idsId, or template variables in base_url)
+    api_required_cases = [
+        "saam_30913",                    # uses {record_link} in base_url
+        "nasm_nv913e903df",              # uses {record_link} in base_url
+        "hmsg_66.1608",                  # uses url identifier
+        "nmafa_ys7a3f230ba",             # uses {guid} in base_url
+        "nmai_ws69d7d97b6",              # uses {record_link} in base_url
+        "acm_dl8b7ab6959",               # uses {guid} in base_url
+        "nzp_20190815_002RP",            # uses idsId identifier
+        "chndm_33665",                   # uses {record_link} in base_url
+        "nmnhbirds_352f6df2a",           # uses {guid} in base_url
+        "nmnhbotany_32cbf4c79",          # uses {guid} in base_url
+        "nmnhento_339e344dc",            # uses {guid} in base_url
+        "nmnhfishes_3ccbe2c66",          # uses {guid} in base_url
+        "nmnhherps_359523727",           # uses {guid} in base_url
+        "nmnhmammals_30b523759",         # uses {guid} in base_url
+    ]
+
+    # Mock the API fallback to return None
+    with patch('smithsonian_mcp.utils._get_url_from_api_record_id', return_value=None):
+        for record_id in api_required_cases:
+            url = await construct_url_from_record_id(record_id)
+            # With mocked API returning None, these should return None
+            assert url is None, f"Expected None for API-required museum {record_id}, got {url}"
 
     # Test with invalid record_id (no underscore)
     url = await construct_url_from_record_id("invalid")
@@ -110,6 +157,11 @@ async def test_construct_url_from_record_id():
     # Test with None
     url = await construct_url_from_record_id(None)
     assert url is None
+
+    # Test unknown museum (should fall back to API, mocked to return None)
+    with patch('smithsonian_mcp.utils._get_url_from_api_record_id', return_value=None):
+        url = await construct_url_from_record_id("unknown_123")
+        assert url is None
 
 
 @pytest.mark.asyncio
