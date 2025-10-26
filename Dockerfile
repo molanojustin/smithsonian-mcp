@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml uv.lock ./
 COPY smithsonian_mcp/ ./smithsonian_mcp/
+COPY README.md ./
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e .
