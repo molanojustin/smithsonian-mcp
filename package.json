@@ -18,7 +18,9 @@
     "bump:patch": "npm version patch -m \"chore(release): %s\" --tag-version-prefix=\"v\"",
     "bump:minor": "npm version minor -m \"feat(release): %s\" --tag-version-prefix=\"v\"",
     "bump:major": "npm version major -m \"feat(release): %s\" --tag-version-prefix=\"v\"",
-    "release": "npm run check-version && npm test && npm publish && git push --follow-tags"
+    "docker:build": "docker buildx build --platform linux/amd64,linux/arm64 -t molanojustin/smithsonian-mcp:latest -t molanojustin/smithsonian-mcp:v$(node -p \"require('./package.json').version\") .",
+    "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t molanojustin/smithsonian-mcp:latest -t molanojustin/smithsonian-mcp:v$(node -p \"require('./package.json').version\") --push .",
+    "release": "npm run check-version && npm test && npm publish && npm run docker:push && git push --follow-tags"
   },
   "keywords": [
     "mcp",

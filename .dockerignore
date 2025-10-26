@@ -1,0 +1,58 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.venv
+venv
+env
+.pytest_cache
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Git
+.git
+.gitignore
+.github
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# Development
+dev/
+tests/
+examples/
+scripts/
+
+# Documentation
+*.md
+!README.md
+TROUBLESHOOTING.md
+PAGINATION_FIX_SUMMARY.md
+TESTS_README.md
+AGENTS.md
+improvements.md
+
+# Misc
+*.log
+.npmignore
+.claude
+smithsonian-mcp-workspace.code-workspace
