@@ -134,7 +134,6 @@ mcpo --config mcpo-config.json --port 8001
 3. **Check the documentation**:
    - This troubleshooting guide
    - [README.md](README.md) for setup instructions
-   - [CLAUDE.md](CLAUDE.md) for development guidance
 
 ## Diagnostic Commands
 
