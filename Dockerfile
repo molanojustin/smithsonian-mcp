@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:alpine
 
 LABEL org.opencontainers.image.source="https://github.com/molanojustin/smithsonian-mcp"
 LABEL org.opencontainers.image.description="Smithsonian MCP Server - Model Context Protocol server for Smithsonian Open Access collections"
