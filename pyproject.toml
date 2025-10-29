@@ -1,6 +1,6 @@
 [project]
 name = "smithsonian-mcp"
-version = "1.2.2"
+version = "1.2.3"
 description = "A Model Context Protocol (MCP) server that provides AI assistants with access to the Smithsonian Institution's Open Access collections."
 readme = "README.md"
 requires-python = ">=3.10.0"
