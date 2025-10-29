@@ -6,9 +6,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates
 
 COPY pyproject.toml uv.lock README.md ./
 COPY smithsonian_mcp/ ./smithsonian_mcp/
