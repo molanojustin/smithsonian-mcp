@@ -32,7 +32,7 @@ classifiers = [
 
 # Production dependencies only
 dependencies = [
-    "fastmcp>=2.0.0",
+    "fastmcp>=2.13.0",
     "httpx>=0.25.0",
     "pydantic>=2.0.0",
     "python-decouple>=3.8.0",
