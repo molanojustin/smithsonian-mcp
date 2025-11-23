@@ -1,0 +1,129 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.molanojustin/smithsonian",
+  "title": "Smithsonian Open Access",
+  "description": "Access and explore the Smithsonian Institution's Open Access collections with over 3 million collection objects from America's national museums. Search collections, get object details, browse museums, find objects on physical display, and access high-resolution images with comprehensive metadata.",
+  "license": "MIT",
+  "repository": {
+    "url": "https://github.com/molanojustin/smithsonian-mcp",
+    "source": "github"
+  },
+  "version": "1.2.3",
+  "categories": ["education", "research"],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@molanojustin/smithsonian-mcp",
+      "version": "1.2.3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SMITHSONIAN_API_KEY",
+          "description": "Your API key from api.data.gov for accessing the Smithsonian Open Access API",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
+    },
+    {
+      "registryType": "pypi",
+      "identifier": "smithsonian-mcp",
+      "version": "1.2.3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SMITHSONIAN_API_KEY",
+          "description": "Your API key from api.data.gov for accessing the Smithsonian Open Access API",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "tools": true,
+    "resources": true,
+    "prompts": false
+  },
+  "tools": [
+    {
+      "name": "search_collections",
+      "description": "Search Smithsonian collections with advanced filters including query, museum, object type, date ranges, and more"
+    },
+    {
+      "name": "simple_explore",
+      "description": "Smart diverse sampling across museums and object types for general discovery"
+    },
+    {
+      "name": "continue_explore",
+      "description": "Get more results about the same topic while avoiding duplicates"
+    },
+    {
+      "name": "get_object_details",
+      "description": "Get detailed information about a specific Smithsonian collection object"
+    },
+    {
+      "name": "get_object_url",
+      "description": "Get validated object URLs with flexible identifier support"
+    },
+    {
+      "name": "search_and_get_first_url",
+      "description": "Search and get validated URL in one step"
+    },
+    {
+      "name": "get_objects_on_view",
+      "description": "Find objects currently on physical exhibit"
+    },
+    {
+      "name": "check_object_on_view",
+      "description": "Check if a specific object is on display"
+    },
+    {
+      "name": "get_smithsonian_units",
+      "description": "List all Smithsonian museums and institutions"
+    },
+    {
+      "name": "get_collection_statistics",
+      "description": "Get collection metrics with per-museum breakdowns"
+    },
+    {
+      "name": "get_museum_collection_types",
+      "description": "Get comprehensive list of object types available in each museum"
+    },
+    {
+      "name": "check_museum_has_object_type",
+      "description": "Check if a specific museum has objects of a particular type"
+    }
+  ],
+  "resources": [
+    {
+      "name": "search_context",
+      "description": "Search results as context data"
+    },
+    {
+      "name": "object_context",
+      "description": "Detailed object information as context"
+    },
+    {
+      "name": "units_context",
+      "description": "List of museums and institutions as context"
+    },
+    {
+      "name": "stats_context",
+      "description": "Collection statistics as context"
+    },
+    {
+      "name": "on_view_context",
+      "description": "Currently exhibited objects as context"
+    }
+  ],
+  "homepage": "https://github.com/molanojustin/smithsonian-mcp#readme",
+  "documentation": "https://github.com/molanojustin/smithsonian-mcp#readme",
+  "icon": "🏛️"
+}

@@ -4,6 +4,8 @@
 [![NPM Downloads](https://img.shields.io/npm/dm/%40molanojustin%2Fsmithsonian-mcp)](https://www.npmjs.com/package/@molanojustin%2Fsmithsonian-mcp)
 [![Docker](https://img.shields.io/docker/pulls/justinmol/smithsonian-mcp?logo=docker&label=Docker)](https://hub.docker.com/r/justinmol/smithsonian-mcp)
 
+<!-- mcp-name: io.github.molanojustin/smithsonian -->
+
 A **Model Context Protocol (MCP)** server that provides AI assistants with access to the **Smithsonian Institution's Open Access collections**. This server allows AI tools like Claude Desktop to search, explore, and analyze over 3 million collection objects from America's national museums.
 
 ## Quick Start
@@ -442,6 +444,47 @@ Please refer to [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 - **API Reference**: Complete tool and resource documentation in this README
 - **Deployment Guide**: Production deployment options included in setup instructions
 - **Integration Guide**: Claude Desktop and mcpo setup instructions in this README
+
+## MCP Registry
+
+This server is available in the [official MCP Registry](https://registry.modelcontextprotocol.io) and can be discovered by MCP clients.
+
+### Server Details
+
+- **Registry Name**: `io.github.molanojustin/smithsonian`
+- **npm Package**: `@molanojustin/smithsonian-mcp`
+- **PyPI Package**: `smithsonian-mcp`
+- **Documentation**: This README
+
+### Publishing to Registry
+
+To publish updates to the MCP Registry:
+
+1. **Update version** in both `package.json` and `pyproject.toml`
+2. **Update version** in `server.json` to match
+3. **Publish packages**:
+   ```bash
+   # Publish to npm
+   npm publish
+   
+   # Publish to PyPI (if package exists there)
+   python -m build
+   python -m twine upload dist/*
+   ```
+4. **Publish to Registry**:
+   ```bash
+   # Install mcp-publisher
+   brew install mcp-publisher
+   # Or download from: https://github.com/modelcontextprotocol/registry/releases
+   
+   # Login with GitHub
+   mcp-publisher login github
+   
+   # Publish server.json
+   mcp-publisher publish
+   ```
+
+The server uses GitHub-based authentication for registry publishing, which is verified through the `io.github.molanojustin` namespace prefix.
 
 ## Contributing
 
