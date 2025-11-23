@@ -1,6 +1,7 @@
 {
   "name": "@molanojustin/smithsonian-mcp",
   "version": "1.2.3",
+  "mcpName": "io.github.molanojustin/smithsonian",
   "description": "Model Context Protocol (MCP) server for Smithsonian Open Access collections",
   "main": "bin/smithsonian-mcp.js",
   "bin": {
@@ -62,6 +63,7 @@
     "README.md",
     "TROUBLESHOOTING.md",
     "LICENSE.md",
+    "server.json",
     "pyproject.toml",
     "uv.lock",
     "smithsonian_mcp/",
