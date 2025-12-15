@@ -76,7 +76,7 @@
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
-    "@types/node": "^24.9.1"
+    "@types/node": "^25.0.2"
   },
   "publishConfig": {
     "access": "public"
