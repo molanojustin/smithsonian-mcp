@@ -6,6 +6,10 @@
 
 A **Model Context Protocol (MCP)** server that provides AI assistants with access to the **Smithsonian Institution's Open Access collections**. This server allows AI tools like Claude Desktop to search, explore, and analyze over 3 million collection objects from America's national museums.
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/molanojustin-smithsonian-mcp).
+
 ## Quick Start
 
 ### Option 1: npm/npx Installation (Easiest)
