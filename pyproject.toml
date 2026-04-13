@@ -47,7 +47,7 @@ Issues = "https://github.com/molanojustin/smithsonian-mcp/issues"
 [dependency-groups]
 dev = [
     "black>=23.0.0",
-    "pylint>=2.17.0",
+    "pylint>=4.0.5",
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
 ]
