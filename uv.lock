@@ -1634,7 +1634,7 @@ wheels = [
 
 [[package]]
 name = "smithsonian-mcp"
-version = "1.2.8"
+version = "1.2.9"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1653,17 +1653,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp", specifier = ">=2.13.0" },
-    { name = "httpx", specifier = ">=0.25.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "fastmcp", specifier = ">=3.2.3" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pydantic", specifier = ">=2.13.0" },
     { name = "python-decouple", specifier = ">=3.8.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "black", specifier = ">=23.0.0" },
-    { name = "pylint", specifier = ">=2.17.0" },
-    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pylint", specifier = ">=4.0.5" },
+    { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=0.21.0" },
 ]
 
