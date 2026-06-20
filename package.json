@@ -1,6 +1,6 @@
 {
   "name": "@molanojustin/smithsonian-mcp",
-  "version": "1.2.6",
+  "version": "1.2.8",
   "description": "Model Context Protocol (MCP) server for Smithsonian Open Access collections",
   "main": "bin/smithsonian-mcp.js",
   "bin": {
@@ -70,13 +70,13 @@
     ".env.example"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "cross-spawn": "^7.0.6",
-    "dotenv": "^17.3.1"
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
-    "@types/node": "^25.5.0"
+    "@types/node": "^26.0.0"
   },
   "publishConfig": {
     "access": "public"
