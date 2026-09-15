@@ -95,7 +95,7 @@ class TestMuseumHighlightsOnView:
 
                 mock_client_instance.search_collections.return_value = mixed_results
 
-                result = await tools_module.get_museum_highlights_on_view.fn(
+                result = await tools_module.get_museum_highlights_on_view(
                     unit_code="FSG", limit=10
                 )
 
@@ -132,7 +132,7 @@ class TestMuseumHighlightsOnView:
 
                 mock_client_instance.search_collections.return_value = empty_result
 
-                result = await tools_module.get_museum_highlights_on_view.fn(
+                result = await tools_module.get_museum_highlights_on_view(
                     museum="Smithsonian Asian Art Museum"
                 )
 
@@ -169,7 +169,7 @@ class TestMuseumHighlightsOnView:
 
                 mock_client_instance.search_collections.return_value = mock_result
 
-                result = await tools_module.get_museum_highlights_on_view.fn(
+                result = await tools_module.get_museum_highlights_on_view(
                     museum="Smithsonian Asian Art Museum", limit=5
                 )
 
@@ -220,7 +220,7 @@ class TestMuseumHighlightsOnView:
 
                 mock_client_instance.search_collections.return_value = mixed_results
 
-                result = await tools_module.get_museum_highlights_on_view.fn(limit=10)
+                result = await tools_module.get_museum_highlights_on_view(limit=10)
 
                 # Should return results (exact ordering depends on implementation)
                 assert isinstance(result, SearchResult)

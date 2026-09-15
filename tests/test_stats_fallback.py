@@ -53,7 +53,7 @@ async def test_get_stats_context_handles_stats_endpoint_failure(monkeypatch):
 
     from smithsonian_mcp import resources as resources_module
 
-    result = await resources_module.get_stats_context.fn()
+    result = await resources_module.get_stats_context()
 
     assert "Total Objects: 120" in result
     assert "Digitized Objects: 0" in result

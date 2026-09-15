@@ -70,13 +70,13 @@
     ".env.example"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "cross-spawn": "^7.0.6",
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
-    "@types/node": "^26.0.0"
+    "@types/node": "^26.5.1"
   },
   "publishConfig": {
     "access": "public"

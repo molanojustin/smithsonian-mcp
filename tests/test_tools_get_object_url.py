@@ -45,7 +45,7 @@ class TestGetObjectUrl:
                 from smithsonian_mcp import tools as tools_module
 
                 # Test with Accession Number
-                result = await tools_module.get_object_url.fn(object_identifier="F1900.47")
+                result = await tools_module.get_object_url(object_identifier="F1900.47")
 
                 # Should return the record_link URL (preferred over url field)
                 assert result == "https://asia.si.edu/object/F1900.47/"
@@ -68,7 +68,7 @@ class TestGetObjectUrl:
                 from smithsonian_mcp import tools as tools_module
 
                 # Test with Record ID
-                result = await tools_module.get_object_url.fn(object_identifier="fsg_F1900.47")
+                result = await tools_module.get_object_url(object_identifier="fsg_F1900.47")
 
                 # Should return the constructed URL from record_id
                 assert result == "https://asia.si.edu/object/F1900.47"
@@ -88,7 +88,7 @@ class TestGetObjectUrl:
                 from smithsonian_mcp import tools as tools_module
 
                 # Test with Internal ID
-                result = await tools_module.get_object_url.fn(
+                result = await tools_module.get_object_url(
                     object_identifier="ld1-1643390182193-1643390183699-0"
                 )
 
@@ -109,7 +109,7 @@ class TestGetObjectUrl:
 
                 from smithsonian_mcp import tools as tools_module
 
-                result = await tools_module.get_object_url.fn(object_identifier="F1900.47")
+                result = await tools_module.get_object_url(object_identifier="F1900.47")
 
                 # Should prefer record_link (https URL) over url field (identifier)
                 assert result == "https://asia.si.edu/object/F1900.47/"
@@ -129,7 +129,7 @@ class TestGetObjectUrl:
 
                 from smithsonian_mcp import tools as tools_module
 
-                result = await tools_module.get_object_url.fn(object_identifier="invalid-id")
+                result = await tools_module.get_object_url(object_identifier="invalid-id")
 
                 assert result is None
 
@@ -139,7 +139,7 @@ class TestGetObjectUrl:
         from smithsonian_mcp import tools as tools_module
 
         with pytest.raises(ValueError, match="object_identifier cannot be empty"):
-            await tools_module.get_object_url.fn(object_identifier="")
+            await tools_module.get_object_url(object_identifier="")
 
     @pytest.mark.asyncio
     async def test_get_object_url_no_valid_urls_returns_none(self):
@@ -186,6 +186,6 @@ class TestGetObjectUrl:
 
                 from smithsonian_mcp import tools as tools_module
 
-                result = await tools_module.get_object_url.fn(object_identifier="test-id")
+                result = await tools_module.get_object_url(object_identifier="test-id")
 
                 assert result is None

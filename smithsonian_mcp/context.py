@@ -6,8 +6,7 @@ import logging
 from typing import Optional
 from dataclasses import dataclass
 
-from mcp.server.fastmcp import Context
-from mcp.server.session import ServerSession
+from fastmcp import Context
 
 from .api_client import SmithsonianAPIClient, create_client
 
@@ -24,9 +23,7 @@ class ServerContext:
 
 
 async def get_api_client(
-    ctx: Optional[ # pylint: disable=unused-argument
-        Context[ServerSession, ServerContext]
-    ] = None,
+    ctx: Optional[Context] = None,  # pylint: disable=unused-argument
 ) -> SmithsonianAPIClient:
     """Get API client from global instance for mcpo compatibility."""
     global _global_api_client  # pylint: disable=global-statement

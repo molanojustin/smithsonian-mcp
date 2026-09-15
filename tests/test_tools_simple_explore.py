@@ -77,7 +77,7 @@ async def test_simple_explore_with_museum_branch(monkeypatch):
         AsyncMock(return_value=mock_client),
     )
 
-    result = await tools_module.simple_explore.fn(
+    result = await tools_module.simple_explore(
         topic="dinosaurs",
         museum="National Museum of Natural History",
         max_samples=3,
@@ -112,7 +112,7 @@ async def test_simple_explore_validation_fallback(monkeypatch):
         AsyncMock(return_value=mock_client),
     )
 
-    result = await tools_module.simple_explore.fn(topic="a", max_samples=10)
+    result = await tools_module.simple_explore(topic="a", max_samples=10)
 
     assert result.objects == fallback_objects
     mock_client.search_collections.assert_awaited_once()

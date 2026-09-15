@@ -64,15 +64,16 @@ class TestMCPProtocolAdherence:
         ]
 
         for tool_name, tool_func in tools_to_test:
-            # Get the actual function from the FunctionTool wrapper
-            actual_func = tool_func.fn
+            # FastMCP decorators return the original function
+            actual_func = tool_func
 
             # Verify tool has proper signature
             sig = inspect.signature(actual_func)
             assert "ctx" in sig.parameters, f"Tool {tool_name} missing ctx parameter"
+            # FastMCP may replace a None default with an optional-context sentinel
             assert (
-                sig.parameters["ctx"].default is None
-            ), f"Tool {tool_name} ctx parameter should default to None"
+                sig.parameters["ctx"].default is not inspect.Parameter.empty
+            ), f"Tool {tool_name} ctx parameter should be optional"
 
     @pytest.mark.asyncio
     async def test_tool_return_types(self):
@@ -95,7 +96,7 @@ class TestMCPProtocolAdherence:
                     next_offset=None,
                 )
 
-                result = await tools_module.search_collections.fn(query="test")
+                result = await tools_module.search_collections(query="test")
                 assert isinstance(
                     result, SearchResult
                 ), "search_collections should return SearchResult"
@@ -105,7 +106,7 @@ class TestMCPProtocolAdherence:
                     SmithsonianUnit(code="NMAH", name="American History Museum"),
                     SmithsonianUnit(code="NMNH", name="Natural History Museum"),
                 ]
-                result = await tools_module.get_smithsonian_units.fn()
+                result = await tools_module.get_smithsonian_units()
                 assert isinstance(
                     result, list
                 ), "get_smithsonian_units should return list"
@@ -121,7 +122,7 @@ class TestMCPProtocolAdherence:
                         units=[],
                     )
                 )
-                result = await tools_module.get_collection_statistics.fn()
+                result = await tools_module.get_collection_statistics()
                 assert isinstance(
                     result, CollectionStats
                 ), "get_collection_statistics should return CollectionStats"
@@ -163,7 +164,7 @@ class TestEndToEndMCPWorkflows:
                     next_offset=None,
                 )
 
-                explore_result = await tools_module.simple_explore.fn(topic="dinosaurs")
+                explore_result = await tools_module.simple_explore(topic="dinosaurs")
                 assert explore_result.objects
                 object_id = explore_result.objects[0].id
 
@@ -176,13 +177,13 @@ class TestEndToEndMCPWorkflows:
                     images=[{"url": "http://example.com/image.jpg"}],
                 )
 
-                detail_result = await tools_module.get_object_details.fn(
+                detail_result = await tools_module.get_object_details(
                     object_id=object_id
                 )
                 assert detail_result.id == object_id
 
                 # Step 3: Get object context
-                context_result = await resources_module.get_object_context.fn(
+                context_result = await resources_module.get_object_context(
                     object_id=object_id
                 )
                 assert "Detailed Test Object" in context_result
@@ -208,7 +209,7 @@ class TestEndToEndMCPWorkflows:
                     SmithsonianUnit(code="NMNH", name="Natural History Museum"),
                 ]
 
-                units = await tools_module.get_smithsonian_units.fn()
+                units = await tools_module.get_smithsonian_units()
                 assert len(units) >= 2
 
                 # Step 2: Find on-view items at specific museum
@@ -229,14 +230,14 @@ class TestEndToEndMCPWorkflows:
                     next_offset=None,
                 )
 
-                on_view_result = await tools_module.get_objects_on_view.fn(
+                on_view_result = await tools_module.get_objects_on_view(
                     unit_code="NMAH"
                 )
                 assert on_view_result.objects
                 assert all(obj.is_on_view for obj in on_view_result.objects)
 
                 # Step 3: Get on-view context
-                context_result = await resources_module.get_on_view_context.fn(
+                context_result = await resources_module.get_on_view_context(
                     museum="NMAH"
                 )
                 assert "Currently on exhibit" in context_result
@@ -270,7 +271,7 @@ class TestEndToEndMCPWorkflows:
                     next_offset=5,
                 )
 
-                first_result = await tools_module.simple_explore.fn(
+                first_result = await tools_module.simple_explore(
                     topic="fossils", max_samples=5
                 )
                 assert len(first_result.objects) == 5
@@ -291,7 +292,7 @@ class TestEndToEndMCPWorkflows:
                     next_offset=10,
                 )
 
-                continue_result = await tools_module.continue_explore.fn(
+                continue_result = await tools_module.continue_explore(
                     topic="fossils", previously_seen_ids=seen_ids, max_samples=5
                 )
 
@@ -332,7 +333,7 @@ class TestCrossToolDependencies:
                     next_offset=None,
                 )
 
-                search_result = await tools_module.search_collections.fn(
+                search_result = await tools_module.search_collections(
                     query="technology"
                 )
                 assert search_result.objects
@@ -346,7 +347,7 @@ class TestCrossToolDependencies:
                     images=[{"url": "http://example.com/image.jpg"}],
                 )
 
-                detail_result = await tools_module.get_object_details.fn(
+                detail_result = await tools_module.get_object_details(
                     object_id="interconnected-123"
                 )
                 assert detail_result.id == "interconnected-123"
@@ -371,7 +372,7 @@ class TestCrossToolDependencies:
                     SmithsonianUnit(code="NPG", name="National Portrait Gallery"),
                 ]
 
-                units = await tools_module.get_smithsonian_units.fn()
+                units = await tools_module.get_smithsonian_units()
                 saam_unit = next(unit for unit in units if unit.code == "SAAM")
 
                 # Use unit code for targeted search
@@ -391,7 +392,7 @@ class TestCrossToolDependencies:
                     next_offset=None,
                 )
 
-                unit_search_result = await tools_module.search_by_unit.fn(
+                unit_search_result = await tools_module.search_by_unit(
                     unit_code="SAAM", query="painting"
                 )
                 assert unit_search_result.objects
@@ -430,7 +431,7 @@ class TestCrossToolDependencies:
                 )
 
                 # Test find_on_view_items (reliable approach)
-                reliable_result = await tools_module.find_on_view_items.fn(
+                reliable_result = await tools_module.find_on_view_items(
                     query="exhibition"
                 )
                 assert all(obj.is_on_view for obj in reliable_result.objects)
@@ -463,22 +464,22 @@ class TestErrorHandlingAndEdgeCases:
                 mock_client_instance.search_collections.return_value = empty_result
 
                 # Test various tools with empty results
-                search_result = await tools_module.search_collections.fn(
+                search_result = await tools_module.search_collections(
                     query="nonexistenttopic12345"
                 )
                 assert search_result.objects == []
                 assert search_result.total_count == 0
 
-                explore_result = await tools_module.simple_explore.fn(
+                explore_result = await tools_module.simple_explore(
                     topic="nonexistenttopic12345"
                 )
                 assert explore_result.objects == []
 
-                on_view_result = await tools_module.get_objects_on_view.fn()
+                on_view_result = await tools_module.get_objects_on_view()
                 assert on_view_result.objects == []
 
                 # Test get_museum_highlights_on_view with empty results
-                highlights_result = await tools_module.get_museum_highlights_on_view.fn()
+                highlights_result = await tools_module.get_museum_highlights_on_view()
                 assert highlights_result.objects == []
 
     @pytest.mark.asyncio
@@ -498,12 +499,12 @@ class TestErrorHandlingAndEdgeCases:
                 # Mock not found result
                 mock_client_instance.get_object_by_id.return_value = None
 
-                result = await tools_module.get_object_details.fn(
+                result = await tools_module.get_object_details(
                     object_id="invalid-id-12345"
                 )
                 assert result is None
 
-                context_result = await resources_module.get_object_context.fn(
+                context_result = await resources_module.get_object_context(
                     object_id="invalid-id-12345"
                 )
                 assert "not found" in context_result.lower()
@@ -525,7 +526,7 @@ class TestErrorHandlingAndEdgeCases:
                 )
 
                 with pytest.raises(Exception) as exc_info:
-                    await tools_module.search_collections.fn(query="test")
+                    await tools_module.search_collections(query="test")
                 assert "Rate limit exceeded" in str(exc_info.value)
 
 
@@ -564,7 +565,7 @@ class TestMCPContextTools:
                 )
 
                 # Test search context formatting
-                search_context = await resources_module.get_search_context.fn(
+                search_context = await resources_module.get_search_context(
                     query="test"
                 )
                 assert "Search Results for 'test'" in search_context
@@ -579,7 +580,7 @@ class TestMCPContextTools:
                 ]
                 mock_client_instance.get_units.return_value = mock_units
 
-                units_context = await resources_module.get_units_context.fn()
+                units_context = await resources_module.get_units_context()
                 assert "Smithsonian Institution Museums" in units_context
 
     @pytest.mark.asyncio
@@ -620,7 +621,7 @@ class TestMCPContextTools:
                 )
                 mock_client_instance.search_collections.return_value = mock_result
 
-                on_view_context = await resources_module.get_on_view_context.fn()
+                on_view_context = await resources_module.get_on_view_context()
 
                 # Should only include on-view objects
                 assert "On View Object" in on_view_context

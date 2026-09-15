@@ -5,8 +5,7 @@ Smithsonian Open Access MCP Tools
 import logging
 from typing import Optional, List
 
-from mcp.server.fastmcp import Context
-from mcp.server.session import ServerSession
+from fastmcp import Context
 
 from .app import mcp
 from .context import ServerContext, get_api_client
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @mcp.tool()
 async def search_collections(  # pylint: disable=too-many-arguments, too-many-locals, too-many-positional-arguments
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     query: str = "",
     unit_code: Optional[str] = None,
     museum: Optional[str] = None,
@@ -193,7 +192,7 @@ async def search_collections(  # pylint: disable=too-many-arguments, too-many-lo
 
 @mcp.tool()
 async def simple_search(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     query: str = "",
     unit_code: Optional[str] = None,
     museum: Optional[str] = None,
@@ -327,7 +326,7 @@ async def simple_search(
 
 @mcp.tool()
 async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     topic: str = "",
     museum: Optional[str] = None,
     max_samples: int = 50,
@@ -548,7 +547,7 @@ async def simple_explore(  # pylint: disable=too-many-locals, too-many-branches,
 
 @mcp.tool()
 async def continue_explore(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     topic: str = "",
     previously_seen_ids: Optional[List[str]] = None,
     museum: Optional[str] = None,
@@ -738,7 +737,7 @@ async def continue_explore(  # pylint: disable=too-many-locals, too-many-branche
 
 @mcp.tool()
 async def summarize_search_results(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     search_result: Optional[SearchResult] = None
 ) -> Optional[str]:
     """
@@ -781,7 +780,7 @@ async def summarize_search_results(
 
 @mcp.tool()
 async def get_object_ids(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     search_result: Optional[SearchResult] = None
 ) -> Optional[List[str]]:
     """
@@ -808,7 +807,7 @@ async def get_object_ids(
 
 @mcp.tool()
 async def get_first_object_id(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     search_result: Optional[SearchResult] = None
 ) -> Optional[str]:
     """
@@ -835,7 +834,7 @@ async def get_first_object_id(
 
 @mcp.tool()
 async def validate_object_id(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     object_id: str = ""
 ) -> bool:
     """
@@ -867,7 +866,7 @@ async def validate_object_id(
 
 @mcp.tool()
 async def resolve_museum_name(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     museum_name: str = "",
 ) -> str:
     """
@@ -911,7 +910,7 @@ async def resolve_museum_name(
 
 @mcp.tool()
 async def search_and_get_first_url(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     query: str = "",
     unit_code: Optional[str] = None,
     museum: Optional[str] = None,
@@ -1100,7 +1099,7 @@ async def search_and_get_first_url(
 
 @mcp.tool()
 async def find_and_describe(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     query: str = "",
     unit_code: Optional[str] = None,
     object_type: Optional[str] = None,
@@ -1240,7 +1239,7 @@ async def find_and_describe(
 
 @mcp.tool()
 async def search_and_get_first_details(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     query: str = "",
     unit_code: Optional[str] = None,
     object_type: Optional[str] = None,
@@ -1323,7 +1322,7 @@ async def search_and_get_first_details(
 
 @mcp.tool()
 async def search_and_get_details(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     query: str = "",
     unit_code: Optional[str] = None,
     object_type: Optional[str] = None,
@@ -1409,7 +1408,7 @@ async def search_and_get_details(
 
 @mcp.tool()
 async def get_object_details(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
+    ctx: Optional[Context] = None, object_id: str = ""
 ) -> Optional[SmithsonianObject]:
     """
     Get detailed information about a specific Smithsonian collection object.
@@ -1482,7 +1481,7 @@ async def get_object_details(
 
 @mcp.tool()
 async def get_object_url(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     object_identifier: str = ""
 ) -> Optional[str]:
     """
@@ -1639,7 +1638,7 @@ async def get_object_url(
 
 @mcp.tool()
 async def get_smithsonian_units(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
 ) -> List[SmithsonianUnit]:
     """
     Get a list of all Smithsonian Institution museums and research centers.
@@ -1664,7 +1663,7 @@ async def get_smithsonian_units(
 
 @mcp.tool()
 async def get_collection_statistics(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
 ) -> CollectionStats:
     """
     Get comprehensive statistics about the Smithsonian Open Access collections.
@@ -1693,7 +1692,7 @@ async def get_collection_statistics(
 
 @mcp.tool()
 async def search_by_unit(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     unit_code: str = "",
     query: Optional[str] = None,
     limit: int = 500,
@@ -1760,7 +1759,7 @@ async def search_by_unit(
 
 @mcp.tool()
 async def get_objects_on_view(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     unit_code: Optional[str] = None,
     museum: Optional[str] = None,
     limit: int = 500,
@@ -1882,7 +1881,7 @@ async def find_on_view_items(
     museum: Optional[str] = None,
     limit: int = 500,
     offset: int = 0,
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
 ) -> SearchResult:
     """
     Find objects currently on physical exhibit that match a specific search query.
@@ -2006,7 +2005,7 @@ async def find_on_view_items(
 
 @mcp.tool()
 async def get_museum_collection_types(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     unit_code: Optional[str] = None,
     sample_size: int = 100,
     use_cache: bool = True
@@ -2148,7 +2147,7 @@ async def get_museum_collection_types(
 
 @mcp.tool()
 async def get_museum_highlights_on_view(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     unit_code: Optional[str] = None,
     museum: Optional[str] = None,
     limit: int = 10,
@@ -2305,7 +2304,7 @@ async def get_museum_highlights_on_view(
 
 @mcp.tool()
 async def check_museum_has_object_type(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     unit_code: str = "",
     object_type: str = "",
     use_cache: bool = True

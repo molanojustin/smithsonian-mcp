@@ -7,7 +7,7 @@ on tool logic.
 
 from typing import List, Optional
 
-from mcp.server.fastmcp.prompts import base
+from fastmcp.prompts import base
 
 from .app import mcp
 from .constants import SIZE_GUIDELINES

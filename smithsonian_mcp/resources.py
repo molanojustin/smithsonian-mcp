@@ -3,8 +3,7 @@
 import logging
 from typing import Optional
 
-from mcp.server.fastmcp import Context
-from mcp.server.session import ServerSession
+from fastmcp import Context
 
 from .app import mcp
 from .context import ServerContext, get_api_client
@@ -20,7 +19,7 @@ def _format_optional_number(value: Optional[int]) -> str:
 
 @mcp.tool()
 async def get_search_context(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     query: str = "",
     limit: int = 10,
 ) -> str:
@@ -70,7 +69,7 @@ async def get_search_context(
 
 @mcp.tool()
 async def get_object_context(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None, object_id: str = ""
+    ctx: Optional[Context] = None, object_id: str = ""
 ) -> str:
     """
     Get detailed object information as context data.
@@ -114,7 +113,7 @@ async def get_object_context(
 
 @mcp.tool()
 async def get_on_view_context(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
     museum: Optional[str] = None,
     limit: int = 10,
 ) -> str:
@@ -194,7 +193,7 @@ async def get_on_view_context(
 
 @mcp.tool()
 async def get_units_context(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
 ) -> str:
     """
     Get a list of all Smithsonian units as context data.
@@ -221,7 +220,7 @@ async def get_units_context(
 
 @mcp.tool()
 async def get_stats_context(
-    ctx: Optional[Context[ServerSession, ServerContext]] = None,
+    ctx: Optional[Context] = None,
 ) -> str:
     """
     Get collection statistics as context data.
