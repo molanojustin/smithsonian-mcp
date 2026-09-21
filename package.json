@@ -72,7 +72,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "cross-spawn": "^7.0.6",
-    "dotenv": "^17.4.2"
+    "dotenv": "^18.0.0"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
