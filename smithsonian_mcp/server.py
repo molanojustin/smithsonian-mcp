@@ -3,6 +3,9 @@ Smithsonian Open Access MCP Server
 
 This MCP server provides AI assistants with access to the Smithsonian's
 Open Access collections through a standardized interface.
+
+Running ``python -m smithsonian_mcp.server`` is kept for backward compatibility
+and starts the same entry point as ``python -m smithsonian_mcp``.
 """
 
 import logging
@@ -58,3 +61,9 @@ async def server_lifespan(
         if context.peek_api_client() is api_client:
             context.set_api_client(None)
         await api_client.disconnect()
+
+
+if __name__ == "__main__":
+    from .main import main
+
+    main()
