@@ -325,6 +325,31 @@ class TestParsing:
         assert client._parse_exhibition_location({"exhibition": [{}]}) is None
         assert client._parse_exhibition_location({}) is None
 
+    def test_type_citations_are_not_object_types(self):
+        client = SmithsonianAPIClient(api_key="test")
+
+        def row(object_types, indexed=None):
+            return {
+                "id": "ld1-x",
+                "title": "t",
+                "content": {
+                    "freetext": {"objectType": object_types},
+                    "indexedStructured": {"object_type": indexed or []},
+                },
+            }
+
+        citation = {
+            "label": "Type Citation",
+            "content": "Gilmore. 1914. U.S.Natl.Mus.Bull. (n.89): 1-114.",
+        }
+        assert client._parse_object_data(row([citation])).object_type is None
+        assert (
+            client._parse_object_data(row([citation], ["Holotypes"])).object_type
+            == "Holotypes"
+        )
+        name = {"label": "Object Name", "content": "puppet"}
+        assert client._parse_object_data(row([citation, name])).object_type == "puppet"
+
 
 class TestSearch:
     """search_collections behaviour."""

@@ -141,6 +141,9 @@ _DIMENSION_LABELS = ("dimension", "measurement")
 _DECADE_RE = re.compile(r"^(\d{3,4})s$")
 # Labels that mention a creator but describe someone else's role.
 _NOT_MAKER_LABEL_PREFIXES = ("formerly", "copy after", "after", "possible owner")
+# freetext.objectType labels that hold something other than a type: Paleobiology
+# records put the literature citation of a type specimen there.
+_NOT_OBJECT_TYPE_LABELS = frozenset({"type citation"})
 
 # ---------------------------------------------------------------------------
 # Query building
@@ -1510,7 +1513,12 @@ class SmithsonianAPIClient:
             or _parse_timestamp(raw_data.get("modified")),
             maker=self._parse_makers(freetext),
             object_type=_first_text(
-                freetext.get("objectType"), indexed.get("object_type")
+                [
+                    item
+                    for item in _as_list(freetext.get("objectType"))
+                    if _label_of(item) not in _NOT_OBJECT_TYPE_LABELS
+                ],
+                indexed.get("object_type"),
             ),
             materials=materials,
             topics=_strings(indexed.get("topic")),
