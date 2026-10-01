@@ -73,3 +73,8 @@ include = [
     "/README.md",
     "/LICENSE.md",
 ]
+
+[tool.black]
+# Format for the oldest supported Python so the result is the same on every
+# interpreter used to run black.
+target-version = ["py310"]
