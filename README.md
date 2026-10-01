@@ -4,7 +4,35 @@
 [![NPM Downloads](https://img.shields.io/npm/dm/%40molanojustin%2Fsmithsonian-mcp)](https://www.npmjs.com/package/@molanojustin%2Fsmithsonian-mcp)
 [![Docker](https://img.shields.io/docker/pulls/justinmol/smithsonian-mcp?logo=docker&label=Docker)](https://hub.docker.com/r/justinmol/smithsonian-mcp)
 
-A **Model Context Protocol (MCP)** server that provides AI assistants with access to the **Smithsonian Institution's Open Access collections**. This server allows AI tools like Claude Desktop to search, explore, and analyze over 3 million collection objects from America's national museums.
+A Model Context Protocol (MCP) server for the Smithsonian Institution's Open Access collections. It lets AI assistants such as Claude Desktop search more than 14 million records from Smithsonian museums, libraries and research centers, find out what is on display now, and fetch full object records with images and links to the museum websites.
+
+Ask, for example:
+
+> Which Muppets are on display right now at the National Museum of American History?
+
+The assistant calls `search_objects(query="muppet", museum="American History", on_view=true)` and finds the objects currently on view, such as:
+
+| Objects | Exhibition |
+|---|---|
+| Elmo, Fozzie Bear, Oscar the Grouch and Rosita puppets | Entertainment Nation |
+| Oscar the Grouch's trash can and Mr. Hooper's costume from Sesame Street | Entertainment Nation |
+| The Muppets lunch box (1979) | Taking America To Lunch |
+
+Version 2.0 replaces the 28 tools of version 1.x with 5. See [Migrating from 1.x](#migrating-from-1x) and the [changelog](CHANGELOG.md).
+
+## Contents
+
+- [Quick Start](#quick-start)
+- [Tools](#tools)
+- [Resources](#resources)
+- [Prompts](#prompts)
+- [Search tips](#search-tips)
+- [Migrating from 1.x](#migrating-from-1x)
+- [Integration](#integration)
+- [Requirements](#requirements)
+- [Testing](#testing)
+- [Service Management](#service-management)
+- [Troubleshooting](#troubleshooting)
 
 ## Quick Start
 
@@ -162,32 +190,270 @@ uv run python examples/test-api-connection.py
 uv run python scripts/verify-setup.py
 ```
 
-## Features
+## Tools
 
-### Core Functionality
+All five tools are read-only.
 
-- **Search Collections**: 3+ million objects across 24 Smithsonian museums
-- **Object Details**: Complete metadata, descriptions, and provenance
-- **On-View Status** - Find objects currently on physical exhibit
-- **Image Access**: High-resolution images (CC0 licensed when available)
-- **Museum Information**: Browse all Smithsonian institutions
-- **Collection Statistics**: Comprehensive metrics with per-museum breakdowns (sampling-based estimates)
+| Tool | Use it to |
+|---|---|
+| [`search_objects`](#search_objects) | Find objects by keyword and filters, including what is on view now |
+| [`get_object`](#get_object) | Get the full record, images and web page of one object |
+| [`list_museums`](#list_museums) | See which museums contribute, with their codes and record counts |
+| [`explore_topic`](#explore_topic) | Browse a varied sample of a topic across museums |
+| [`get_collection_stats`](#get_collection_stats) | Get collection totals and per-museum counts |
 
-### AI Integration
+A typical session calls `search_objects`, then `get_object` for the objects worth a closer look. Problems you can fix, such as an unknown museum name or an object id that does not exist, come back as an error message that says what to change.
 
-- **16 MCP Tools**: Smart discovery, comprehensive search, museum-specific queries, exhibition status, contextual data access, and proactive collection type discovery
-- **Proactive Discovery**: New tools help AI assistants understand API scope and available object types before searching, preventing confusion about archival vs. museum materials
-- **Smart Context**: Contextual data sources for AI assistants including enhanced statistics
-- **Rich Metadata**: Complete object information and exhibition details
-- **Exhibition Planning** - Tools to find and explore currently exhibited objects
-- **Collection Analytics**: Per-museum statistics with sampling-based accuracy
-- **Multi-Model Compatible**: Works well with both advanced and simpler AI models through simplified tool interfaces
+### search_objects
 
-### URL Validation & Anti-Guessing
-- **Easiest Solution**: Use `search_and_get_first_url()` for one-step search + validated URL retrieval
-- **Mandatory Tool Usage**: LLM must use `get_object_url()` tool for any URL retrieval - manual construction fails due to case sensitivity
-- **Flexible Identifiers**: Supports Accession Numbers (F1900.47), Record IDs (fsg_F1900.47), and Internal IDs (ld1-...)
-- **URL Validation**: Automatically selects authoritative record_link over API identifiers, handles case sensitivity
+Search the collections, with optional filters.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `query` | string | `""` | Keywords. Every word must match. `AND`, `OR` and quoted phrases are allowed. Empty matches everything. |
+| `museum` | string | none | Museum name or unit code, such as `"American History"`, `"NMAH"`, `"Asian Art"`, `"NMAA"` or `"Natural History"`. |
+| `object_type` | string | none | Object type, such as `"Paintings"` or `"Puppets"`. Case and singular or plural forms are matched. |
+| `maker` | string | none | Creator, such as `"Winslow Homer"`, `"Homer, Winslow"` or an organization name. |
+| `topic` | string | none | Subject, such as `"Civil War"`. |
+| `material` | string | none | Material or medium, such as `"bronze"`. |
+| `date_from` | integer | none | Earliest year, with decade precision. |
+| `date_to` | integer | none | Latest year, with decade precision. |
+| `has_images` | boolean | `false` | Only objects with online images. |
+| `cc0_only` | boolean | `false` | Only objects with CC0 (public domain) media. |
+| `on_view` | boolean | none | `true`: only objects on physical exhibit now. `false`: only objects not on exhibit. |
+| `limit` | integer | `10` | Objects per page, 1 to 50. |
+| `offset` | integer | `0` | Position of the first object. Pass `next_offset` to get the next page. |
+
+Output:
+
+| Field | Description |
+|---|---|
+| `total_count` | Number of matching objects. |
+| `returned` | Number of objects in this page. |
+| `offset` | Offset of this page. |
+| `next_offset` | Offset of the next page, or `null` when there are no more results. |
+| `museum` | `{code, name}` of the museum filter, when one was given. |
+| `note` | Explanation of an empty or unusual result, when there is one. |
+| `objects` | Object summaries, described below. |
+
+Each object summary has:
+
+| Field | Description |
+|---|---|
+| `id` | Object id, for `get_object`. |
+| `title` | Title, without HTML markup. |
+| `maker` | List of creators. |
+| `date` | Date as the museum records it, such as `"1984"` or `"ca 1995 - 1999"`. |
+| `museum_code`, `museum_name` | The museum that holds the object. |
+| `object_type` | Object type as the museum records it. |
+| `on_view` | Whether the object is on physical exhibit now. |
+| `exhibition_title`, `exhibition_location` | Where the object is on view, when it is. |
+| `thumbnail_url` | Small image, or `null` when the record has no image. |
+| `web_url` | The object's page on the museum website. |
+
+Example:
+
+```text
+search_objects(query="muppet", museum="American History", on_view=true)
+```
+
+At the time of writing this returns 12 objects. Two are shown:
+
+```json
+{
+  "total_count": 12,
+  "returned": 12,
+  "offset": 0,
+  "next_offset": null,
+  "museum": {
+    "code": "NMAH",
+    "name": "National Museum of American History"
+  },
+  "objects": [
+    {
+      "id": "ld1-1643398912743-1643398932982-0",
+      "title": "Elmo Puppet",
+      "maker": ["Clash, Kevin", "Dillon, Ryan", "Henson, Jim"],
+      "date": "1984",
+      "museum_code": "NMAH",
+      "museum_name": "National Museum of American History",
+      "object_type": "puppet",
+      "on_view": true,
+      "exhibition_title": "Entertainment Nation",
+      "exhibition_location": "NMAH",
+      "thumbnail_url": null,
+      "web_url": "https://americanhistory.si.edu/collections/object/nmah_1444757"
+    },
+    {
+      "id": "ld1-1643399134763-1643399177676-0",
+      "title": "The Muppets Lunch Box",
+      "maker": ["King Seeley Thermos", "Thermos"],
+      "date": "1979",
+      "museum_code": "NMAH",
+      "museum_name": "National Museum of American History",
+      "object_type": "lunch box",
+      "on_view": true,
+      "exhibition_title": "Taking America To Lunch",
+      "exhibition_location": "NMAH",
+      "thumbnail_url": null,
+      "web_url": "https://americanhistory.si.edu/collections/object/nmah_1182905"
+    }
+  ]
+}
+```
+
+The other objects are the Fozzie Bear, Oscar the Grouch and Rosita puppets, Oscar's trash can and pieces of Mr. Hooper's costume from Sesame Street, all in "Entertainment Nation". Without `on_view`, the same search returns about 70 Muppet-related objects.
+
+### get_object
+
+Get the full record for one object.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `object_id` | string | The `id` of an object from `search_objects` or `explore_topic`. |
+
+Output: every field of an object summary, plus:
+
+| Field | Description |
+|---|---|
+| `record_id` | The museum's record identifier, such as `nmah_1444757`. |
+| `description`, `summary`, `notes` | Descriptive text. Long notes are trimmed. |
+| `dimensions` | Physical dimensions. |
+| `materials`, `topics`, `place` | Lists of materials, subjects and places. |
+| `credit_line` | How the museum acquired the object. |
+| `rights` | Rights or usage statement, when there is one. |
+| `is_cc0` | Whether the object has CC0 media that can be reused freely. |
+| `images` | Up to about 10 images, each with `url`, `thumbnail_url`, `iiif_url`, `caption` and `is_cc0`. |
+
+An id that does not exist returns an error.
+
+Example, for the Elmo puppet found above:
+
+```text
+get_object(object_id="ld1-1643398912743-1643398932982-0")
+```
+
+Returns, trimmed:
+
+```json
+{
+  "id": "ld1-1643398912743-1643398932982-0",
+  "record_id": "nmah_1444757",
+  "title": "Elmo Puppet",
+  "maker": ["Clash, Kevin", "Dillon, Ryan", "Henson, Jim"],
+  "date": "1984",
+  "museum_code": "NMAH",
+  "museum_name": "National Museum of American History",
+  "object_type": "puppet",
+  "on_view": true,
+  "exhibition_title": "Entertainment Nation",
+  "description": "This Elmo puppet was used on Sesame Street from about 1984 until the early 2000s. ...",
+  "dimensions": "overall: 14 in x 16 in x 11 in; 35.56 cm x 40.64 cm x 27.94 cm",
+  "materials": [
+    "plastic (overall material)",
+    "synthetic fur (overall material)",
+    "foam (overall material)"
+  ],
+  "topics": ["Jim Henson", "Sesame Street", "Puppets", "Children's television programs"],
+  "place": ["New York", "Queens", "United States"],
+  "credit_line": "A Gift from the Family of Jim Henson: Lisa Henson, Cheryl Henson, Brian Henson, John Henson and Heather Henson",
+  "rights": null,
+  "is_cc0": false,
+  "images": [],
+  "thumbnail_url": null,
+  "web_url": "https://americanhistory.si.edu/collections/object/nmah_1444757"
+}
+```
+
+The museum website shows photos of Elmo under usage conditions, but Open Access publishes none, so `images` is empty and `is_cc0` is `false`. Many other objects, such as the Asian Art tea bowls in [Search tips](#search-tips), have CC0 images.
+
+### list_museums
+
+List the Smithsonian units that contribute to Open Access. It takes no parameters.
+
+Output: a list of units, each with `code`, `name` and `object_count`. Archive-only units are marked, and the result lists the names and aliases that `museum` accepts. Counts come from the API's statistics and include archival records.
+
+Example: `list_museums()` lists the contributing units, including the National Museum of American History (`NMAH`), the National Museum of Asian Art (`NMAA`), Cooper Hewitt, Smithsonian Design Museum (`CHNDM`) and the National Museum of Natural History (`NMNH`, which covers department codes such as `NMNHPALEO` and `NMNHBOTANY`). The Archives of American Art (`AAA`) is one of 14 archive-only units.
+
+### explore_topic
+
+Get a varied sample of objects on a topic, for open-ended browsing.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `topic` | string | required | What to explore, such as `"quilts"`. |
+| `museum` | string | none | Museum name or code, to explore one museum. |
+| `limit` | integer | `12` | Number of objects, 1 to 30. |
+
+Output: the same fields as `search_objects`, plus counts by museum and by object type over the sampled pool. The sample is random, prefers objects with images, and is spread across museums and object types, so each call returns different objects. Use `search_objects` for a complete, paged list.
+
+Example: `explore_topic(topic="quilts")` returns a mix such as nineteenth-century pieced and appliqued quilts and quilt blocks from American History, quilts from the National Museum of the American Indian, and commemorative textiles from the National Museum of African American History and Culture.
+
+### get_collection_stats
+
+Get collection totals and per-museum counts. It takes no parameters.
+
+Output: `total_objects`, `cc0` and `with_images` totals and a count for each museum, from the API's statistics in one or two requests. The totals include archival records, which object searches do not return, so they are larger than search counts.
+
+Example: `get_collection_stats()` reports more than 40 million records in total, of which more than 17 million are CC0 and more than 7 million have images.
+
+## Resources
+
+| URI | Content |
+|---|---|
+| `smithsonian://museums` | The museum list from `list_museums`, as JSON. |
+| `smithsonian://objects/{object_id}` | The record from `get_object` for that id, as JSON. |
+
+Clients that support resources can attach these to a conversation without a tool call.
+
+## Prompts
+
+| Prompt | Arguments | Purpose |
+|---|---|---|
+| `collection_research` | `research_topic`, `focus_area` (optional) | Research a topic across the collections. |
+| `object_analysis` | `object_id` | Analyze one object in depth. |
+| `exhibition_planning` | `exhibition_theme`, `target_audience` (optional), `size` (optional: `small`, `medium` or `large`) | Plan an exhibition from collection objects. |
+| `educational_content` | `subject`, `grade_level` (optional), `learning_goals` (optional) | Build a lesson around collection objects. |
+| `museum_on_view` | `museum`, `topic` (optional) | Find out what is on view at a museum. |
+
+## Search tips
+
+- Every word in `query` must match, so use 1 to 4 distinctive keywords and leave out questions and stop words. "Which Muppets are on display right now" finds nothing; `query="muppet"` with `on_view=true` finds the 12 objects above.
+- Use `OR` for alternatives, as in `query="quilt OR coverlet"`.
+- Put names in `maker`, not `query`. `maker="Winslow Homer"` also matches the indexed form "Homer, Winslow", and `search_objects(maker="Winslow Homer", object_type="Paintings")` returns works such as "Girl Shelling Peas" and "White Mountain Wagon" from Cooper Hewitt. Art is well covered: `object_type="Paintings"` alone matches thousands of records.
+- `museum` accepts names or codes. "Asian Art", "Freer", `NMAA` and the retired code `FSG` all search the National Museum of Asian Art, and "Natural History" or `NMNH` searches every Natural History department.
+- Dates have decade precision, so `date_from=1863` starts at 1860. `search_objects(query="Lincoln", museum="American History", date_from=1860, date_to=1869)` returns items such as a Lincoln campaign flag from 1864 and a parade axe from 1860. Years must be from 1000 to 2999.
+- `on_view=true` returns objects on physical exhibit now, with exhibition titles. Natural History publishes no exhibit data, so `on_view=true` with Natural History always returns nothing, and the result's `note` says so.
+- 14 units, such as the Archives of American Art, publish only archival records, which object searches do not return. `list_museums` marks them.
+- `cc0_only=true` keeps objects whose media can be reused freely. `search_objects(query="tea bowl", museum="Asian Art", cc0_only=true)` returns Hagi and Raku ware tea bowls with CC0 images.
+- Never construct Smithsonian URLs; use `web_url`. URL formats differ by museum and are case-sensitive.
+
+## Migrating from 1.x
+
+Version 2.0 replaces all 28 tools of 1.x with 5. Calls to a 1.x tool name fail, so update any prompts, scripts or mcpo endpoint URLs that use them.
+
+### Removed tools
+
+| Removed | Use instead |
+|---|---|
+| `search_collections`, `simple_search`, `search_by_unit`, `get_search_context` | `search_objects` |
+| `summarize_search_results`, `get_object_ids`, `get_first_object_id` | No replacement needed; results are already compact |
+| `find_and_describe`, `search_and_get_first_details`, `search_and_get_details` | `search_objects`, then `get_object` |
+| `get_object_details`, `get_object_context`, `validate_object_id`, `get_object_url`, `search_and_get_first_url` | `get_object` |
+| `get_smithsonian_units`, `get_units_context`, `resolve_museum_name` | `list_museums`; `search_objects` also accepts museum names |
+| `get_objects_on_view`, `find_on_view_items`, `get_museum_highlights_on_view`, `get_on_view_context` | `search_objects(on_view=true)` |
+| `simple_explore`, `continue_explore` | `explore_topic` |
+| `get_collection_statistics`, `get_stats_context` | `get_collection_stats` |
+| `get_museum_collection_types`, `check_museum_has_object_type` | `search_objects(object_type=..., museum=..., limit=1)`; `total_count` answers it |
+
+### Breaking changes
+
+- Tool names: every 1.x tool is gone, as listed above. Through mcpo the endpoints change too, so `/smithsonian_open_access/get_smithsonian_units` becomes `/smithsonian_open_access/list_museums`.
+- Output shapes: searches return compact summaries instead of full records, and fields are renamed. `unit_code` is now `museum_code`, `unit_name` is `museum_name`, `is_on_view` is `on_view` and `returned_count` is `returned`. `has_more` is gone; `next_offset` is `null` on the last page. Links to object pages are in `web_url`.
+- Parameters: `museum` takes names or codes and replaces `unit_code`. The `is_cc0` filter is now `cc0_only`, `limit` defaults to 10 with a maximum of 50 (it was 500), and `date_from` and `date_to` filter by date.
+- Asian Art is unit code `NMAA`. `FSG` is still accepted as an alias, but results report `NMAA`.
+- `is_cc0` on an object now means the object has CC0 media. Records with CC0 text but restricted or no media, such as copyrighted objects at the National Museum of African American History and Culture, are no longer reported as CC0.
+- Prompts drop the `_prompt` suffix from their names, and six prompts that only restated tool usage are removed. See the [changelog](CHANGELOG.md).
 
 ## Integration
 
@@ -295,91 +561,6 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed mcpo troubleshooting, 
 ### VS Code
 
 Open the clone with `code .`. After `uv sync --group dev`, `.vscode/tasks.json` provides tasks to start the server, run the tests, format and lint the code, and open the MCP Inspector, and `.vscode/launch.json` provides debugger configurations for the server and the tests.
-
-## Available Data
-
-- **19 Museums**: NMNH, NPG, SAAM, NASM, NMAH, and more
-- **3+ Million Objects**: Digitized collection items
-- **CC0 Content**: Public domain materials for commercial use
-- **Rich Metadata**: Creators, dates, materials, dimensions
-- **High-Resolution Images**: Professional photography
-
-### Data Accuracy & Sampling
-
-Collection statistics for objects with images use **sampling methodology** to provide accurate estimates:
-
-- **Sample Size**: Up to 1000 objects per query for statistical significance
-- **Methodology**: Counts actual returned objects instead of relying on potentially buggy API totals
-- **Coverage**: Includes per-museum breakdowns with individual sampling for each institution
-- **Transparency**: All sampled counts are clearly marked as "(est.)" in outputs
-
-This approach ensures reliable metrics while respecting API rate limits and avoiding the Smithsonian API's rowCount filtering bug.
-
-### Current API Limitations
-
-**Image URLs Not Available**: The Smithsonian Open Access API currently does not provide image URLs or media data in detailed content responses. While the search API can filter objects by media type (e.g., `online_media_type:Images`), the actual image URLs are not included in the detailed object data returned by the content API. This appears to be a change in the API since the available documentation was published.
-
-- Objects will show as having 0 images even when filtered for image content
-- Image statistics are estimates based on search filtering, not actual media availability
-- The system gracefully handles this limitation and continues to provide all other metadata
-
-**API Scope: Diverse Museum Collections**: The Smithsonian Open Access API provides access to diverse collections across 24 Smithsonian museums, with each museum having distinct object types reflecting their unique focus areas. The discovery tools now correctly identify museum-specific collections with comprehensive object type intelligence gathered through systematic sampling.
-
-- **SAAM** (American Art): Paintings, decorative arts, sculptures, drawings
-- **NASM** (Air & Space): Aircraft, avionics, spacecraft, aviation equipment
-- **NMAH** (American History): Historical artifacts, inventions, cultural objects
-- **CHNDM** (Design Museum): Design objects, textiles, furniture, graphics
-- Use discovery tools (`get_museum_collection_types`, `check_museum_has_object_type`) to explore available collections
-- Each museum's collection reflects its institutional mission and expertise
-
-## MCP Tools
-
-### Search & Discovery
-
-- `simple_explore` - Smart diverse sampling across museums and object types (recommended for general discovery)
-- `continue_explore` - Get more results about the same topic while avoiding duplicates
-- `search_collections` - Advanced search with filters (prioritizes museum-specific results when unit_code specified)
-- `search_and_get_first_url` - **Easiest option**: Search and get validated URL in one step (prevents manual URL construction)
-- `get_object_details` - Detailed object information
-- `get_object_url` - Get validated object URLs with flexible identifier support (MANDATORY: never construct URLs manually)
-- `search_by_unit` - Museum-specific searches
-- `get_objects_on_view` - Find objects currently on physical exhibit
-- `check_object_on_view` - Check if a specific object is on display
-- `get_museum_collection_types` - Get comprehensive list of object types available in each museum (based on systematic collection sampling)
-- `check_museum_has_object_type` - Check if a specific museum has objects of a particular type (e.g., paintings, sculptures)
-
-### Information & Context
-
-- `get_smithsonian_units` - List all museums
-- `get_collection_statistics` - Collection metrics with per-museum breakdowns
-- `get_search_context` - Get search results as context data
-- `get_object_context` - Get detailed object information as context
-- `get_units_context` - Get list of units as context data
-- `get_stats_context` - Get collection statistics as context (includes sampling-based estimates)
-- `get_on_view_context` - Get currently exhibited objects as context
-
-## Use Cases
-
-### Research & Education
-
-- **Scholarly Research**: Multi-step academic investigation
-- **Lesson Planning**: Educational content creation
-- **Object Analysis**: In-depth cultural object study
-- **URL Retrieval**: Get validated object web page URLs (with anti-guessing protection)
-
-### Curation & Exhibition
-
-- **Exhibition Planning**: Thematic object selection and visitor planning
-- **Visit Planning**: Find what's currently on display before visiting
-- **Exhibition Research**: Study current exhibition trends and displays
-- **Collection Development**: Gap analysis and acquisition
-- **Digital Humanities**: Large-scale analysis projects
-
-### Development
-
-- **Cultural Apps**: Applications using museum data
-- **Educational Tools**: Interactive learning platforms
-- **API Integration**: Professional development workflows
 
 ## Requirements
 
@@ -493,29 +674,21 @@ Get-Service SmithsonianMCP
 
 ## Troubleshooting
 
-For detailed troubleshooting guidance, including:
-- Common setup issues
-- Service startup problems
-- API key validation
-- Claude Desktop connection issues
-- Module import errors
-- Platform-specific problems
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md) covers:
 
-Please refer to [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+- API key and rate limit errors
+- Searches that return nothing, including on-view searches at Natural History
+- Old 1.x tool names that no longer work
+- Claude Desktop connection and server startup problems
+- Module import errors and mcpo setup
 
 ## Documentation
 
-### Available Documentation
-
-- **[README.md](README.md)** - Main setup and usage guide (this file)
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Comprehensive troubleshooting and common issues
-- **Examples** - Real-world usage scenarios in `examples/` directory
-- **Scripts** - Setup and utility scripts in `scripts/` directory
-
-### Key Reference
-- **API Reference**: Complete tool and resource documentation in this README
-- **Deployment Guide**: Production deployment options included in setup instructions
-- **Integration Guide**: Claude Desktop and mcpo setup instructions in this README
+- [README.md](README.md): setup and tool reference (this file)
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md): common problems and fixes
+- [CHANGELOG.md](CHANGELOG.md): changes between versions
+- `examples/`: Claude Desktop and mcpo configurations and an API connection test
+- `scripts/`: setup verification
 
 ## Contributing
 
@@ -527,11 +700,11 @@ Please refer to [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License. See [LICENSE.md](LICENSE.md).
 
 ## Acknowledgments
 
-- **Smithsonian Institution** for Open Access collections
-- **api.data.gov** for API infrastructure
-- **FastMCP** team for the MCP framework
-- **Model Context Protocol** community
+- Smithsonian Institution for the Open Access collections
+- api.data.gov for the API infrastructure
+- The FastMCP team for the MCP framework
+- The Model Context Protocol community

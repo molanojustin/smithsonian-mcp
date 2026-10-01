@@ -436,6 +436,7 @@ FodyWeavers.xsd
 !LICENSE.md
 !README.md
 !TROUBLESHOOTING.md
+!CHANGELOG.md
 smithsonian-mcp-workspace.code-workspace
 .vscode/settings.json
 
