@@ -12,7 +12,11 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from smithsonian_mcp.api_client import BASE_URL, SmithsonianAPIClient
+from smithsonian_mcp.api_client import (
+    BASE_URL,
+    SmithsonianAPIClient,
+    build_search_query,
+)
 from smithsonian_mcp.config import Config
 from smithsonian_mcp.models import CollectionSearchFilter
 from smithsonian_mcp.utils import resolve_museum_code
@@ -62,6 +66,17 @@ async def _direct_count(query: str) -> int:
         return response.json()["response"]["rowCount"]
 
 
+async def _direct_rows(query: str, rows: int = 100) -> list:
+    async with httpx.AsyncClient(
+        timeout=60, headers={"X-Api-Key": Config.API_KEY}
+    ) as http:
+        response = await http.get(
+            BASE_URL + "search", params={"q": query, "rows": rows}
+        )
+        response.raise_for_status()
+        return response.json()["response"]["rows"]
+
+
 async def _client_ids(client, **filters) -> Set[str]:
     result = await client.search_collections(
         CollectionSearchFilter(limit=1000, **filters)
@@ -104,6 +119,29 @@ async def test_museum_name_resolves_to_nmah(client):
     assert got == set(expected)
 
 
+@pytest.mark.parametrize(
+    "query,reference",
+    [
+        ("Lewis & Clark", "Lewis & Clark"),
+        ("rock & roll", "rock & roll"),
+        ("Procter & Gamble", "Procter & Gamble"),
+        ("Kermit — Muppets", "Kermit — Muppets"),
+        ("Star Wars : A New Hope", "Star AND Wars AND A AND New AND Hope"),
+        ("What is the Hope Diamond?", "What AND is AND the AND Hope AND Diamond"),
+        (
+            "Who made the Star Spangled Banner?",
+            "Who AND made AND the AND Star AND Spangled AND Banner",
+        ),
+    ],
+)
+async def test_punctuation_in_queries_is_ignored(client, query, reference):
+    result = await client.search_collections(
+        CollectionSearchFilter(query=query, limit=0)
+    )
+    assert result.total_count > 0
+    assert result.total_count == await _direct_count(reference)
+
+
 async def test_multi_word_query_requires_all_words(client):
     got = await client.search_collections(
         CollectionSearchFilter(query="bert puppet", unit_code="NMAH", limit=0)
@@ -115,13 +153,10 @@ async def test_multi_word_query_requires_all_words(client):
 @pytest.mark.parametrize(
     "filters,direct",
     [
-        ({"object_type": "Paintings"}, '(landscape) AND object_type:"Paintings"'),
-        ({"object_type": "painting"}, '(landscape) AND object_type:"Paintings"'),
         ({"has_images": True}, '(landscape) AND online_media_type:"Images"'),
         ({"is_cc0": True}, '(landscape) AND media_usage:"CC0"'),
         ({"on_view": True}, '(landscape) AND onPhysicalExhibit:"Yes"'),
         ({"unit_code": "SAAM"}, "(landscape) AND unit_code:SAAM"),
-        ({"topic": "Landscapes"}, '(landscape) AND topic:"Landscapes"'),
     ],
 )
 async def test_filters_narrow_results_like_direct_queries(client, filters, direct):
@@ -131,6 +166,70 @@ async def test_filters_narrow_results_like_direct_queries(client, filters, direc
     total = await _direct_count("landscape")
     assert result.total_count == await _direct_count(direct)
     assert 0 < result.total_count < total
+
+
+@pytest.mark.parametrize(
+    "filters,direct",
+    [
+        ({"object_type": "Paintings"}, '(landscape) AND object_type:"Paintings"'),
+        ({"object_type": "painting"}, '(landscape) AND object_type:"Paintings"'),
+        ({"topic": "Landscapes"}, '(landscape) AND topic:"Landscapes"'),
+    ],
+)
+async def test_vocabulary_filters_contain_exact_matches(client, filters, direct):
+    """Vocabulary filters add qualified terms to the exact match, never lose it."""
+    query = build_search_query(CollectionSearchFilter(query="landscape", **filters))
+    result = await client.search_collections(
+        CollectionSearchFilter(query="landscape", limit=0, **filters)
+    )
+    exact = await _direct_count(direct)
+    assert exact <= result.total_count < await _direct_count("landscape")
+    assert await _direct_count(f"{query} AND {direct}") == exact
+
+
+@pytest.mark.parametrize(
+    "field,value,reference",
+    [
+        # Qualified index terms the exact value alone does not match
+        ("object_type", "dress", 'object_type:"Dresses (garments)"'),
+        ("object_type", "coin", 'object_type:"Coins (money)"'),
+        ("object_type", "camera", 'object_type:"Cameras (photographic equipment)"'),
+        ("topic", "civil war", 'topic:"Civil War, 1861-1865"'),
+        ("topic", "African American", 'topic:"African American women"'),
+        ("maker", "Martin Luther King Jr.", 'name:"King, Martin Luther"'),
+        ("maker", "Lockheed", 'name:"Lockheed Aircraft Corporation"'),
+        ("maker", "Wright Brothers", 'name:"Wright Brothers Quartet"'),
+        # Cases that already worked keep every record they matched
+        ("object_type", "painting", 'object_type:"Paintings"'),
+        ("object_type", "PAINTINGS", 'object_type:"Paintings"'),
+        ("topic", "Dinosaurs", 'topic:"Dinosaurs"'),
+        ("maker", "alma thomas", 'name:"Thomas, Alma"'),
+        ("maker", "Jim Henson", 'name:"Henson, Jim"'),
+    ],
+)
+async def test_vocabulary_filters_include_qualified_terms(
+    client, field, value, reference
+):
+    query = build_search_query(CollectionSearchFilter(**{field: value}))
+    expected = await _direct_count(f"* AND {reference}")
+    result = await client.search_collections(
+        CollectionSearchFilter(limit=0, **{field: value})
+    )
+    assert expected > 0
+    assert result.total_count >= expected
+    assert await _direct_count(f"{query} AND {reference}") == expected
+
+
+async def test_vocabulary_filters_do_not_use_bare_prefixes(client):
+    hats = await client.search_collections(
+        CollectionSearchFilter(object_type="hat", limit=0)
+    )
+    bare = await _direct_count("* AND object_type:(Hat* OR hat*)")
+    assert 0 < hats.total_count < bare  # "Hatchets", "Hatpins" are excluded
+    smith = await client.search_collections(
+        CollectionSearchFilter(maker="Smith", limit=0)
+    )
+    assert smith.total_count < await _direct_count("* AND name:Smith*")
 
 
 async def test_not_on_view_is_complement_of_on_view(client):
@@ -190,6 +289,49 @@ async def test_asian_art_and_natural_history_units(client):
     assert legacy.total_count == asian.total_count
 
 
+async def test_date_filters_use_whole_decades(client):
+    closed = await client.search_collections(
+        CollectionSearchFilter(date_start="1940", date_end="1960", limit=0)
+    )
+    assert closed.total_count == await _direct_count(
+        '* AND (date:"1940s" OR date:"1950s" OR date:"1960s")'
+    )
+    # An open start must not reach three-digit decades or text values
+    query = build_search_query(CollectionSearchFilter(date_start="1863"))
+    assert await _direct_count(f'{query} AND date:"900s"') <= await _direct_count(
+        '* AND date:"900s" AND date:("1860s" OR "1870s" OR "1880s" OR "1890s" OR '
+        '"1900s" OR "1910s" OR "1920s" OR "1930s" OR "1940s" OR "1950s" OR "1960s" '
+        'OR "1970s" OR "1980s" OR "1990s" OR "2000s" OR "2010s" OR "2020s")'
+    )
+    open_start = await client.search_collections(
+        CollectionSearchFilter(date_start="1863", limit=0)
+    )
+    assert open_start.total_count < await _direct_count('* AND date:["1860s" TO *]')
+
+
+async def test_firewall_rejection_is_reported_as_query_problem(client):
+    from smithsonian_mcp.models import APIError
+
+    for query in ["<script>alert(1)</script>", "../../etc/passwd"]:
+        with pytest.raises(APIError) as excinfo:
+            await client.search_collections(
+                CollectionSearchFilter(query=query, limit=0)
+            )
+        assert excinfo.value.error == "query_rejected"
+    bad_key = SmithsonianAPIClient(api_key="INVALID-KEY-FOR-TEST")
+    try:
+        with pytest.raises(APIError) as excinfo:
+            await bad_key.search_collections(CollectionSearchFilter(query="x", limit=0))
+    finally:
+        await bad_key.disconnect()
+    assert excinfo.value.error == "api_key_rejected"
+
+
+async def test_invalid_date_is_rejected(client):
+    with pytest.raises(ValueError):
+        await client.search_collections(CollectionSearchFilter(date_start="500"))
+
+
 async def test_rows_above_limit_are_clamped(client):
     result = await client.search_collections(
         CollectionSearchFilter(query="art", limit=1500)
@@ -197,11 +339,22 @@ async def test_rows_above_limit_are_clamped(client):
     assert result.returned_count == 1000
 
 
-async def test_collection_stats_are_fast(client):
+async def test_collection_stats_are_fast(client, monkeypatch):
+    calls = []
+    original = client._make_request
+
+    async def counting(endpoint, params=None):
+        calls.append(endpoint)
+        return await original(endpoint, params)
+
+    monkeypatch.setattr(client, "_make_request", counting)
     start = time.monotonic()
     stats = await client.get_collection_stats()
     elapsed = time.monotonic() - start
-    assert elapsed < 2.0, f"stats took {elapsed:.2f}s"
+    # Two concurrent requests and no sampling. Typically under a second; the
+    # bound only catches a return to sampling (about 11 seconds).
+    assert sorted(calls) == ["search", "stats"]
+    assert elapsed < 8.0, f"stats took {elapsed:.2f}s"
     assert stats.total_objects > 1_000_000
     assert stats.total_cc0 and stats.total_with_images
     assert any(unit.unit_code == "NMAH" for unit in stats.units)
@@ -236,3 +389,48 @@ async def test_titles_are_plain_text(client):
     titles = [obj.title for obj in result.objects]
     assert "The Muppets Lunch Box" in titles
     assert all("<" not in title for title in titles)
+
+
+NON_CREATOR_LABELS = {
+    "sitter",
+    "seller",
+    "culture/people",
+    "previous owner",
+    "collector",
+    "donor name",
+    "subject of",
+    "owned by",
+    "taxon",
+    "site name",
+}
+
+
+@pytest.mark.parametrize(
+    "unit",
+    ["SAAM", "NPG", "NMAH", "NASM", "NMAA", "NMAI", "CHNDM", "NMAAHC", "NMNHMINSCI"],
+)
+async def test_makers_exclude_non_creators(client, unit):
+    rows = await _direct_rows(f"unit_code:{unit}", rows=100)
+    assert rows
+    for row in rows:
+        obj = client._parse_object_data(row)
+        entries = row["content"].get("freetext", {}).get("name") or []
+        creators = {
+            entry.get("content")
+            for entry in entries
+            if (entry.get("label") or "").lower() not in NON_CREATOR_LABELS
+        }
+        for entry in entries:
+            if (entry.get("label") or "").lower() in NON_CREATOR_LABELS:
+                content = entry.get("content")
+                assert content in creators or content not in obj.maker, row["id"]
+
+
+async def test_hope_diamond_replica_has_no_maker(client):
+    result = await client.search_collections(
+        CollectionSearchFilter(
+            query="Hope Diamond Replica", unit_code="NMNHMINSCI", limit=5
+        )
+    )
+    assert result.objects
+    assert all(obj.maker == [] for obj in result.objects)

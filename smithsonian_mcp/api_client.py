@@ -60,20 +60,87 @@ ON_VIEW_CLAUSE = 'onPhysicalExhibit:"Yes"'
 # "AND NOT onPhysicalExhibit" undercounts on this API; a match-all group does not.
 NOT_ON_VIEW_CLAUSE = '(* NOT onPhysicalExhibit:"Yes")'
 
-# freetext.name labels that describe subjects or owners rather than makers.
-_NON_MAKER_LABELS = frozenset(
+# freetext.name labels that name the creator of an object. The other labels in
+# that block name subjects, sitters, owners, sellers, donors, collectors,
+# cultures, places, vessels or taxa. Derived from label frequencies in random
+# samples of 26 units.
+_MAKER_LABELS = frozenset(
     {
-        "sitter",
-        "subject",
-        "depicted",
-        "associated person",
-        "associated name",
-        "associated institution",
-        "owner",
-        "previous owner",
-        "donor",
+        "artist",
+        "artist/maker",
+        "maker",
+        "creator",
+        "created by",
+        "made by",
+        "manufacturer",
+        "manufactured by",
+        "author",
+        "written by",
+        "writer",
+        "photographer",
+        "photograph by",
+        "photographed by",
+        "designer",
+        "designed by",
+        "engraver",
+        "engraved by",
+        "printer",
+        "printed by",
+        "print maker",
+        "printmaker",
+        "lithographer",
+        "publisher",
+        "published by",
+        "sculptor",
+        "architect",
+        "illustrator",
+        "illustrated by",
+        "calligrapher",
+        "embroiderer",
+        "model maker",
+        "attributed to",
+        "attribution",
+        "possibly",
+        "studio",
+        "mint",
+        "founder",
+        "assembler",
+        "contractor",
+        "inventor",
+        "collaborator",
+        "composer",
+        "performer",
+        "recording artist",
+        "producer",
+        "produced by",
+        "editor",
+        "edited by",
     }
 )
+# Label fragments of further creator roles ("Artist (attributed)", "Silversmith").
+_MAKER_LABEL_FRAGMENTS = (
+    "artist",
+    "maker",
+    "manufactur",
+    "photograph",
+    "designer",
+    "engraver",
+    "sculpt",
+    "illustrat",
+    "lithograph",
+    "painter",
+    "potter",
+    "weaver",
+    "smith",
+    "carver",
+)
+# physicalDescription labels that hold materials, and prefixes of labels that
+# hold dimensions.
+_MATERIAL_LABELS = frozenset({"medium", "materials", "material", "media/materials"})
+_DIMENSION_LABELS = ("dimension", "measurement")
+_DECADE_RE = re.compile(r"^(\d{3,4})s$")
+# Labels that mention a creator but describe someone else's role.
+_NOT_MAKER_LABEL_PREFIXES = ("formerly", "copy after", "after", "possible owner")
 
 # ---------------------------------------------------------------------------
 # Query building
@@ -90,8 +157,22 @@ _BOOLEAN_OPERATORS = {
 _GROUP_PREFIXES = frozenset({"+", "-", "!"})
 _RANGE_RE = re.compile(r"^[\[{]\s*\S+\s+TO\s+\S+\s*[\]}]$")
 _YEAR_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
+# Years accepted by date_start/date_end; decades are matched as "1950s" terms.
+MIN_DATE_YEAR = 1000
+MAX_DATE_YEAR = 2999
 # Letters, digits, spaces and the punctuation found in personal names.
 _PERSON_NAME_RE = re.compile(r"^[^\W_][\w .,'’-]*$")
+_NAME_SUFFIX_RE = re.compile(r"[,\s]+(?:jr|sr|ii|iii|iv)\.?$", re.IGNORECASE)
+# What may follow a vocabulary term in a qualified index term, e.g.
+# "Dresses (garments)", "Civil War, 1861-1865", "Camera; Rollfilm", "Cup/Mug".
+_QUALIFIER_SEPARATORS = (" (", ",", ";", "/", " /", ":")
+# Topics also have narrower terms after a space ("African American women"),
+# which covers " (" and " /".
+_NARROWER_SEPARATORS = (" ", ",", ";", "/", ":")
+# What may follow a name in a longer indexed name: "Lockheed Aircraft
+# Corporation", "Homer, Winslow", "Lockheed-Georgia Company", "Gorham/Textron",
+# "Colt's Patent Firearms Manufacturing Company".
+_NAME_BOUNDARIES = (" ", ",", "-", "/", "'s")
 
 
 @dataclass
@@ -122,7 +203,9 @@ def _read_word(text: str, index: int) -> Tuple[str, int]:
     Read one query word starting at index.
 
     Quoted phrases and ``[a TO b]`` ranges are kept whole. Unmatched quotes are
-    dropped and stray range brackets are escaped.
+    dropped, and stray range brackets, ``?`` (a single-character wildcard, which
+    makes "Diamond?" match nothing) and ``!`` after the first character are
+    escaped.
 
     Args:
         text: Full query text.
@@ -160,7 +243,7 @@ def _read_word(text: str, index: int) -> Tuple[str, int]:
             parts.append("\\" + char)
             index += 1
             continue
-        if char in "]}":
+        if char in "]}?" or (char == "!" and parts):
             parts.append("\\" + char)
             index += 1
             continue
@@ -169,6 +252,17 @@ def _read_word(text: str, index: int) -> Tuple[str, int]:
         parts.append(char)
         index += 1
     return "".join(parts), index
+
+
+def _is_search_term(word: str) -> bool:
+    """
+    Whether a word can match anything on its own.
+
+    Words without a letter or digit ("&", an em dash, a lone ":") are dropped from
+    the query, as the API's analyzer does for an unparenthesized query; as required
+    AND terms they would match nothing. ``*`` and ``*:*`` are kept as match-all.
+    """
+    return word in ("*", "*:*") or any(char.isalnum() for char in word)
 
 
 def _tokenize_query(text: str) -> List[Tuple[str, str]]:
@@ -209,10 +303,11 @@ def _tokenize_query(text: str) -> List[Tuple[str, str]]:
             continue
         if word in _BOOLEAN_OPERATORS:
             tokens.append(("OP", _BOOLEAN_OPERATORS[word]))
-        elif word and word not in _GROUP_PREFIXES:
-            if word.endswith(":") and not word.endswith("\\:"):
-                # "Star Wars: A New Hope" - a colon followed by a space is text
-                word = word[:-1] + "\\:"
+            continue
+        while word.endswith(":") and not word.endswith("\\:"):
+            # "Star Wars: A New Hope" - a colon followed by a space is punctuation
+            word = word[:-1]
+        if _is_search_term(word):
             tokens.append(("ATOM", word))
     return tokens
 
@@ -438,24 +533,78 @@ def vocabulary_variants(value: str) -> List[str]:
     return variants
 
 
-def _any_of(field_name: str, values: List[str]) -> str:
-    """Build ``field:"a"`` or ``field:("a" OR "b")`` for quoted values."""
-    phrases = [escape_query_phrase(value) for value in values]
-    if len(phrases) == 1:
-        return f"{field_name}:{phrases[0]}"
-    return f"{field_name}:({' OR '.join(phrases)})"
+def _prefix_wildcard(prefix: str) -> str:
+    """
+    Escape a prefix, keeping a trailing space, and append the ``*`` wildcard.
+
+    Args:
+        prefix: Literal prefix such as "Lockheed " or "Dresses (".
+
+    Returns:
+        str: Wildcard term such as ``Lockheed\\ *``.
+    """
+    trailing_space = prefix.endswith(" ")
+    escaped = escape_query_term(prefix)
+    return f"{escaped}\\ *" if trailing_space else f"{escaped}*"
+
+
+def vocabulary_clause(
+    field_name: str, value: str, narrower: bool = False
+) -> Optional[str]:
+    """
+    Build the clause for a controlled-vocabulary filter (object_type, topic).
+
+    Index terms are often qualified: "Dresses (garments)", "Coins (money)",
+    "Civil War, 1861-1865", "Camera; Rollfilm", "Sculpture/Carving/Figures". The
+    clause matches each case and singular/plural variant exactly or followed by
+    one of `` (``, ``,``, ``;``, ``/`` or ``:``. A bare prefix is not used because
+    it over-matches ("hat" would match "Hatchets", "letter" "Letterpress").
+
+    Args:
+        field_name: Indexed field, e.g. ``object_type``.
+        value: User supplied value, e.g. "dress".
+        narrower: Also match narrower terms that start with the value as typed and a
+            space ("African American women" for "African American"); used for
+            topics, where such terms are subdivisions rather than other things.
+
+    Returns:
+        Optional[str]: Query clause, or None for an empty value.
+    """
+    variants = vocabulary_variants(value)
+    if not variants:
+        return None
+    typed = variants[0].lower()
+    terms = [escape_query_phrase(variant) for variant in variants]
+    for variant in variants:
+        # Narrower terms only for the value as typed: "Landscapes" covers
+        # "Landscapes in art" but not "Landscape architecture"
+        if narrower and variant.lower() == typed:
+            separators = _NARROWER_SEPARATORS
+        else:
+            separators = _QUALIFIER_SEPARATORS
+        for separator in separators:
+            terms.append(_prefix_wildcard(variant + separator))
+    return f"{field_name}:({' OR '.join(terms)})"
+
+
+def _strip_name_suffix(name: str) -> str:
+    """Remove a trailing generational suffix such as "Jr." or "III"."""
+    return _NAME_SUFFIX_RE.sub("", name).strip()
 
 
 def maker_clause(maker: str) -> Optional[str]:
     """
     Build the clause for a maker filter.
 
-    Names are indexed as "Last, First" (e.g. "Homer, Winslow"), case-sensitively.
-    The clause matches the name as given, with capitalized words, inverted to
-    "Last, First", and as a "Last, First" prefix to allow middle names.
+    Names are indexed as "Last, First" (e.g. "Homer, Winslow"), case-sensitively,
+    and organizations under their full names ("Lockheed Aircraft Corporation").
+    The clause matches the name as given, with capitalized words, and inverted to
+    "Last, First" (after dropping Jr./Sr./II/III/IV), each exactly or followed by
+    further words. Prefixes only extend at a word boundary, so "Smith" does not
+    match "Smithsonian" and "Colt" does not match "Coltrane".
 
     Args:
-        maker: Maker name, e.g. "Winslow Homer" or "Thomas, Alma".
+        maker: Maker name, e.g. "Winslow Homer", "Thomas, Alma" or "Lockheed".
 
     Returns:
         Optional[str]: Query clause, or None for an empty name.
@@ -464,79 +613,97 @@ def maker_clause(maker: str) -> Optional[str]:
     if not base:
         return None
     variants: List[str] = []
+    prefixes: List[str] = []
 
-    def add(value: str) -> None:
-        if value and value not in variants:
-            variants.append(value)
+    def add(collection: List[str], value: str) -> None:
+        if value and value not in collection:
+            collection.append(value)
 
-    add(base)
-    add(_capitalize_words(base))
-    prefix: Optional[str] = None
-    words = base.split(" ")
-    if not _PERSON_NAME_RE.match(base):
-        pass  # not a plain name: match it exactly, without inversion or prefix
-    elif "," in base:
-        prefix = _capitalize_words(base)
-    elif len(words) >= 2:
-        inverted = f"{words[-1]}, {' '.join(words[:-1])}"
-        add(_capitalize_words(inverted))
-        add(inverted)
-        prefix = _capitalize_words(inverted)
-    else:
-        prefix = f"{_capitalize_first(base)},"
+    add(variants, base)
+    add(variants, _capitalize_words(base))
+    if _PERSON_NAME_RE.match(base):
+        # As given: "Lockheed" -> "Lockheed Aircraft", "Lockheed-Georgia Company"
+        add(prefixes, _capitalize_words(base))
+        stem = _strip_name_suffix(base)
+        words = stem.split(" ")
+        if "," not in stem and len(words) >= 2:
+            inverted = f"{words[-1]}, {' '.join(words[:-1])}"
+            add(variants, _capitalize_words(inverted))
+            add(variants, inverted)
+            # "King, Martin Luther" -> "King, Martin Luther, Jr."
+            add(prefixes, _capitalize_words(inverted))
+        elif "," in stem:
+            add(prefixes, _capitalize_words(stem))
 
     terms = [f"name:{escape_query_phrase(value)}" for value in variants]
-    if prefix:
-        terms.append(f"name:{escape_query_term(prefix)}*")
+    for prefix in prefixes:
+        boundaries = _NAME_BOUNDARIES if "," not in prefix else (" ", ",")
+        for boundary in boundaries:
+            terms.append(f"name:{_prefix_wildcard(prefix + boundary)}")
     if len(terms) == 1:
         return terms[0]
     return f"({' OR '.join(terms)})"
 
 
-def _parse_year(value: Optional[str]) -> Optional[int]:
-    """Extract a four-digit year between 1000 and 2999 from a date string."""
-    if value is None:
+def _parse_year(name: str, value: Optional[str]) -> Optional[int]:
+    """
+    Extract a four-digit year between 1000 and 2999 from a date string.
+
+    Args:
+        name: Filter name for the error message (``date_start`` or ``date_end``).
+        value: Year or date such as "1943" or "1943-05-01"; None or blank for none.
+
+    Returns:
+        Optional[int]: The year, or None if no value was given.
+
+    Raises:
+        ValueError: If a value was given but has no supported year.
+    """
+    if value is None or not str(value).strip():
         return None
     match = _YEAR_RE.search(str(value))
-    if not match:
-        return None
-    year = int(match.group(1))
-    return year if 1000 <= year <= 2999 else None
+    year = int(match.group(1)) if match else None
+    if year is None or not MIN_DATE_YEAR <= year <= MAX_DATE_YEAR:
+        raise ValueError(
+            f"{name} {value!r} is not supported: use a four-digit year between "
+            f"{MIN_DATE_YEAR} and {MAX_DATE_YEAR}, e.g. '1865' or '1865-04-14'"
+        )
+    return year
 
 
 def date_clause(date_start: Optional[str], date_end: Optional[str]) -> Optional[str]:
     """
-    Build a decade range clause for date filtering.
+    Build a decade clause for date filtering.
 
-    The ``date`` field holds decade terms such as "1950s", which sort correctly as
-    text for four-digit years, so a range query selects the decades in between.
+    The ``date`` field holds normalized terms, mostly decades such as "1950s",
+    alongside centuries, three-digit decades and free text. Range queries on it
+    compare text, so the decades in the range are listed explicitly. An open
+    start begins at the 1000s and an open end stops at the current decade.
 
     Args:
         date_start: Start year or date (e.g. "1943" or "1943-05-01").
         date_end: End year or date.
 
     Returns:
-        Optional[str]: Clause such as ``date:["1940s" TO "1960s"]``, or None.
+        Optional[str]: Clause such as ``date:("1940s" OR "1950s" OR "1960s")``,
+        or None when neither bound is given.
+
+    Raises:
+        ValueError: If a bound is given but is not a year from 1000 to 2999.
     """
-    start = _parse_year(date_start)
-    end = _parse_year(date_end)
-    for label, raw, parsed in (
-        ("date_start", date_start, start),
-        ("date_end", date_end, end),
-    ):
-        if raw not in (None, "") and parsed is None:
-            logger.warning(
-                "Ignoring %s %r: only four-digit years 1000-2999 are supported",
-                label,
-                raw,
-            )
+    start = _parse_year("date_start", date_start)
+    end = _parse_year("date_end", date_end)
     if start is None and end is None:
         return None
     if start is not None and end is not None and start > end:
         start, end = end, start
-    lower = f'"{start // 10 * 10}s"' if start is not None else "*"
-    upper = f'"{end // 10 * 10}s"' if end is not None else "*"
-    return f"date:[{lower} TO {upper}]"
+    first = (start if start is not None else MIN_DATE_YEAR) // 10 * 10
+    current_decade = datetime.now(timezone.utc).year // 10 * 10
+    last = (end if end is not None else max(current_decade, first)) // 10 * 10
+    decades = [f'"{decade}s"' for decade in range(first, last + 1, 10)]
+    if len(decades) == 1:
+        return f"date:{decades[0]}"
+    return f"date:({' OR '.join(decades)})"
 
 
 def build_filter_clauses(filters: CollectionSearchFilter) -> List[str]:
@@ -553,14 +720,16 @@ def build_filter_clauses(filters: CollectionSearchFilter) -> List[str]:
     unit_clause = unit_code_query_clause(filters.unit_code)
     if unit_clause:
         clauses.append(unit_clause)
-    if filters.object_type and filters.object_type.strip():
-        clauses.append(_any_of("object_type", vocabulary_variants(filters.object_type)))
+    object_type = vocabulary_clause("object_type", filters.object_type or "")
+    if object_type:
+        clauses.append(object_type)
     if filters.maker and filters.maker.strip():
         clause = maker_clause(filters.maker)
         if clause:
             clauses.append(clause)
-    if filters.topic and filters.topic.strip():
-        clauses.append(_any_of("topic", vocabulary_variants(filters.topic)))
+    topic = vocabulary_clause("topic", filters.topic or "", narrower=True)
+    if topic:
+        clauses.append(topic)
     if filters.material and filters.material.strip():
         clauses.append(f"physicalDescription:{escape_query_phrase(filters.material)}")
     dates = date_clause(filters.date_start, filters.date_end)
@@ -638,6 +807,94 @@ def _label_of(item: Any) -> str:
     if isinstance(item, dict) and isinstance(item.get("label"), str):
         return item["label"].strip().lower()
     return ""
+
+
+def _is_maker_label(label: str) -> bool:
+    """Whether a freetext.name label is a creator role."""
+    # "manufactured for", "printed for" name the client, not the maker
+    if (
+        not label
+        or label.startswith(_NOT_MAKER_LABEL_PREFIXES)
+        or label.endswith(" for")
+    ):
+        return False
+    return label in _MAKER_LABELS or any(
+        fragment in label for fragment in _MAKER_LABEL_FRAGMENTS
+    )
+
+
+def _material_of(item: Any) -> Optional[str]:
+    """
+    Return the text of a physicalDescription entry that describes materials.
+
+    Entries labelled Medium, Materials or Media/Materials qualify. "Physical
+    description" entries qualify only when they name a material ("vinyl (overall
+    material)" at NMAH); elsewhere that label holds extents such as "3 p.". Other
+    labels (Dimensions, Object Name, Techniques, Contents, Preparation, ...) do
+    not describe materials.
+    """
+    text = _content_of(item)
+    if not text or not text.strip():
+        return None
+    label = _label_of(item)
+    if label in _MATERIAL_LABELS:
+        return text
+    if label == "physical description" and "material" in text.lower():
+        return text
+    return None
+
+
+def _earliest_decade(values: List[str]) -> Optional[str]:
+    """
+    Return the earliest decade term (e.g. "1490s" from ["1520s", "1490s"]).
+
+    Values that are not decades are ignored unless nothing else is present, in
+    which case the first value is returned.
+    """
+    decades = []
+    for value in values:
+        match = _DECADE_RE.match(value.strip())
+        if match:
+            decades.append((int(match.group(1)), value.strip()))
+    if decades:
+        return min(decades)[1]
+    return values[0] if values else None
+
+
+def _rights_statement(entries: Any) -> Optional[str]:
+    """
+    Join the rights statements of a record.
+
+    Records can carry several, e.g. "© Bernard J. Kleina" and "Permission required
+    for use". Entries labelled "Restrictions & Rights" are used when present;
+    other labels (NPG "Copyright" holds internal notes) only when they are not.
+    """
+    items = _as_list(entries)
+    preferred = [item for item in items if _label_of(item) == "restrictions & rights"]
+    statements: List[str] = []
+    for item in preferred or items:
+        text = clean_text(_content_of(item))
+        if text and text not in statements:
+            statements.append(text)
+    return "; ".join(statements) or None
+
+
+def _has_cc0_media(descriptive: Dict[str, Any]) -> bool:
+    """Whether any online media item of the record is CC0."""
+    online_media = descriptive.get("online_media")
+    if isinstance(online_media, dict):
+        media = online_media.get("media")
+        items = media if isinstance(media, list) else [online_media]
+    else:
+        items = _as_list(online_media)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        usage = item.get("usage")
+        access = usage.get("access") if isinstance(usage, dict) else usage
+        if access == "CC0":
+            return True
+    return False
 
 
 def _first_text(*candidates: Any) -> Optional[str]:
@@ -877,6 +1134,8 @@ class SmithsonianAPIClient:
                     status_code=status_code,
                     details={"url": url},
                 ) from e
+            if status_code == 403:
+                raise self._forbidden_error(e.response, url) from e
             error_msg = f"HTTP {status_code} error for {url}"
             logger.error(error_msg)
             raise APIError(
@@ -903,6 +1162,62 @@ class SmithsonianAPIClient:
                 status_code=None,
                 details={"exception_type": type(e).__name__},
             ) from e
+
+    @staticmethod
+    def _forbidden_error(response: httpx.Response, url: str) -> APIError:
+        """
+        Classify an HTTP 403 response.
+
+        api.data.gov rejects a missing or invalid key with a JSON body such as
+        ``{"error": {"code": "API_KEY_INVALID", ...}}``. A firewall in front of the
+        API answers queries that look like SQL, script or path injection
+        (``' OR 1=1 --``, ``<script>``, ``../``) with an HTML "Request Rejected"
+        page instead, which says nothing about the key.
+
+        Args:
+            response: The 403 response.
+            url: Request URL without parameters, for the error details.
+
+        Returns:
+            APIError: ``query_rejected`` for the firewall page, ``api_key_rejected``
+            for key errors, ``http_error`` otherwise.
+        """
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            message = (
+                "The Smithsonian API firewall rejected the request (HTTP 403). "
+                "This is not an API key problem: rephrase the query without "
+                "text that looks like SQL, HTML/script tags or file paths."
+            )
+            logger.warning("Request rejected by the API firewall: %s", url)
+            return APIError(
+                error="query_rejected",
+                message=message,
+                status_code=403,
+                details={"url": url},
+            )
+        error = _as_dict(body.get("error"))
+        code = error.get("code") if isinstance(error.get("code"), str) else None
+        if code and code.startswith("API_KEY"):
+            message = f"The API key was rejected ({code}): {error.get('message')}"
+            logger.error(message)
+            return APIError(
+                error="api_key_rejected",
+                message=message,
+                status_code=403,
+                details={"url": url, "code": code},
+            )
+        message = f"HTTP 403 error for {url}"
+        logger.error(message)
+        return APIError(
+            error="http_error",
+            message=message,
+            status_code=403,
+            details={"url": url},
+        )
 
     @staticmethod
     def _parse_on_view_status(indexed_structured: Dict[str, Any]) -> bool:
@@ -1037,21 +1352,32 @@ class SmithsonianAPIClient:
         return images
 
     @staticmethod
-    def _parse_makers(
-        freetext: Dict[str, Any], indexed_structured: Dict[str, Any]
-    ) -> List[str]:
-        """Collect maker names from freetext.maker / freetext.name entries."""
+    def _parse_makers(freetext: Dict[str, Any]) -> List[str]:
+        """
+        Collect creator names from the freetext block.
+
+        Entries under ``freetext.name`` count only when their label is a creator
+        role (artist, manufacturer, author, photograph by, ...); unlabeled entries
+        have no known role and are skipped. Entries under ``freetext.maker`` count
+        unless their label names another role. indexedStructured.name is not used:
+        it mixes makers with dealers, collectors and subjects.
+
+        Args:
+            freetext: The freetext block of a record.
+
+        Returns:
+            List[str]: Distinct maker names in record order.
+        """
         makers: List[str] = []
-        for item in _as_list(freetext.get("maker")) + _as_list(freetext.get("name")):
-            if _label_of(item) in _NON_MAKER_LABELS:
+        candidates = [(item, True) for item in _as_list(freetext.get("maker"))]
+        candidates += [(item, False) for item in _as_list(freetext.get("name"))]
+        for item, from_maker_block in candidates:
+            label = _label_of(item)
+            if not (_is_maker_label(label) or (from_maker_block and not label)):
                 continue
             text = clean_text(_content_of(item))
             if text and text not in makers:
                 makers.append(text)
-        if not makers:
-            makers = [
-                clean_text(name) for name in _strings(indexed_structured.get("name"))
-            ]
         return makers
 
     def _parse_object_data(self, raw_data: Dict[str, Any]) -> SmithsonianObject:
@@ -1108,12 +1434,12 @@ class SmithsonianAPIClient:
 
         physical = _as_list(freetext.get("physicalDescription"))
         dimensions = [
-            _content_of(item) for item in physical if "dimension" in _label_of(item)
+            _content_of(item)
+            for item in physical
+            if _label_of(item).startswith(_DIMENSION_LABELS)
         ]
         materials = [
-            text
-            for item in physical
-            if "dimension" not in _label_of(item) and (text := _content_of(item))
+            text for item in physical if (text := _material_of(item)) is not None
         ]
         legacy_date = _as_dict(descriptive.get("date"))
         legacy_physical = _as_list(descriptive.get("physicalDescription"))
@@ -1154,7 +1480,7 @@ class SmithsonianAPIClient:
             date_standardized=(
                 legacy_date.get("date_standardized")
                 if isinstance(legacy_date.get("date_standardized"), str)
-                else _first_text(indexed.get("date"))
+                else _earliest_decade(_strings(indexed.get("date")))
             ),
             dimensions=(
                 "; ".join(d for d in dimensions if d)
@@ -1169,7 +1495,7 @@ class SmithsonianAPIClient:
                 if isinstance(descriptive.get("creditLine"), str)
                 else None
             ),
-            rights=_first_text(freetext.get("objectRights"))
+            rights=_rights_statement(freetext.get("objectRights"))
             or (
                 descriptive.get("rights")
                 if isinstance(descriptive.get("rights"), str)
@@ -1178,7 +1504,7 @@ class SmithsonianAPIClient:
             record_link=_safe_url(descriptive.get("record_link")),
             last_modified=_parse_timestamp(raw_data.get("lastTimeUpdated"))
             or _parse_timestamp(raw_data.get("modified")),
-            maker=self._parse_makers(freetext, indexed),
+            maker=self._parse_makers(freetext),
             object_type=_first_text(
                 freetext.get("objectType"), indexed.get("object_type")
             ),
@@ -1186,7 +1512,9 @@ class SmithsonianAPIClient:
             topics=_strings(indexed.get("topic")),
             culture=_strings(indexed.get("culture")),
             place=_strings(indexed.get("place")),
-            is_cc0=_as_dict(descriptive.get("metadata_usage")).get("access") == "CC0",
+            is_cc0=_has_cc0_media(descriptive),
+            metadata_is_cc0=_as_dict(descriptive.get("metadata_usage")).get("access")
+            == "CC0",
             is_on_view=self._parse_on_view_status(indexed),
             exhibition_title=self._parse_exhibition_title(indexed),
             exhibition_location=self._parse_exhibition_location(indexed),

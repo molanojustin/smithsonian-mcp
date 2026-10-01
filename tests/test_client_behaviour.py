@@ -129,6 +129,195 @@ class TestParsing:
         messages = [record.getMessage() for record in caplog.records]
         assert any("Parsed 2 images" in message for message in messages)
 
+    @pytest.mark.parametrize(
+        "unit,names,indexed,expected",
+        [
+            # Label sets taken from real records of each unit
+            (
+                "NMAI",
+                [
+                    ("Culture/People", "Lakota"),
+                    ("Seller", "Some Dealer"),
+                    ("Previous owner", "A Collector"),
+                    ("Collector", "Field Collector"),
+                    ("Artist/Maker", "Real Maker"),
+                ],
+                ["Some Dealer", "A Collector"],
+                ["Real Maker"],
+            ),
+            (
+                "NMNHMINSCI",
+                [("Site Name", "Synthetic"), ("Taxon", "Cubic zirconia - Primary")],
+                [],
+                [],
+            ),
+            (
+                "NMNHANTHRO",
+                [
+                    ("Donor Name", "Donor"),
+                    ("Collector", "Collector"),
+                    ("Site Name", "X"),
+                ],
+                [],
+                [],
+            ),
+            (
+                "NMAAHC",
+                [
+                    ("subject of", "Subject Person"),
+                    ("photograph by", "Photographer"),
+                    ("owned by", "Owner"),
+                    ("signed by", "Signer"),
+                    ("created by", "Creator"),
+                ],
+                [],
+                ["Photographer", "Creator"],
+            ),
+            (
+                "NPG",
+                [("Sitter", "Jack London"), ("Artist", "Finn Frolich")],
+                [],
+                ["Finn Frolich"],
+            ),
+            (
+                "SAAM",
+                [
+                    ("Artist", "A"),
+                    ("Copy after", "B"),
+                    ("Commissioner", "C"),
+                    ("Sitter", "D"),
+                ],
+                [],
+                ["A"],
+            ),
+            (
+                "NASM",
+                [
+                    ("Manufacturer", "Boeing"),
+                    ("Manufactured for", "US Navy"),
+                    ("Owner", "O"),
+                ],
+                [],
+                ["Boeing"],
+            ),
+            ("HMSG", [("Artist", "A"), ("Formerly attributed to", "B")], [], ["A"]),
+            (
+                "CHNDM",
+                [("Designer", "D"), ("Print maker", "P"), ("After", "X")],
+                [],
+                ["D", "P"],
+            ),
+            # No creator in freetext: indexed names (dealers, collectors) are not used
+            ("NMAA", [], ["Kobayashi, Bunshichi", "Freer, Charles Lang"], []),
+            # Unlabeled name entries have no known role
+            ("NMAH", [(None, "Unknown Role")], [], []),
+        ],
+    )
+    def test_makers_are_creators_only(self, unit, names, indexed, expected):
+        client = SmithsonianAPIClient(api_key="test")
+        entries = [
+            (
+                {"content": content}
+                if label is None
+                else {"label": label, "content": content}
+            )
+            for label, content in names
+        ]
+        row = {
+            "id": "ld1-x",
+            "title": "t",
+            "unitCode": unit,
+            "content": {
+                "freetext": {"name": entries},
+                "indexedStructured": {"name": indexed},
+            },
+        }
+        assert client._parse_object_data(row).maker == expected
+
+    @staticmethod
+    def _parse(content, **extra):
+        client = SmithsonianAPIClient(api_key="test")
+        return client._parse_object_data(
+            {"id": "ld1-x", "title": "t", "content": content, **extra}
+        )
+
+    def test_date_standardized_is_the_earliest_decade(self):
+        # HMSG lists later decades first for an object dated 1497-98
+        obj = self._parse({"indexedStructured": {"date": ["1520s", "1490s", "1500s"]}})
+        assert obj.date_standardized == "1490s"
+        obj = self._parse({"indexedStructured": {"date": ["20th century", "1950s"]}})
+        assert obj.date_standardized == "1950s"
+        obj = self._parse({"indexedStructured": {"date": ["Ming dynasty"]}})
+        assert obj.date_standardized == "Ming dynasty"
+
+    def test_rights_keep_every_statement(self):
+        rights = [
+            {"label": "Restrictions & Rights", "content": "© Bernard J. Kleina"},
+            {
+                "label": "Restrictions & Rights",
+                "content": "Permission required for use.",
+            },
+        ]
+        obj = self._parse({"freetext": {"objectRights": rights}})
+        assert obj.rights == "© Bernard J. Kleina; Permission required for use."
+        npg = [
+            {"label": "Restrictions & Rights", "content": "CC0"},
+            {"label": "Copyright", "content": "death date 1923"},
+        ]
+        assert self._parse({"freetext": {"objectRights": npg}}).rights == "CC0"
+
+    def test_materials_come_from_material_labels(self):
+        nmai = [
+            {"label": "Object Name", "content": "Jar"},
+            {"label": "Media/Materials", "content": "Pottery"},
+            {"label": "Techniques", "content": "Painted"},
+            {"label": "Dimensions", "content": "10 cm"},
+        ]
+        obj = self._parse({"freetext": {"physicalDescription": nmai}})
+        assert obj.materials == ["Pottery"]
+        assert obj.dimensions == "10 cm"
+        nmah = [
+            {"label": "Physical Description", "content": "vinyl (overall material)"},
+            {
+                "label": "Physical Description",
+                "content": "woven (overall production method/technique)",
+            },
+            {"label": "Measurements", "content": "overall: 13 in x 8 in"},
+        ]
+        obj = self._parse({"freetext": {"physicalDescription": nmah}})
+        assert obj.materials == ["vinyl (overall material)"]
+        assert obj.dimensions == "overall: 13 in x 8 in"
+        sil = [{"label": "Physical description", "content": "xii, 300 p. : ill."}]
+        assert self._parse({"freetext": {"physicalDescription": sil}}).materials == []
+
+    def test_is_cc0_reflects_media_usage(self):
+        # NMAAHC: CC0 metadata, copyrighted object with no CC0 media
+        copyrighted = self._parse(
+            {"descriptiveNonRepeating": {"metadata_usage": {"access": "CC0"}}}
+        )
+        assert copyrighted.is_cc0 is False
+        assert copyrighted.metadata_is_cc0 is True
+        with_media = self._parse(
+            {
+                "descriptiveNonRepeating": {
+                    "metadata_usage": {"access": "CC0"},
+                    "online_media": {
+                        "media": [{"type": "Images", "usage": {"access": "CC0"}}]
+                    },
+                }
+            }
+        )
+        assert with_media.is_cc0 is True and with_media.metadata_is_cc0 is True
+
+    def test_maker_block_entries_count_without_label(self):
+        client = SmithsonianAPIClient(api_key="test")
+        row = {
+            "id": "ld1-x",
+            "title": "t",
+            "content": {"freetext": {"maker": [{"content": "Unlabeled Maker"}]}},
+        }
+        assert client._parse_object_data(row).maker == ["Unlabeled Maker"]
+
     def test_exhibition_room_is_optional(self):
         client = SmithsonianAPIClient(api_key="test")
         indexed = {"exhibition": [{"building": "NMAH", "room": "East 1"}]}
@@ -185,6 +374,17 @@ class TestSearch:
         assert result.has_more is False and result.next_offset is None
 
     @pytest.mark.asyncio
+    async def test_invalid_date_raises_before_any_request(self, monkeypatch):
+        client = SmithsonianAPIClient(api_key="test")
+        request = AsyncMock()
+        monkeypatch.setattr(client, "_make_request", request)
+        with pytest.raises(ValueError, match="date_start '19th century'"):
+            await client.search_collections(
+                CollectionSearchFilter(date_start="19th century")
+            )
+        request.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_count_matches_uses_rows_zero(self, monkeypatch):
         client = SmithsonianAPIClient(api_key="test")
         request = AsyncMock(return_value=_search_response([], 254))
@@ -193,6 +393,59 @@ class TestSearch:
         request.assert_awaited_once_with(
             "search", {"q": 'onPhysicalExhibit:"Yes"', "start": 0, "rows": 0}
         )
+
+
+FIREWALL_PAGE = (
+    "<html><head><title>Request Rejected</title></head><body>...</body></html>"
+)
+
+
+class TestForbidden:
+    """HTTP 403 responses: firewall rejections versus key errors."""
+
+    @staticmethod
+    async def _error_for(response: httpx.Response) -> APIError:
+        client = SmithsonianAPIClient(
+            api_key="test", transport=httpx.MockTransport(lambda request: response)
+        )
+        try:
+            with pytest.raises(APIError) as excinfo:
+                await client.search_collections(
+                    CollectionSearchFilter(query="x", limit=0)
+                )
+        finally:
+            await client.disconnect()
+        return excinfo.value
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("content_type", ["text/html; charset=utf-8", "text/html"])
+    async def test_html_403_is_a_rejected_query(self, content_type):
+        error = await self._error_for(
+            httpx.Response(
+                403, content=FIREWALL_PAGE, headers={"content-type": content_type}
+            )
+        )
+        assert error.error == "query_rejected"
+        assert error.status_code == 403
+        assert "rephrase the query" in error.message
+        assert "not an API key problem" in error.message
+
+    @pytest.mark.asyncio
+    async def test_json_403_is_a_key_error(self):
+        body = {
+            "error": {
+                "code": "API_KEY_INVALID",
+                "message": "An invalid api_key was supplied.",
+            }
+        }
+        error = await self._error_for(httpx.Response(403, json=body))
+        assert error.error == "api_key_rejected"
+        assert "API_KEY_INVALID" in error.message
+
+    @pytest.mark.asyncio
+    async def test_other_json_403_stays_an_http_error(self):
+        error = await self._error_for(httpx.Response(403, json={"status": 403}))
+        assert error.error == "http_error"
 
 
 class TestUnits:
@@ -294,6 +547,50 @@ class TestSharedClient:
         assert await context.get_api_client() is first
         await context.close_api_client()
         assert context.peek_api_client() is None
+
+    def test_client_is_recreated_on_a_new_event_loop(self, monkeypatch):
+        created = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_search_response([], 7))
+
+        async def fake_create():
+            client = SmithsonianAPIClient(
+                api_key="test", transport=httpx.MockTransport(handler)
+            )
+            await client.connect()
+            created.append((client, asyncio.get_running_loop()))
+            return client
+
+        monkeypatch.setattr(context, "create_client", fake_create)
+        context.set_api_client(None)
+
+        async def use_twice():
+            first = await context.get_api_client()
+            second = await context.get_api_client()
+            assert first is second  # reused within one loop
+            return first, await first.count_matches("*")
+
+        client_one, count_one = asyncio.run(use_twice())
+        client_two, count_two = asyncio.run(use_twice())
+
+        assert count_one == count_two == 7
+        assert client_one is not client_two
+        assert len(created) == 2 and created[0][1] is not created[1][1]
+        context.set_api_client(None)
+
+    @pytest.mark.live
+    def test_shared_client_works_across_asyncio_runs_live(self):
+        async def use():
+            client = await context.get_api_client()
+            return await client.count_matches("muppet")
+
+        context.set_api_client(None)
+        try:
+            assert asyncio.run(use()) > 0
+            assert asyncio.run(use()) > 0  # was "Event loop is closed"
+        finally:
+            context.set_api_client(None)
 
 
 def _run_python(code_or_args, env_overrides=None, timeout=60):

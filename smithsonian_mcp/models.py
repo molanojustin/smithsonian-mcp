@@ -76,13 +76,15 @@ class CollectionSearchFilter(BaseModel):
         None,
         description=(
             "Start year (1000-2999) for date filtering. The API indexes dates by "
-            "decade, so matching is at decade granularity"
+            "decade, so matching is at decade granularity; other values are "
+            "rejected with an error"
         ),
     )
     date_end: Optional[str] = Field(
         None,
         description=(
-            "End year (1000-2999) for date filtering, matched at decade granularity"
+            "End year (1000-2999) for date filtering, matched at decade "
+            "granularity; other values are rejected with an error"
         ),
     )
     maker: Optional[str] = Field(
@@ -179,7 +181,14 @@ class SmithsonianObject(BaseModel):
     # Rights and access
     credit_line: Optional[str] = Field(None, description="Credit line")
     rights: Optional[str] = Field(None, description="Rights statement")
-    is_cc0: bool = Field(default=False, description="CC0 license status")
+    is_cc0: bool = Field(
+        default=False,
+        description="Whether the object has CC0 (public domain) media to reuse",
+    )
+    metadata_is_cc0: bool = Field(
+        default=False,
+        description="Whether the record's descriptive text is CC0",
+    )
 
     # Exhibition information
     is_on_view: bool = Field(
