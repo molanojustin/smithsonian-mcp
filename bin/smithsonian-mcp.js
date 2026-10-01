@@ -12,6 +12,7 @@
  */
 
 const { spawn } = require('cross-spawn');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 
@@ -30,10 +31,50 @@ function log(message = '') {
   process.stderr.write(`${message}\n`);
 }
 
+/**
+ * Per-user cache directory for the current OS.
+ * @returns {string}
+ */
+function userCacheDir() {
+  const home = os.homedir();
+  if (process.platform === 'win32') {
+    return process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(home, 'Library', 'Caches');
+  }
+  return process.env.XDG_CACHE_HOME || path.join(home, '.cache');
+}
+
 class SmithsonianMCPServer {
   constructor() {
     this.packagePath = path.resolve(__dirname, '..');
+    this.version = require(path.join(this.packagePath, 'package.json')).version;
     this.process = null;
+
+    // Where the Python environment lives:
+    //
+    // - Development checkout (the package directory is a git checkout, for
+    //   example `npm start` or `npm link`): keep uv's default `.venv` in the
+    //   checkout with an editable install, so it is the same environment that
+    //   `uv sync --group dev` manages for development.
+    // - Installed package (npx cache or a global install, which may sit under a
+    //   root-owned prefix): the package directory is treated as read-only and
+    //   the environment goes in a per-user cache directory, one per package
+    //   version so an upgrade never reuses a stale environment. The package is
+    //   installed non-editable, so the environment does not depend on where
+    //   npm unpacked this copy.
+    //
+    // An explicit UV_PROJECT_ENVIRONMENT in the caller's environment wins.
+    this.devCheckout = fs.existsSync(path.join(this.packagePath, '.git'));
+    this.uvEnv = { ...process.env };
+    if (!this.devCheckout && !process.env.UV_PROJECT_ENVIRONMENT) {
+      this.uvEnv.UV_PROJECT_ENVIRONMENT = path.join(
+        userCacheDir(),
+        'smithsonian-mcp',
+        `venv-${this.version}`
+      );
+    }
   }
 
   /**
@@ -59,17 +100,25 @@ class SmithsonianMCPServer {
    * Ensure runtime dependencies are installed from uv.lock.
    *
    * --frozen installs exactly what uv.lock pins without re-resolving.
-   * --no-dev skips development tools. --inexact leaves any extra packages in
-   * an existing environment alone, so a developer checkout keeps its dev tools.
-   * The child's stdout is redirected to our stderr to keep stdout clean.
+   * --no-dev skips development tools. In a development checkout, --inexact
+   * leaves extra packages alone so the checkout keeps its dev tools; an
+   * installed package gets an exact, non-editable sync into its own
+   * environment (see the constructor). The child's stdout is redirected to our
+   * stderr to keep stdout clean.
    */
   syncDependencies() {
     return new Promise((resolve, reject) => {
-      log('Syncing Python dependencies with uv...');
+      const envDir = this.uvEnv.UV_PROJECT_ENVIRONMENT || path.join(this.packagePath, '.venv');
+      log(`Syncing Python dependencies with uv into ${envDir}...`);
 
-      const sync = spawn('uv', ['sync', '--frozen', '--no-dev', '--inexact'], {
+      const syncArgs = this.devCheckout
+        ? ['sync', '--frozen', '--no-dev', '--inexact']
+        : ['sync', '--frozen', '--no-dev', '--no-editable'];
+
+      const sync = spawn('uv', syncArgs, {
         stdio: ['ignore', 2, 2],
-        cwd: this.packagePath
+        cwd: this.packagePath,
+        env: this.uvEnv
       });
 
       sync.on('close', (code) => {
@@ -124,7 +173,7 @@ class SmithsonianMCPServer {
     this.process = spawn('uv', ['run', '--no-sync', ...command], {
       stdio: 'inherit',
       cwd: this.packagePath,
-      env: process.env
+      env: this.uvEnv
     });
 
     this.process.on('close', (code, signal) => {
@@ -228,8 +277,7 @@ For more information, visit: https://github.com/molanojustin/smithsonian-mcp
    * Show version information
    */
   showVersion() {
-    const packageJson = require(path.join(this.packagePath, 'package.json'));
-    console.log(`@molanojustin/smithsonian-mcp v${packageJson.version}`);
+    console.log(`@molanojustin/smithsonian-mcp v${this.version}`);
   }
 
   /**

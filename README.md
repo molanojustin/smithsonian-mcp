@@ -69,6 +69,8 @@ The npm package is a small Node.js wrapper that uses uv to install the Python de
 
 You can also install it globally with `npm install -g @molanojustin/smithsonian-mcp` and run `smithsonian-mcp`. Run `smithsonian-mcp --test` to check your API key and connection.
 
+The wrapper keeps the Python environment in a per-user cache directory, one per package version: `~/Library/Caches/smithsonian-mcp` on macOS, `~/.cache/smithsonian-mcp` (or `$XDG_CACHE_HOME`) on Linux, and `%LOCALAPPDATA%\smithsonian-mcp` on Windows. Set `UV_PROJECT_ENVIRONMENT` to use a different location. Older versions' environments there can be deleted safely.
+
 #### From a local clone
 
 ```bash
