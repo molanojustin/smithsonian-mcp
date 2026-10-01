@@ -12,7 +12,11 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from smithsonian_mcp.api_client import BASE_URL, SmithsonianAPIClient
+from smithsonian_mcp.api_client import (
+    BASE_URL,
+    SmithsonianAPIClient,
+    build_search_query,
+)
 from smithsonian_mcp.config import Config
 from smithsonian_mcp.models import CollectionSearchFilter
 from smithsonian_mcp.utils import resolve_museum_code
@@ -138,13 +142,10 @@ async def test_multi_word_query_requires_all_words(client):
 @pytest.mark.parametrize(
     "filters,direct",
     [
-        ({"object_type": "Paintings"}, '(landscape) AND object_type:"Paintings"'),
-        ({"object_type": "painting"}, '(landscape) AND object_type:"Paintings"'),
         ({"has_images": True}, '(landscape) AND online_media_type:"Images"'),
         ({"is_cc0": True}, '(landscape) AND media_usage:"CC0"'),
         ({"on_view": True}, '(landscape) AND onPhysicalExhibit:"Yes"'),
         ({"unit_code": "SAAM"}, "(landscape) AND unit_code:SAAM"),
-        ({"topic": "Landscapes"}, '(landscape) AND topic:"Landscapes"'),
     ],
 )
 async def test_filters_narrow_results_like_direct_queries(client, filters, direct):
@@ -154,6 +155,70 @@ async def test_filters_narrow_results_like_direct_queries(client, filters, direc
     total = await _direct_count("landscape")
     assert result.total_count == await _direct_count(direct)
     assert 0 < result.total_count < total
+
+
+@pytest.mark.parametrize(
+    "filters,direct",
+    [
+        ({"object_type": "Paintings"}, '(landscape) AND object_type:"Paintings"'),
+        ({"object_type": "painting"}, '(landscape) AND object_type:"Paintings"'),
+        ({"topic": "Landscapes"}, '(landscape) AND topic:"Landscapes"'),
+    ],
+)
+async def test_vocabulary_filters_contain_exact_matches(client, filters, direct):
+    """Vocabulary filters add qualified terms to the exact match, never lose it."""
+    query = build_search_query(CollectionSearchFilter(query="landscape", **filters))
+    result = await client.search_collections(
+        CollectionSearchFilter(query="landscape", limit=0, **filters)
+    )
+    exact = await _direct_count(direct)
+    assert exact <= result.total_count < await _direct_count("landscape")
+    assert await _direct_count(f"{query} AND {direct}") == exact
+
+
+@pytest.mark.parametrize(
+    "field,value,reference",
+    [
+        # Qualified index terms the exact value alone does not match
+        ("object_type", "dress", 'object_type:"Dresses (garments)"'),
+        ("object_type", "coin", 'object_type:"Coins (money)"'),
+        ("object_type", "camera", 'object_type:"Cameras (photographic equipment)"'),
+        ("topic", "civil war", 'topic:"Civil War, 1861-1865"'),
+        ("topic", "African American", 'topic:"African American women"'),
+        ("maker", "Martin Luther King Jr.", 'name:"King, Martin Luther"'),
+        ("maker", "Lockheed", 'name:"Lockheed Aircraft Corporation"'),
+        ("maker", "Wright Brothers", 'name:"Wright Brothers Quartet"'),
+        # Cases that already worked keep every record they matched
+        ("object_type", "painting", 'object_type:"Paintings"'),
+        ("object_type", "PAINTINGS", 'object_type:"Paintings"'),
+        ("topic", "Dinosaurs", 'topic:"Dinosaurs"'),
+        ("maker", "alma thomas", 'name:"Thomas, Alma"'),
+        ("maker", "Jim Henson", 'name:"Henson, Jim"'),
+    ],
+)
+async def test_vocabulary_filters_include_qualified_terms(
+    client, field, value, reference
+):
+    query = build_search_query(CollectionSearchFilter(**{field: value}))
+    expected = await _direct_count(f"* AND {reference}")
+    result = await client.search_collections(
+        CollectionSearchFilter(limit=0, **{field: value})
+    )
+    assert expected > 0
+    assert result.total_count >= expected
+    assert await _direct_count(f"{query} AND {reference}") == expected
+
+
+async def test_vocabulary_filters_do_not_use_bare_prefixes(client):
+    hats = await client.search_collections(
+        CollectionSearchFilter(object_type="hat", limit=0)
+    )
+    bare = await _direct_count("* AND object_type:(Hat* OR hat*)")
+    assert 0 < hats.total_count < bare  # "Hatchets", "Hatpins" are excluded
+    smith = await client.search_collections(
+        CollectionSearchFilter(maker="Smith", limit=0)
+    )
+    assert smith.total_count < await _direct_count("* AND name:Smith*")
 
 
 async def test_not_on_view_is_complement_of_on_view(client):

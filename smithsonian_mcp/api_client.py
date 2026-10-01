@@ -92,6 +92,17 @@ _RANGE_RE = re.compile(r"^[\[{]\s*\S+\s+TO\s+\S+\s*[\]}]$")
 _YEAR_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
 # Letters, digits, spaces and the punctuation found in personal names.
 _PERSON_NAME_RE = re.compile(r"^[^\W_][\w .,'’-]*$")
+_NAME_SUFFIX_RE = re.compile(r"[,\s]+(?:jr|sr|ii|iii|iv)\.?$", re.IGNORECASE)
+# What may follow a vocabulary term in a qualified index term, e.g.
+# "Dresses (garments)", "Civil War, 1861-1865", "Camera; Rollfilm", "Cup/Mug".
+_QUALIFIER_SEPARATORS = (" (", ",", ";", "/", " /", ":")
+# Topics also have narrower terms after a space ("African American women"),
+# which covers " (" and " /".
+_NARROWER_SEPARATORS = (" ", ",", ";", "/", ":")
+# What may follow a name in a longer indexed name: "Lockheed Aircraft
+# Corporation", "Homer, Winslow", "Lockheed-Georgia Company", "Gorham/Textron",
+# "Colt's Patent Firearms Manufacturing Company".
+_NAME_BOUNDARIES = (" ", ",", "-", "/", "'s")
 
 
 @dataclass
@@ -452,24 +463,78 @@ def vocabulary_variants(value: str) -> List[str]:
     return variants
 
 
-def _any_of(field_name: str, values: List[str]) -> str:
-    """Build ``field:"a"`` or ``field:("a" OR "b")`` for quoted values."""
-    phrases = [escape_query_phrase(value) for value in values]
-    if len(phrases) == 1:
-        return f"{field_name}:{phrases[0]}"
-    return f"{field_name}:({' OR '.join(phrases)})"
+def _prefix_wildcard(prefix: str) -> str:
+    """
+    Escape a prefix, keeping a trailing space, and append the ``*`` wildcard.
+
+    Args:
+        prefix: Literal prefix such as "Lockheed " or "Dresses (".
+
+    Returns:
+        str: Wildcard term such as ``Lockheed\\ *``.
+    """
+    trailing_space = prefix.endswith(" ")
+    escaped = escape_query_term(prefix)
+    return f"{escaped}\\ *" if trailing_space else f"{escaped}*"
+
+
+def vocabulary_clause(
+    field_name: str, value: str, narrower: bool = False
+) -> Optional[str]:
+    """
+    Build the clause for a controlled-vocabulary filter (object_type, topic).
+
+    Index terms are often qualified: "Dresses (garments)", "Coins (money)",
+    "Civil War, 1861-1865", "Camera; Rollfilm", "Sculpture/Carving/Figures". The
+    clause matches each case and singular/plural variant exactly or followed by
+    one of `` (``, ``,``, ``;``, ``/`` or ``:``. A bare prefix is not used because
+    it over-matches ("hat" would match "Hatchets", "letter" "Letterpress").
+
+    Args:
+        field_name: Indexed field, e.g. ``object_type``.
+        value: User supplied value, e.g. "dress".
+        narrower: Also match narrower terms that start with the value as typed and a
+            space ("African American women" for "African American"); used for
+            topics, where such terms are subdivisions rather than other things.
+
+    Returns:
+        Optional[str]: Query clause, or None for an empty value.
+    """
+    variants = vocabulary_variants(value)
+    if not variants:
+        return None
+    typed = variants[0].lower()
+    terms = [escape_query_phrase(variant) for variant in variants]
+    for variant in variants:
+        # Narrower terms only for the value as typed: "Landscapes" covers
+        # "Landscapes in art" but not "Landscape architecture"
+        if narrower and variant.lower() == typed:
+            separators = _NARROWER_SEPARATORS
+        else:
+            separators = _QUALIFIER_SEPARATORS
+        for separator in separators:
+            terms.append(_prefix_wildcard(variant + separator))
+    return f"{field_name}:({' OR '.join(terms)})"
+
+
+def _strip_name_suffix(name: str) -> str:
+    """Remove a trailing generational suffix such as "Jr." or "III"."""
+    return _NAME_SUFFIX_RE.sub("", name).strip()
 
 
 def maker_clause(maker: str) -> Optional[str]:
     """
     Build the clause for a maker filter.
 
-    Names are indexed as "Last, First" (e.g. "Homer, Winslow"), case-sensitively.
-    The clause matches the name as given, with capitalized words, inverted to
-    "Last, First", and as a "Last, First" prefix to allow middle names.
+    Names are indexed as "Last, First" (e.g. "Homer, Winslow"), case-sensitively,
+    and organizations under their full names ("Lockheed Aircraft Corporation").
+    The clause matches the name as given, with capitalized words, and inverted to
+    "Last, First" (after dropping Jr./Sr./II/III/IV), each exactly or followed by
+    further words. Prefixes only extend at a word boundary, so "Smith" does not
+    match "Smithsonian" and "Colt" does not match "Coltrane".
 
     Args:
-        maker: Maker name, e.g. "Winslow Homer" or "Thomas, Alma".
+        maker: Maker name, e.g. "Winslow Homer", "Thomas, Alma" or "Lockheed".
 
     Returns:
         Optional[str]: Query clause, or None for an empty name.
@@ -478,30 +543,33 @@ def maker_clause(maker: str) -> Optional[str]:
     if not base:
         return None
     variants: List[str] = []
+    prefixes: List[str] = []
 
-    def add(value: str) -> None:
-        if value and value not in variants:
-            variants.append(value)
+    def add(collection: List[str], value: str) -> None:
+        if value and value not in collection:
+            collection.append(value)
 
-    add(base)
-    add(_capitalize_words(base))
-    prefix: Optional[str] = None
-    words = base.split(" ")
-    if not _PERSON_NAME_RE.match(base):
-        pass  # not a plain name: match it exactly, without inversion or prefix
-    elif "," in base:
-        prefix = _capitalize_words(base)
-    elif len(words) >= 2:
-        inverted = f"{words[-1]}, {' '.join(words[:-1])}"
-        add(_capitalize_words(inverted))
-        add(inverted)
-        prefix = _capitalize_words(inverted)
-    else:
-        prefix = f"{_capitalize_first(base)},"
+    add(variants, base)
+    add(variants, _capitalize_words(base))
+    if _PERSON_NAME_RE.match(base):
+        # As given: "Lockheed" -> "Lockheed Aircraft", "Lockheed-Georgia Company"
+        add(prefixes, _capitalize_words(base))
+        stem = _strip_name_suffix(base)
+        words = stem.split(" ")
+        if "," not in stem and len(words) >= 2:
+            inverted = f"{words[-1]}, {' '.join(words[:-1])}"
+            add(variants, _capitalize_words(inverted))
+            add(variants, inverted)
+            # "King, Martin Luther" -> "King, Martin Luther, Jr."
+            add(prefixes, _capitalize_words(inverted))
+        elif "," in stem:
+            add(prefixes, _capitalize_words(stem))
 
     terms = [f"name:{escape_query_phrase(value)}" for value in variants]
-    if prefix:
-        terms.append(f"name:{escape_query_term(prefix)}*")
+    for prefix in prefixes:
+        boundaries = _NAME_BOUNDARIES if "," not in prefix else (" ", ",")
+        for boundary in boundaries:
+            terms.append(f"name:{_prefix_wildcard(prefix + boundary)}")
     if len(terms) == 1:
         return terms[0]
     return f"({' OR '.join(terms)})"
@@ -567,14 +635,16 @@ def build_filter_clauses(filters: CollectionSearchFilter) -> List[str]:
     unit_clause = unit_code_query_clause(filters.unit_code)
     if unit_clause:
         clauses.append(unit_clause)
-    if filters.object_type and filters.object_type.strip():
-        clauses.append(_any_of("object_type", vocabulary_variants(filters.object_type)))
+    object_type = vocabulary_clause("object_type", filters.object_type or "")
+    if object_type:
+        clauses.append(object_type)
     if filters.maker and filters.maker.strip():
         clause = maker_clause(filters.maker)
         if clause:
             clauses.append(clause)
-    if filters.topic and filters.topic.strip():
-        clauses.append(_any_of("topic", vocabulary_variants(filters.topic)))
+    topic = vocabulary_clause("topic", filters.topic or "", narrower=True)
+    if topic:
+        clauses.append(topic)
     if filters.material and filters.material.strip():
         clauses.append(f"physicalDescription:{escape_query_phrase(filters.material)}")
     dates = date_clause(filters.date_start, filters.date_end)

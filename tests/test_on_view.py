@@ -202,10 +202,10 @@ class TestOnViewAPIClient:
         params = client._build_search_params(filters)
 
         assert "fq" not in params
-        assert params["q"] == (
+        assert params["q"].startswith(
             '* AND (name:"Alma Thomas" OR name:"Thomas, Alma" '
-            r"OR name:Thomas\,\ Alma*)"
         )
+        assert r"OR name:Thomas\,\ Alma\ *" in params["q"]
 
     def test_build_search_params_on_view_with_unit(self):
         """Test building search params with on_view and unit_code."""

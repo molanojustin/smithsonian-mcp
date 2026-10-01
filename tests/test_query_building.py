@@ -4,6 +4,8 @@ Tests for translating CollectionSearchFilter into the search ``q`` parameter.
 The API has no filter parameter, so every filter must be a fielded term in ``q``.
 """
 
+import re
+
 import pytest
 
 from smithsonian_mcp.api_client import (
@@ -12,14 +14,34 @@ from smithsonian_mcp.api_client import (
     date_clause,
     maker_clause,
     normalize_free_text_query,
+    vocabulary_clause,
     vocabulary_variants,
 )
 from smithsonian_mcp.models import CollectionSearchFilter
+
+_FIELD_PREFIX_RE = re.compile(r"(?<![\\\w])(?:name|object_type|topic):")
+_TERM_RE = re.compile(r'"((?:[^"\\]|\\.)*)"|((?:[^\s()"\\*]|\\.)+)\*')
 
 
 def q(**kwargs) -> str:
     """Build the q parameter for the given filter fields."""
     return build_search_query(CollectionSearchFilter(**kwargs))
+
+
+def _clause_matches(clause: str, value: str) -> bool:
+    """
+    Evaluate a clause of exact phrases and prefix wildcards against one index value.
+
+    String fields match a phrase exactly and a wildcard term by literal prefix.
+    """
+    body = _FIELD_PREFIX_RE.sub("", clause)
+    for match in _TERM_RE.finditer(body):
+        phrase, prefix = match.groups()
+        if phrase is not None and re.sub(r"\\(.)", r"\1", phrase) == value:
+            return True
+        if prefix is not None and value.startswith(re.sub(r"\\(.)", r"\1", prefix)):
+            return True
+    return False
 
 
 class TestFreeText:
@@ -143,32 +165,120 @@ class TestFilters:
         assert q(unit_code="NMAFA") == "* AND unit_code:NMAfA"
 
     def test_object_type_variants(self):
-        assert q(query="landscape", object_type="painting") == (
-            '(landscape) AND object_type:("painting" OR "paintings" '
-            'OR "Painting" OR "Paintings")'
-        )
         assert vocabulary_variants("Paintings")[:2] == ["Paintings", "Painting"]
         assert "Certified Proof" in vocabulary_variants("certified proof")
         assert "Bodies" in vocabulary_variants("body")
+        assert vocabulary_clause("object_type", "puppet") == (
+            'object_type:("puppet" OR "puppets" OR "Puppet" OR "Puppets"'
+            r" OR puppet\ \(* OR puppet\,* OR puppet;* OR puppet\/* OR puppet\ \/*"
+            r" OR puppet\:* OR puppets\ \(* OR puppets\,* OR puppets;* OR puppets\/*"
+            r" OR puppets\ \/* OR puppets\:* OR Puppet\ \(* OR Puppet\,* OR Puppet;*"
+            r" OR Puppet\/* OR Puppet\ \/* OR Puppet\:* OR Puppets\ \(* OR Puppets\,*"
+            r" OR Puppets;* OR Puppets\/* OR Puppets\ \/* OR Puppets\:*)"
+        )
+        assert vocabulary_clause("object_type", "  ") is None
+
+    @pytest.mark.parametrize(
+        "value,matches,rejects",
+        [
+            # Index terms are qualified; the exact value alone matched nothing
+            (
+                "dress",
+                ["Dresses (garments)", "Dress, 1-Piece"],
+                ["Dressers", "dress silk"],
+            ),
+            ("coin", ["Coins (money)", "coin; proof"], ["Coin purse", "Coinage"]),
+            ("painting", ["Paintings", "Painting/Drawing/Print"], ["Painting tool"]),
+            (
+                "camera",
+                ["Cameras (photographic equipment)", "Camera; Rollfilm"],
+                ["Camera Back"],
+            ),
+            ("hat", ["Hats", "Hat, Straw", "Hat/cap"], ["Hatchets", "Hatpins"]),
+            ("letter", ["Letters (correspondence)", "Letter; Navy"], ["Letterpress"]),
+            ("cup", ["Cups", "Cup/Mug", "Cup, Coffee"], ["Cupboards", "Cup Plate"]),
+            ("art", ["Art, Indic"], ["Articles", "Artist files", "Artifacts"]),
+        ],
+    )
+    def test_object_type_matches_qualified_terms_only(self, value, matches, rejects):
+        clause = vocabulary_clause("object_type", value)
+        for term in matches:
+            assert _clause_matches(clause, term), term
+        for term in rejects:
+            assert not _clause_matches(clause, term), term
 
     def test_maker(self):
         assert maker_clause("Winslow Homer") == (
-            '(name:"Winslow Homer" OR name:"Homer, Winslow" '
-            r"OR name:Homer\,\ Winslow*)"
-        )
-        assert maker_clause("alma thomas") == (
-            '(name:"alma thomas" OR name:"Alma Thomas" OR name:"Thomas, Alma" '
-            r'OR name:"thomas, alma" OR name:Thomas\,\ Alma*)'
+            '(name:"Winslow Homer" OR name:"Homer, Winslow"'
+            r" OR name:Winslow\ Homer\ * OR name:Winslow\ Homer\,*"
+            r" OR name:Winslow\ Homer\-* OR name:Winslow\ Homer\/*"
+            r" OR name:Winslow\ Homer's* OR name:Homer\,\ Winslow\ *"
+            r" OR name:Homer\,\ Winslow\,*)"
         )
         assert maker_clause("Homer, Winslow") == (
-            r'(name:"Homer, Winslow" OR name:Homer\,\ Winslow*)'
+            r'(name:"Homer, Winslow" OR name:Homer\,\ Winslow\ *'
+            r" OR name:Homer\,\ Winslow\,*)"
         )
-        assert maker_clause("Rembrandt") == (r'(name:"Rembrandt" OR name:Rembrandt\,*)')
         assert maker_clause("  ") is None
 
+    @pytest.mark.parametrize(
+        "maker,matches,rejects",
+        [
+            (
+                "Alma Thomas",
+                ["Thomas, Alma", "Thomas, Alma Woodsey"],
+                ["Thomas, Almanzo"],
+            ),
+            ("alma thomas", ["Thomas, Alma"], []),
+            (
+                "Martin Luther King Jr.",
+                ["King, Martin Luther", "King, Martin Luther, Jr."],
+                [],
+            ),
+            (
+                "Wright Brothers",
+                ["Wright Brothers, Dayton, Ohio"],
+                ["Wright Brothersville"],
+            ),
+            (
+                "Lockheed",
+                ["Lockheed Aircraft Corporation", "Lockheed-Georgia Company"],
+                ["Lockheedia"],
+            ),
+            ("Smith", ["Smith, A. C.", "Smith Corona"], ["Smithsonian Institution"]),
+            ("Colt", ["Colt, Samuel", "Colt's Patent Firearms"], ["Coltrane, John"]),
+            ("Mathew Brady", ["Brady, Mathew B.", "Mathew Brady Studio"], []),
+            ("Jim Henson", ["Henson, Jim", "Jim Henson Company"], ["Henson, Jane"]),
+        ],
+    )
+    def test_maker_matches(self, maker, matches, rejects):
+        clause = maker_clause(maker)
+        for name in matches:
+            assert _clause_matches(clause, name), name
+        for name in rejects:
+            assert not _clause_matches(clause, name), name
+
+    def test_maker_suffixes_are_dropped_before_inverting(self):
+        for suffix in ("Jr.", "Jr", "Sr.", "II", "III", "IV", ", Jr."):
+            clause = maker_clause(f"Martin Luther King {suffix}")
+            assert 'name:"King, Martin Luther"' in clause, suffix
+
     def test_topic(self):
-        assert q(topic="Puppets") == (
-            '* AND topic:("Puppets" OR "Puppet" OR "puppets" OR "puppet")'
+        clause = vocabulary_clause("topic", "civil war", narrower=True)
+        assert q(topic="civil war") == f"* AND {clause}"
+        for term in [
+            "Civil War",
+            "Civil War, 1861-1865",
+            "Civil War and Reconstruction (1860-1877)",
+        ]:
+            assert _clause_matches(clause, term), term
+        african_american = vocabulary_clause("topic", "African American", narrower=True)
+        assert _clause_matches(african_american, "African American women")
+        war = vocabulary_clause("topic", "war", narrower=True)
+        assert _clause_matches(war, "War of 1812")
+        assert not _clause_matches(war, "Warships")
+        assert _clause_matches(
+            vocabulary_clause("topic", "dinosaur", narrower=True), "Dinosaurs"
         )
 
     def test_material(self):
@@ -196,7 +306,7 @@ class TestFilters:
         assert q(has_images=False, is_cc0=False) == "*"
 
     def test_all_filters_combined(self):
-        assert q(
+        query = q(
             query="portrait",
             unit_code="NPG",
             object_type="Paintings",
@@ -208,26 +318,34 @@ class TestFilters:
             has_images=True,
             is_cc0=True,
             on_view=True,
-        ) == (
-            "(portrait) AND unit_code:NPG"
-            ' AND object_type:("Paintings" OR "Painting" OR "paintings" OR "painting")'
-            r' AND (name:"Homer, Winslow" OR name:Homer\,\ Winslow*)'
-            ' AND topic:("Portraits" OR "Portrait" OR "portraits" OR "portrait")'
-            ' AND physicalDescription:"oil"'
-            ' AND date:["1880s" TO "1890s"]'
-            ' AND online_media_type:"Images" AND media_usage:"CC0"'
-            ' AND onPhysicalExhibit:"Yes"'
         )
+        assert query == " AND ".join(
+            [
+                "(portrait)",
+                "unit_code:NPG",
+                vocabulary_clause("object_type", "Paintings"),
+                maker_clause("Homer, Winslow"),
+                vocabulary_clause("topic", "Portraits", narrower=True),
+                'physicalDescription:"oil"',
+                date_clause("1880", "1890"),
+                'online_media_type:"Images"',
+                'media_usage:"CC0"',
+                'onPhysicalExhibit:"Yes"',
+            ]
+        )
+        # Every filter combined still makes a short enough URL
+        assert len(query) < 2500
 
 
 class TestEscaping:
     """User input cannot break out of quoted filter values."""
 
     def test_quotes_and_backslashes_are_escaped(self):
-        assert q(object_type='Paint"ings') == (
-            r'* AND object_type:("Paint\"ings" OR "Paint\"ing" '
-            r'OR "paint\"ings" OR "paint\"ing")'
-        )
+        clause = vocabulary_clause("object_type", 'Paint"ings')
+        assert clause.startswith(r'object_type:("Paint\"ings" OR "Paint\"ing"')
+        assert r"Paint\"ings\ \(*" in clause
+        # Every unescaped quote is paired, so the value cannot end a phrase early
+        assert re.sub(r"\\.", "", clause).count('"') % 2 == 0
         assert q(material="a\\b") == r'* AND physicalDescription:"a\\b"'
 
     def test_injection_attempt_stays_inside_phrase(self):
