@@ -34,6 +34,25 @@ function Write-Utf8File {
     [System.IO.File]::WriteAllText($fullPath, $Content, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+# Read a file as UTF-8. Get-Content in Windows PowerShell 5.1 reads files
+# without a BOM using the ANSI code page, which corrupts non-ASCII text on a
+# round trip. A leading BOM, if present, is detected and removed.
+function Read-Utf8File {
+    param([string]$Path)
+    $fullPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    return [System.IO.File]::ReadAllText($fullPath, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# Read a file as UTF-8 and return its lines, without a trailing empty line.
+function Read-Utf8Lines {
+    param([string]$Path)
+    $text = (Read-Utf8File -Path $Path) -replace "[\r\n]+\z", ""
+    if (-not $text) {
+        return @()
+    }
+    return @($text -split "\r?\n")
+}
+
 Write-Host "Smithsonian MCP Server Setup" -ForegroundColor Blue
 Write-Host "==================================" -ForegroundColor Blue
 Write-Host ""
@@ -152,7 +171,7 @@ function Set-EnvApiKey {
 
     $lines = @()
     if (Test-Path ".env") {
-        $lines = @(Get-Content ".env")
+        $lines = @(Read-Utf8Lines -Path ".env")
     }
 
     $found = $false
@@ -274,9 +293,16 @@ function Set-ClaudeDesktop {
         Copy-Item $claudeConfigFile $backupFile
         Write-Info "Backed up existing Claude Desktop config."
 
-        $raw = Get-Content $claudeConfigFile -Raw
+        $raw = Read-Utf8File -Path $claudeConfigFile
         if ($raw -and $raw.Trim()) {
-            $config = $raw | ConvertFrom-Json
+            try {
+                $config = $raw | ConvertFrom-Json
+            }
+            catch {
+                Write-Error "$claudeConfigFile is not valid JSON: $($_.Exception.Message)"
+                Write-Error "Fix the file or add the server entry by hand. The file was not changed."
+                return
+            }
         }
     }
     if (-not $config) {
@@ -352,7 +378,7 @@ function Set-McpoConfig {
     $jsonPython = $venvPython.Replace('\', '\\')
     $jsonProject = $projectDir.Replace('\', '\\')
 
-    $configContent = Get-Content $exampleFile -Raw
+    $configContent = Read-Utf8File -Path $exampleFile
     $configContent = $configContent.Replace("/path/to/your/project/.venv/bin/python", $jsonPython)
     $configContent = $configContent.Replace("/path/to/your/project", $jsonProject)
     $configContent = $configContent.Replace("your_api_key_here", $ApiKey)
@@ -439,7 +465,7 @@ function Start-Installation {
         # Check for existing API key
         $existingKey = $null
         if (Test-Path ".env") {
-            $keyLine = Get-Content ".env" | Where-Object { $_ -match "^SMITHSONIAN_API_KEY=" } | Select-Object -First 1
+            $keyLine = Read-Utf8Lines -Path ".env" | Where-Object { $_ -match "^SMITHSONIAN_API_KEY=" } | Select-Object -First 1
             if ($keyLine) {
                 $existingKey = $keyLine -replace "^SMITHSONIAN_API_KEY=", ""
             }
