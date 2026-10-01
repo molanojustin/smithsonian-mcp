@@ -61,6 +61,7 @@
     "bin/",
     "README.md",
     "TROUBLESHOOTING.md",
+    "CHANGELOG.md",
     "LICENSE.md",
     "pyproject.toml",
     "uv.lock",
