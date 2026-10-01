@@ -2,42 +2,49 @@
 
 /**
  * Smithsonian Open Access MCP Server - Node.js Wrapper
- * 
+ *
  * This script provides a Node.js entry point for the Python-based MCP server,
  * enabling npm/npx installation and execution with uv for dependency management.
+ *
+ * The server speaks MCP over stdio, so stdout is reserved for JSON-RPC messages.
+ * Every diagnostic message from this wrapper, and all output from `uv sync`, is
+ * written to stderr.
  */
 
 const { spawn } = require('cross-spawn');
 const path = require('path');
 const fs = require('fs');
 
-// Load environment variables from .env file if it exists
-require('dotenv').config();
+// Load environment variables from a .env file in the current directory, if any.
+// quiet/debug are set explicitly so dotenv never writes to the console.
+require('dotenv').config({ quiet: true, debug: false });
 
-class SmithonianMCPServer {
+// Console script defined in pyproject.toml ([project.scripts]).
+const SERVER_COMMAND = 'smithsonian-mcp';
+
+/**
+ * Write a diagnostic line to stderr.
+ * @param {string} [message]
+ */
+function log(message = '') {
+  process.stderr.write(`${message}\n`);
+}
+
+class SmithsonianMCPServer {
   constructor() {
     this.packagePath = path.resolve(__dirname, '..');
-    this.pythonModule = 'smithsonian_mcp.server';
     this.process = null;
   }
 
   /**
    * Check if uv is installed
    */
-  async checkUv() {
-    try {
-      const result = spawn.sync('uv', ['--version'], { 
-        stdio: 'pipe',
-        shell: true 
-      });
-      
-      if (result.status === 0) {
-        const version = result.stdout.toString().trim();
-        console.log(`Found uv: ${version}`);
-        return true;
-      }
-    } catch (error) {
-      // uv not found
+  checkUv() {
+    const result = spawn.sync('uv', ['--version'], { stdio: 'pipe' });
+
+    if (!result.error && result.status === 0) {
+      log(`Found ${result.stdout.toString().trim()}`);
+      return;
     }
 
     throw new Error(
@@ -49,20 +56,24 @@ class SmithonianMCPServer {
   }
 
   /**
-   * Ensure dependencies are synced
+   * Ensure runtime dependencies are installed from uv.lock.
+   *
+   * --frozen installs exactly what uv.lock pins without re-resolving.
+   * --no-dev skips development tools. --inexact leaves any extra packages in
+   * an existing environment alone, so a developer checkout keeps its dev tools.
+   * The child's stdout is redirected to our stderr to keep stdout clean.
    */
-  async syncDependencies() {
+  syncDependencies() {
     return new Promise((resolve, reject) => {
-      console.log('Syncing dependencies with uv...');
-      
-      const sync = spawn('uv', ['sync'], {
-        stdio: 'inherit',
+      log('Syncing Python dependencies with uv...');
+
+      const sync = spawn('uv', ['sync', '--frozen', '--no-dev', '--inexact'], {
+        stdio: ['ignore', 2, 2],
         cwd: this.packagePath
       });
 
       sync.on('close', (code) => {
         if (code === 0) {
-          console.log('Dependencies synced successfully');
           resolve();
         } else {
           reject(new Error(`Failed to sync dependencies (exit code: ${code})`));
@@ -80,18 +91,22 @@ class SmithonianMCPServer {
    */
   validateApiKey() {
     const apiKey = process.env.SMITHSONIAN_API_KEY;
-    
+
     if (!apiKey) {
-      console.log('\nWarning: Smithsonian API Key not found');
-      console.log('Get your free API key from: https://api.data.gov/signup/');
-      console.log('Set it as environment variable: SMITHSONIAN_API_KEY=your_key_here');
-      console.log('Or create a .env file with: SMITHSONIAN_API_KEY=your_key_here\n');
+      log('');
+      log('Error: SMITHSONIAN_API_KEY is not set');
+      log('Get your free API key from: https://api.data.gov/signup/');
+      log('Set it as an environment variable: SMITHSONIAN_API_KEY=your_key_here');
+      log('Or create a .env file in the working directory with: SMITHSONIAN_API_KEY=your_key_here');
+      log('');
       return false;
     }
 
     if (apiKey.length < 20) {
-      console.log('\nWarning: Invalid API key format');
-      console.log('API keys should be at least 20 characters long\n');
+      log('');
+      log('Error: SMITHSONIAN_API_KEY does not look valid');
+      log('API keys from api.data.gov are at least 20 characters long');
+      log('');
       return false;
     }
 
@@ -99,61 +114,59 @@ class SmithonianMCPServer {
   }
 
   /**
+   * Run a command inside the uv-managed project environment and exit with its
+   * exit code. The environment was already synced by syncDependencies(), so
+   * --no-sync skips a second sync. stdin/stdout/stderr are inherited so the
+   * MCP host talks to the Python server directly.
+   * @param {string[]} command
+   */
+  runInProject(command) {
+    this.process = spawn('uv', ['run', '--no-sync', ...command], {
+      stdio: 'inherit',
+      cwd: this.packagePath,
+      env: process.env
+    });
+
+    this.process.on('close', (code, signal) => {
+      if (signal) {
+        log(`Process terminated by signal ${signal}`);
+        process.exit(1);
+      }
+      process.exit(code === null ? 1 : code);
+    });
+
+    this.process.on('error', (error) => {
+      log(`Failed to start process: ${error.message}`);
+      process.exit(1);
+    });
+
+    const forward = (signal) => {
+      if (this.process) {
+        this.process.kill(signal);
+      }
+    };
+    process.on('SIGINT', () => forward('SIGINT'));
+    process.on('SIGTERM', () => forward('SIGTERM'));
+  }
+
+  /**
    * Start the MCP server
    */
   async start(args = []) {
     try {
-      console.log('Smithsonian Open Access MCP Server');
-      console.log('=====================================\n');
+      log('Smithsonian Open Access MCP Server');
 
-      // Check if uv is installed
-      await this.checkUv();
-
-      // Sync dependencies (uv will handle Python version and virtual environment)
+      this.checkUv();
       await this.syncDependencies();
 
-      // Validate API key
       if (!this.validateApiKey()) {
         process.exit(1);
       }
 
-      console.log('Starting MCP server...\n');
-
-      // Start the Python MCP server using uv run
-      // uv run will automatically use the project's Python version and virtual environment
-      this.process = spawn('uv', ['run', 'python', '-m', this.pythonModule, ...args], {
-        stdio: 'inherit',
-        cwd: this.packagePath,
-        env: process.env
-      });
-
-      this.process.on('close', (code) => {
-        console.log(`\nMCP server exited with code ${code}`);
-        process.exit(code);
-      });
-
-      this.process.on('error', (error) => {
-        console.error('Failed to start MCP server:', error.message);
-        process.exit(1);
-      });
-
-      // Handle graceful shutdown
-      process.on('SIGINT', () => {
-        console.log('\nShutting down MCP server...');
-        if (this.process) {
-          this.process.kill('SIGINT');
-        }
-      });
-
-      process.on('SIGTERM', () => {
-        console.log('\nShutting down MCP server...');
-        if (this.process) {
-          this.process.kill('SIGTERM');
-        }
-      });
-
+      log('Starting MCP server on stdio...');
+      this.runInProject([SERVER_COMMAND, ...args]);
     } catch (error) {
-      console.error('Error starting MCP server:', error.message);
+      log(`Error starting MCP server: ${error.message}`);
       process.exit(1);
     }
   }
@@ -176,19 +189,20 @@ Options:
 Requirements:
   uv             Fast Python package manager (https://docs.astral.sh/uv/)
                  Install with: curl -LsSf https://astral.sh/uv/install.sh | sh
+                 uv downloads a compatible Python (3.10 or newer) if needed.
 
 Environment Variables:
   SMITHSONIAN_API_KEY    Your Smithsonian API key (required)
                          Get it from: https://api.data.gov/signup/
 
 Examples:
-  # Start the MCP server
+  # Start the MCP server (stdio transport)
   smithsonian-mcp
 
   # Test API connection
   smithsonian-mcp --test
 
-  # Start with custom API key
+  # Start with an explicit API key
   SMITHSONIAN_API_KEY=your_key smithsonian-mcp
 
 Configuration for Claude Desktop:
@@ -223,9 +237,9 @@ For more information, visit: https://github.com/molanojustin/smithsonian-mcp
    */
   async runTest() {
     try {
-      console.log('Testing Smithsonian API connection...\n');
+      log('Testing Smithsonian API connection...');
 
-      await this.checkUv();
+      this.checkUv();
       await this.syncDependencies();
 
       if (!this.validateApiKey()) {
@@ -233,30 +247,15 @@ For more information, visit: https://github.com/molanojustin/smithsonian-mcp
       }
 
       const testScript = path.join(this.packagePath, 'examples', 'test-api-connection.py');
-      
-      if (fs.existsSync(testScript)) {
-        // Use uv run to execute the test script
-        const testProcess = spawn('uv', ['run', 'python', testScript], {
-          stdio: 'inherit',
-          cwd: this.packagePath,
-          env: process.env
-        });
 
-        testProcess.on('close', (code) => {
-          process.exit(code);
-        });
-
-        testProcess.on('error', (error) => {
-          console.error('Failed to run test:', error.message);
-          process.exit(1);
-        });
-      } else {
-        console.log('Test script not found');
+      if (!fs.existsSync(testScript)) {
+        log(`Test script not found: ${testScript}`);
         process.exit(1);
       }
 
+      this.runInProject(['python', testScript]);
     } catch (error) {
-      console.error('Error running test:', error.message);
+      log(`Error running test: ${error.message}`);
       process.exit(1);
     }
   }
@@ -265,9 +264,8 @@ For more information, visit: https://github.com/molanojustin/smithsonian-mcp
 // Main execution
 async function main() {
   const args = process.argv.slice(2);
-  const server = new SmithonianMCPServer();
+  const server = new SmithsonianMCPServer();
 
-  // Handle command line arguments
   if (args.includes('--help') || args.includes('-h')) {
     server.showHelp();
     return;
@@ -283,23 +281,20 @@ async function main() {
     return;
   }
 
-  // Start the server
   await server.start(args);
 }
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error.message);
+  log(`Uncaught exception: ${error.message}`);
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+process.on('unhandledRejection', (reason) => {
+  log(`Unhandled rejection: ${reason}`);
   process.exit(1);
 });
 
-// Run main function
 main().catch((error) => {
-  console.error('Fatal error:', error.message);
+  log(`Fatal error: ${error.message}`);
   process.exit(1);
 });
