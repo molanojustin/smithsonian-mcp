@@ -372,37 +372,19 @@ def test_mcpo_endpoints() -> Tuple[bool, str]:
         with httpx.Client(timeout=10.0) as client:
             response = client.get("http://localhost:8000/docs")
             if response.status_code == 200:
-                # Test Smithsonian endpoint that was failing
-                response = client.get(
-                    "http://localhost:8000/smithsonian_open_access/get_smithsonian_units"
+                # mcpo exposes each MCP tool as a POST endpoint
+                base = "http://localhost:8000/smithsonian_open_access"
+                for tool in ("list_museums", "get_collection_stats"):
+                    response = client.post(f"{base}/{tool}", json={})
+                    if response.status_code != 200:
+                        return (
+                            False,
+                            f"mcpo {tool} endpoint returned {response.status_code}",
+                        )
+                return (
+                    True,
+                    "mcpo endpoints responding (list_museums and get_collection_stats)",
                 )
-                if response.status_code == 200:
-                    # Test the other endpoint that was failing
-                    response = client.get(
-                        "http://localhost:8000/smithsonian_open_access/get_collection_statistics"
-                    )
-                    if response.status_code == 200:
-                        return (
-                            True,
-                            "mcpo endpoints responding correctly (both units and stats working)",
-                        )
-                    elif response.status_code == 500:
-                        return (
-                            False,
-                            "mcpo stats endpoint returning 500 errors (context issue not fixed)",
-                        )
-                    else:
-                        return (
-                            False,
-                            f"mcpo stats endpoint returned {response.status_code}",
-                        )
-                elif response.status_code == 500:
-                    return (
-                        False,
-                        "mcpo units endpoint returning 500 errors (context issue not fixed)",
-                    )
-                else:
-                    return False, f"mcpo units endpoint returned {response.status_code}"
             else:
                 return False, f"mcpo docs endpoint returned {response.status_code}"
     except ImportError:

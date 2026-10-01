@@ -1,31 +1,61 @@
 """
 Test API Connection and Basic Functionality
 
-This script tests the Smithsonian MCP Server API connection and basic functionality
-without requiring the full MCP server setup.
+This script checks the Smithsonian API key and connection by calling the MCP
+server's tools in process, without an MCP client application. It makes about
+six API requests.
 """
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 import random
 import sys
+from typing import Any, Dict, Optional
 
 # Add parent directory to path to import smithsonian_mcp
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smithsonian_mcp import create_client, Config, CollectionSearchFilter
+from fastmcp import Client  # noqa: E402
+from fastmcp.exceptions import ToolError  # noqa: E402
+
+from smithsonian_mcp import Config, mcp  # noqa: E402
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Setting httpx logging to WARNING to prevent API key exposure in HTTP logs
+# Keep httpx quiet; it logs every request URL at INFO
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-async def test_api_connection():
-    """Test basic API connectivity and functionality."""
+async def call(
+    client: Client, tool: str, arguments: Optional[Dict[str, Any]] = None
+) -> Any:
+    """
+    Call a tool and return its structured result.
+
+    Args:
+        client: Connected MCP client.
+        tool: Tool name.
+        arguments: Tool arguments.
+
+    Returns:
+        Any: The structured result (a list result is unwrapped).
+    """
+    result = await client.call_tool(tool, arguments or {})
+    data = result.structured_content or {}
+    return data.get("result", data) if isinstance(data, dict) else data
+
+
+async def test_api_connection() -> bool:
+    """
+    Test API connectivity through the MCP tools.
+
+    Returns:
+        bool: True if every check passed.
+    """
 
     # Check API key
     if not Config.validate_api_key():
@@ -42,83 +72,53 @@ async def test_api_connection():
     print()
 
     try:
-        async with await create_client() as client:
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            print(f"Server exposes {len(tools)} tools:")
+            print("   " + ", ".join(tool.name for tool in tools))
+            print()
 
-            # Test 1: Get Smithsonian units
-            print("Test 1: Getting Smithsonian units...")
-            units = await client.get_units()
-            print(f"OK: Found {len(units)} Smithsonian units")
-            for unit in units[:3]:  # Show first 3
-                print(f"   - {unit.code}: {unit.name}")
+            # Test 1: Smithsonian units
+            print("Test 1: list_museums...")
+            museums = await call(client, "list_museums")
+            print(f"OK: Found {len(museums)} Smithsonian units")
+            for museum in museums[:3]:
+                print(f"   - {museum['code']}: {museum['name']}")
             print()
 
             # Test 2: Basic search
-            print("Test 2: Basic collection search...")
-            filters = CollectionSearchFilter(
-                query="pottery",
-                limit=5,
-                unit_code=None,
-                object_type=None,
-                date_start=None,
-                date_end=None,
-                maker=None,
-                material=None,
-                topic=None,
-                has_images=None,
-                is_cc0=None,
-                offset=0,
-                on_view=None,
+            print("Test 2: search_objects(query='pottery', limit=5)...")
+            results = await call(
+                client, "search_objects", {"query": "pottery", "limit": 5}
             )
-            results = await client.search_collections(filters)
             print(
-                f"OK: Search returned {results.returned_count} of {results.total_count} results"
+                f"OK: Search returned {results['returned']} of "
+                f"{results['total_count']} results"
             )
-
-            for i, obj in enumerate(results.objects, 1):
-                print(f"   {i}. {obj.title}")
-                if obj.unit_name:
-                    print(f"      Museum: {obj.unit_name}")
+            for i, obj in enumerate(results["objects"], 1):
+                print(f"   {i}. {obj['title']}")
+                if obj.get("museum_name"):
+                    print(f"      Museum: {obj['museum_name']}")
             print()
 
             # Test 3: Object details (if we have results)
-            if results.objects:
-                print("Test 3: Getting object details...")
-                first_obj = results.objects[0]
-                detailed_obj = await client.get_object_by_id(first_obj.id)
-
-                if detailed_obj:
-                    print(f"OK: Retrieved detailed info for: {detailed_obj.title}")
-                    print(
-                        f"   Images: {len(detailed_obj.images) if detailed_obj.images else 0} available"
-                    )
-                else:
-                    print("Warning: Object details not found")
+            if results["objects"]:
+                print("Test 3: get_object...")
+                details = await call(
+                    client, "get_object", {"object_id": results["objects"][0]["id"]}
+                )
+                print(f"OK: Retrieved detailed info for: {details['title']}")
+                print(f"   Images: {len(details.get('images', []))} listed")
+                print(f"   Page: {details.get('web_url', 'none')}")
                 print()
 
-            # Test 4: Sample collection statistics (3 random museums)
-            print("Test 4: Getting sample collection statistics...")
-            # Get stats from the API (single call)
-            stats_response = await client._make_request("stats")
-            stats_data = stats_response.get("response", {})
-            units_data = stats_data.get("units", [])
-
-            # Get unit name mapping
-            unit_name_map = {unit.code: unit.name for unit in await client.get_units()}
-
-            # Randomly select 3 units that have stats data
-            available_units = [
-                unit for unit in units_data if unit.get("unit") in unit_name_map
-            ]
-            selected_units = random.sample(
-                available_units, min(3, len(available_units))
-            )
-
-            print(f"OK: Sample statistics from {len(selected_units)} museums:")
-            for unit_data in selected_units:
-                unit_code = unit_data.get("unit", "")
-                unit_name = unit_name_map.get(unit_code, unit_code)
-                total_objects = unit_data.get("total_objects", 0)
-                print(f"   {unit_name}: {total_objects:,} objects")
+            # Test 4: Collection statistics (3 random museums)
+            print("Test 4: get_collection_stats...")
+            stats = await call(client, "get_collection_stats")
+            print(f"OK: {stats['total_objects']:,} records in total")
+            sample = random.sample(stats["museums"], min(3, len(stats["museums"])))
+            for museum in sample:
+                print(f"   {museum['name']}: {museum['object_count']:,} records")
             print()
 
         print("All tests passed! API connection is working.")
@@ -129,14 +129,17 @@ async def test_api_connection():
         print("3. Try VS Code integration with the workspace")
         return True
 
-    except Exception as e:
+    except (ToolError, KeyError, json.JSONDecodeError) as e:
         print(f"Error: Test failed: {e}")
-        print()
-        print("Troubleshooting:")
-        print("1. Check your API key is valid")
-        print("2. Verify internet connection")
-        print("3. Check if api.data.gov is accessible")
-        return False
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f"Error: Test failed: {type(e).__name__}: {e}")
+
+    print()
+    print("Troubleshooting:")
+    print("1. Check your API key is valid")
+    print("2. Verify internet connection")
+    print("3. Check if api.data.gov is accessible")
+    return False
 
 
 if __name__ == "__main__":
