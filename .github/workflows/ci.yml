@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    # Live API tests are opt-in through SMITHSONIAN_LIVE_TESTS. Neither that
+    # variable nor an API key is set here, so CI never calls the live API.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Run tests
+        run: uv run --no-sync pytest tests/ -q
+
+  package:
+    name: Package and entry points
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder so the server starts; initialize and tools/list make no API calls.
+      SMITHSONIAN_API_KEY: ci-placeholder-key-not-used-for-api-calls
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Check package.json and pyproject.toml versions match
+        run: npm run check-version
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Smoke test the console script from the built wheel
+        run: |
+          uv venv "$RUNNER_TEMP/wheel-venv"
+          uv pip install --python "$RUNNER_TEMP/wheel-venv/bin/python" dist/*.whl
+          python3 .github/scripts/stdio_smoke.py "$RUNNER_TEMP/wheel-venv/bin/smithsonian-mcp"
+
+      - name: Smoke test the npm wrapper
+        run: python3 .github/scripts/stdio_smoke.py node bin/smithsonian-mcp.js
+
+  lint:
+    name: Lint (advisory)
+    runs-on: ubuntu-latest
+    # The package source is not black-clean or pylint-clean yet. A later stage
+    # enforces both; until then this job reports problems without failing CI.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: black
+        run: uv run --no-sync black --check smithsonian_mcp/ tests/ examples/
+
+      - name: pylint
+        if: ${{ !cancelled() }}
+        run: uv run --no-sync pylint smithsonian_mcp/
