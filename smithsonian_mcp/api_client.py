@@ -122,7 +122,9 @@ def _read_word(text: str, index: int) -> Tuple[str, int]:
     Read one query word starting at index.
 
     Quoted phrases and ``[a TO b]`` ranges are kept whole. Unmatched quotes are
-    dropped and stray range brackets are escaped.
+    dropped, and stray range brackets, ``?`` (a single-character wildcard, which
+    makes "Diamond?" match nothing) and ``!`` after the first character are
+    escaped.
 
     Args:
         text: Full query text.
@@ -160,7 +162,7 @@ def _read_word(text: str, index: int) -> Tuple[str, int]:
             parts.append("\\" + char)
             index += 1
             continue
-        if char in "]}":
+        if char in "]}?" or (char == "!" and parts):
             parts.append("\\" + char)
             index += 1
             continue
@@ -169,6 +171,17 @@ def _read_word(text: str, index: int) -> Tuple[str, int]:
         parts.append(char)
         index += 1
     return "".join(parts), index
+
+
+def _is_search_term(word: str) -> bool:
+    """
+    Whether a word can match anything on its own.
+
+    Words without a letter or digit ("&", an em dash, a lone ":") are dropped from
+    the query, as the API's analyzer does for an unparenthesized query; as required
+    AND terms they would match nothing. ``*`` and ``*:*`` are kept as match-all.
+    """
+    return word in ("*", "*:*") or any(char.isalnum() for char in word)
 
 
 def _tokenize_query(text: str) -> List[Tuple[str, str]]:
@@ -209,10 +222,11 @@ def _tokenize_query(text: str) -> List[Tuple[str, str]]:
             continue
         if word in _BOOLEAN_OPERATORS:
             tokens.append(("OP", _BOOLEAN_OPERATORS[word]))
-        elif word and word not in _GROUP_PREFIXES:
-            if word.endswith(":") and not word.endswith("\\:"):
-                # "Star Wars: A New Hope" - a colon followed by a space is text
-                word = word[:-1] + "\\:"
+            continue
+        while word.endswith(":") and not word.endswith("\\:"):
+            # "Star Wars: A New Hope" - a colon followed by a space is punctuation
+            word = word[:-1]
+        if _is_search_term(word):
             tokens.append(("ATOM", word))
     return tokens
 

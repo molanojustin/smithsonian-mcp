@@ -88,9 +88,42 @@ class TestFreeText:
         assert normalize_free_text_query("muppet AND") == "muppet"
         assert normalize_free_text_query("[sic] item") == r"\[sic\] AND item"
 
-    def test_colon_followed_by_space_is_text(self):
-        assert normalize_free_text_query("Star Wars: A New Hope") == (
-            r"Star AND Wars\: AND A AND New AND Hope"
+    @pytest.mark.parametrize(
+        "query,expected",
+        [
+            # Words without letters or digits would be required terms matching nothing
+            ("Lewis & Clark", "Lewis AND Clark"),
+            ("rock & roll", "rock AND roll"),
+            ("Procter & Gamble", "Procter AND Gamble"),
+            ("Kermit — Muppets", "Kermit AND Muppets"),
+            # A colon followed by a space is punctuation, not a field or a term
+            ("Star Wars : A New Hope", "Star AND Wars AND A AND New AND Hope"),
+            ("Star Wars: A New Hope", "Star AND Wars AND A AND New AND Hope"),
+            # "?" is a single-character wildcard, so "Diamond?" matches nothing
+            (
+                "What is the Hope Diamond?",
+                r"What AND is AND the AND Hope AND Diamond\?",
+            ),
+            (
+                "Who made the Star Spangled Banner?",
+                r"Who AND made AND the AND Star AND Spangled AND Banner\?",
+            ),
+            ("hello!", r"hello\!"),
+            ("& — : ?", None),
+        ],
+    )
+    def test_punctuation(self, query, expected):
+        assert normalize_free_text_query(query) == expected
+
+    def test_punctuation_keeps_terms_with_letters_or_digits(self):
+        assert (
+            normalize_free_text_query("AT&T R2-D2 50% *")
+            == "AT&T AND R2-D2 AND 50% AND *"
+        )
+        assert normalize_free_text_query("*:*") == "*:*"
+        assert normalize_free_text_query("name:Henson:") == "name:Henson"
+        assert q(query="Lewis & Clark", unit_code="NMAH") == (
+            "(Lewis AND Clark) AND unit_code:NMAH"
         )
 
 

@@ -104,6 +104,29 @@ async def test_museum_name_resolves_to_nmah(client):
     assert got == set(expected)
 
 
+@pytest.mark.parametrize(
+    "query,reference",
+    [
+        ("Lewis & Clark", "Lewis & Clark"),
+        ("rock & roll", "rock & roll"),
+        ("Procter & Gamble", "Procter & Gamble"),
+        ("Kermit — Muppets", "Kermit — Muppets"),
+        ("Star Wars : A New Hope", "Star AND Wars AND A AND New AND Hope"),
+        ("What is the Hope Diamond?", "What AND is AND the AND Hope AND Diamond"),
+        (
+            "Who made the Star Spangled Banner?",
+            "Who AND made AND the AND Star AND Spangled AND Banner",
+        ),
+    ],
+)
+async def test_punctuation_in_queries_is_ignored(client, query, reference):
+    result = await client.search_collections(
+        CollectionSearchFilter(query=query, limit=0)
+    )
+    assert result.total_count > 0
+    assert result.total_count == await _direct_count(reference)
+
+
 async def test_multi_word_query_requires_all_words(client):
     got = await client.search_collections(
         CollectionSearchFilter(query="bert puppet", unit_code="NMAH", limit=0)
