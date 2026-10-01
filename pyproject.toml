@@ -28,6 +28,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
 ]
 
 # Production dependencies only
@@ -37,6 +39,9 @@ dependencies = [
     "pydantic>=2.13.0",
     "python-decouple>=3.8.0",
 ]
+
+[project.scripts]
+smithsonian-mcp = "smithsonian_mcp.main:main"
 
 [project.urls]
 Homepage = "https://github.com/molanojustin/smithsonian-mcp"
@@ -56,5 +61,20 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatchling.build.targets.wheel]
+[tool.hatch.build.targets.wheel]
 packages = ["smithsonian_mcp"]
+# Release helper invoked by the npm "version" script; not part of the runtime package.
+exclude = ["smithsonian_mcp/write_version.py"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/smithsonian_mcp",
+    "/tests",
+    "/README.md",
+    "/LICENSE.md",
+]
+
+[tool.black]
+# Format for the oldest supported Python so the result is the same on every
+# interpreter used to run black.
+target-version = ["py310"]

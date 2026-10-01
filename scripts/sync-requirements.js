@@ -11,7 +11,7 @@ const path = require('path');
 
 function syncRequirements() {
     try {
-        console.log('🔄 Syncing dependencies from pyproject.toml to config/requirements.txt...');
+        console.log('Syncing dependencies from pyproject.toml to config/requirements.txt...');
 
         // Read pyproject.toml
         const pyprojectPath = path.join(__dirname, '..', 'pyproject.toml');
@@ -41,7 +41,7 @@ function syncRequirements() {
         }
 
         if (dependencies.length === 0) {
-            console.log('⚠️  No dependencies found in pyproject.toml');
+            console.log('Warning: No dependencies found in pyproject.toml');
             return false;
         }
 
@@ -67,20 +67,20 @@ function syncRequirements() {
         }
 
         if (currentContent === requirementsContent) {
-            console.log('✅ Requirements are already up to date');
+            console.log('Requirements are already up to date');
             return true;
         }
 
         // Write new content
         fs.writeFileSync(requirementsPath, requirementsContent);
 
-        console.log(`✅ Updated config/requirements.txt with ${dependencies.length} dependencies:`);
+        console.log(`Updated config/requirements.txt with ${dependencies.length} dependencies:`);
         dependencies.forEach(dep => console.log(`   - ${dep}`));
 
         return true;
 
     } catch (error) {
-        console.error('❌ Error syncing requirements:', error.message);
+        console.error('Error syncing requirements:', error.message);
         process.exit(1);
     }
 }

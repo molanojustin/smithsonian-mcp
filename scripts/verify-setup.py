@@ -8,9 +8,12 @@ and can connect to the API. It provides detailed diagnostics for troubleshooting
 
 import sys
 import os
+import re
 import json
+import shutil
 import subprocess
 import platform
+from importlib import metadata
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -22,9 +25,9 @@ try:
     from smithsonian_mcp.config import Config
     from smithsonian_mcp.api_client import create_client
 except ImportError as e:
-    print(f"❌ Failed to import Smithsonian MCP modules: {e}")
-    print("   Make sure you're running this script from the project root directory")
-    print("   and that dependencies are installed: uv pip install -r config/requirements.txt")
+    print(f"Error: Failed to import Smithsonian MCP modules: {e}")
+    print("   Make sure you're running this script with the project's environment")
+    print("   and that dependencies are installed: uv sync")
     sys.exit(1)
 
 
@@ -39,19 +42,19 @@ class Colors:
 
 
 def success(message: str) -> None:
-    print(f"{Colors.GREEN}✓{Colors.END} {message}")
+    print(f"{Colors.GREEN}[OK]{Colors.END} {message}")
 
 
 def warning(message: str) -> None:
-    print(f"{Colors.YELLOW}!{Colors.END} {message}")
+    print(f"{Colors.YELLOW}[WARN]{Colors.END} {message}")
 
 
 def error(message: str) -> None:
-    print(f"{Colors.RED}X{Colors.END} {message}")
+    print(f"{Colors.RED}[FAIL]{Colors.END} {message}")
 
 
 def info(message: str) -> None:
-    print(f"{Colors.BLUE}i{Colors.END} {message}")
+    print(f"{Colors.BLUE}[INFO]{Colors.END} {message}")
 
 
 def header(message: str) -> None:
@@ -75,28 +78,21 @@ def check_virtual_environment() -> Tuple[bool, str]:
 
 
 def check_dependencies() -> Tuple[bool, List[str]]:
-    """Check if required dependencies are installed"""
-    requirements_file = project_root / "config/requirements.txt"
-    if not requirements_file.exists():
-        return False, ["requirements.txt not found"]
+    """Check that the package and its runtime dependencies are installed"""
+    try:
+        requirements = metadata.requires("smithsonian-mcp") or []
+    except metadata.PackageNotFoundError:
+        return False, ["smithsonian-mcp (package not installed in this environment)"]
 
     missing = []
-    try:
-        with open(requirements_file) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    package = line.split('>=')[0].split('==')[0].split('<=')[0]
-                    try:
-                        # Handle special cases for package names
-                        import_name = package.replace('-', '_')
-                        if package == 'python-decouple':
-                            import_name = 'decouple'
-                        __import__(import_name)
-                    except ImportError:
-                        missing.append(package)
-    except Exception as e:
-        return False, [f"Failed to read requirements.txt: {e}"]
+    for requirement in requirements:
+        if "extra ==" in requirement:
+            continue
+        name = re.split(r"[\s<>=!~;\[]", requirement, maxsplit=1)[0]
+        try:
+            metadata.version(name)
+        except metadata.PackageNotFoundError:
+            missing.append(name)
 
     return len(missing) == 0, missing
 
@@ -142,14 +138,31 @@ def test_api_connection() -> Tuple[bool, str]:
         return False, "API connection failed"
 
 
+def find_console_script() -> Optional[Path]:
+    """Locate the smithsonian-mcp console script for the running environment"""
+    scripts_dir = Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin")
+    for name in ("smithsonian-mcp", "smithsonian-mcp.exe"):
+        candidate = scripts_dir / name
+        if candidate.exists():
+            return candidate
+    found = shutil.which("smithsonian-mcp")
+    return Path(found) if found else None
+
+
 def check_mcp_server() -> Tuple[bool, str]:
-    """Test MCP server startup"""
+    """Check that the server entry point imports and the console script exists"""
     try:
-        # Try to import the server module
-        from smithsonian_mcp.server import server_lifespan, ServerContext
-        return True, "MCP server module imports successfully"
+        from smithsonian_mcp.main import main as entry_point
     except Exception as e:
         return False, f"MCP server import failed: {e}"
+
+    if not callable(entry_point):
+        return False, "smithsonian_mcp.main.main is not callable"
+
+    script = find_console_script()
+    if script is None:
+        return False, "Entry point imports, but the smithsonian-mcp console script was not found"
+    return True, f"MCP server entry point imports; console script at {script}"
 
 
 def check_claude_desktop_config() -> Tuple[bool, str]:
@@ -270,11 +283,11 @@ def check_mcpo_installation() -> Tuple[bool, str]:
 def check_mcpo_config() -> Tuple[bool, str]:
     """Check mcpo configuration file"""
     config_file = project_root / "mcpo-config.json"
-    example_file = project_root / "mcpo-config.example.json"
+    example_file = project_root / "examples" / "mcpo-config.json"
     
     if not config_file.exists():
         if example_file.exists():
-            return False, "mcpo-config.json not found (example exists)"
+            return False, "mcpo-config.json not found (example at examples/mcpo-config.json)"
         else:
             return False, "No mcpo configuration files found"
     
@@ -362,7 +375,10 @@ def run_diagnostics() -> Dict[str, Tuple[bool, str]]:
     
     header("Environment Checks")
     diagnostics["python_version"] = check_python_version()
-    success(diagnostics["python_version"][1])
+    if diagnostics["python_version"][0]:
+        success(diagnostics["python_version"][1])
+    else:
+        error(diagnostics["python_version"][1])
     
     venv_ok, venv_msg = check_virtual_environment()
     diagnostics["virtual_env"] = (venv_ok, venv_msg)
@@ -383,7 +399,7 @@ def run_diagnostics() -> Dict[str, Tuple[bool, str]]:
     api_ok, api_msg = check_api_key()
     diagnostics["api_key"] = (api_ok, api_msg)
     if api_ok:
-        success("API key is valid.")
+        success("API key is configured.")
     else:
         error("API key is missing or invalid. Please check your configuration.")
     
@@ -458,51 +474,52 @@ def provide_suggestions(diagnostics: Dict[str, Tuple[bool, str]]) -> None:
     header("Troubleshooting Suggestions")
     
     if not diagnostics["python_version"][0]:
-        info("• Install Python 3.10 or higher from python.org")
+        info("- Install Python 3.10 or higher, or let uv manage Python: uv sync")
     
     if not diagnostics["virtual_env"][0]:
-        info("• Activate virtual environment: source .venv/bin/activate (Linux/macOS) or .\\venv\\Scripts\\Activate.ps1 (Windows)")
+        info("- Run with the project environment: uv run python scripts/verify-setup.py")
+        info("- Or activate it: source .venv/bin/activate (Linux/macOS) or .\\.venv\\Scripts\\Activate.ps1 (Windows)")
     
     if not diagnostics["dependencies"][0]:
-        info("• Install dependencies: uv pip install -r config/requirements.txt")
+        info("- Install dependencies and the package: uv sync")
     
     if not diagnostics["api_key"][0]:
-        info("• Get API key from https://api.data.gov/signup/")
-        info("• Add it to .env file: SMITHSONIAN_API_KEY=your_key_here")
+        info("- Get API key from https://api.data.gov/signup/")
+        info("- Add it to .env file: SMITHSONIAN_API_KEY=your_key_here")
     
     if diagnostics["api_key"][0] and not diagnostics["api_connection"][0]:
-        info("• Check your internet connection")
-        info("• Verify your API key is valid")
-        info("• Check if api.data.gov is accessible")
+        info("- Check your internet connection")
+        info("- Verify your API key is valid")
+        info("- Check if api.data.gov is accessible")
     
     if not diagnostics["mcp_server"][0]:
-        info("• Check that all dependencies are installed")
-        info("• Verify the project structure is intact")
+        info("- Install the package so the console script exists: uv sync")
+        info("- Verify the project structure is intact")
     
     if not diagnostics["claude_config"][0]:
-        info("• Run setup script to configure Claude Desktop automatically")
-        info("• Or manually copy claude-desktop-config.json to Claude's config directory")
+        info("- Run setup script to configure Claude Desktop automatically")
+        info("- Or merge examples/claude-desktop-config.json into Claude's config file")
     
     if not diagnostics["service_status"][0]:
-        info("• Run setup script to install as a service")
-        info("• Or start manually: python -m smithsonian_mcp.server")
+        info("- MCP clients start the server on demand; a service is optional")
+        info("- Start it manually (stdio): uv run smithsonian-mcp")
     
     if not diagnostics["mcpo_installation"][0]:
-        info("• Install mcpo: uvx mcpo")
-        info("• Or use uvx: uvx mcpo --help")
+        info("- Install mcpo: uv tool install mcpo")
+        info("- Or run it without installing: uvx mcpo --help")
     
     if not diagnostics["mcpo_config"][0]:
-        info("• Run setup script to create mcpo configuration")
-        info("• Or copy mcpo-config.example.json to mcpo-config.json")
+        info("- Run setup script to create mcpo configuration")
+        info("- Or copy examples/mcpo-config.json to mcpo-config.json and fill in paths and key")
     
     if diagnostics.get("mcpo_installation", (False, ""))[0] and diagnostics.get("mcpo_config", (False, ""))[0] and not diagnostics.get("mcpo_service", (False, ""))[0]:
-        info("• Start mcpo: mcpo --config mcpo-config.json --port 8000")
-        info("• Check if port 8000 is available")
+        info("- Start mcpo: mcpo --config mcpo-config.json --port 8000")
+        info("- Check if port 8000 is available")
     
-    if diagnostics.get("mcpo_endpoints", (False, ""))[0] == False:
-        info("• Check mcpo logs for errors: mcpo --config mcpo-config.json --port 8000 --verbose")
-        info("• Verify API key is valid and configured correctly")
-        info("• Test MCP server directly: python -m smithsonian_mcp.server --test")
+    if "mcpo_endpoints" in diagnostics and not diagnostics["mcpo_endpoints"][0]:
+        info("- Check mcpo logs for errors: mcpo --config mcpo-config.json --port 8000")
+        info("- Verify API key is valid and configured correctly")
+        info("- Test the API connection directly: python examples/test-api-connection.py")
 
 
 def main():
@@ -528,8 +545,8 @@ def main():
     if all_critical_ok:
         success("All critical checks passed! Your setup should work correctly.")
         info("Next steps:")
-        info("• Restart Claude Desktop if configured")
-        info("• Test by asking Claude: 'What Smithsonian museums are available?'")
+        info("- Restart Claude Desktop if configured")
+        info("- Test by asking Claude: 'What Smithsonian museums are available?'")
     else:
         error("Some critical checks failed. Please follow the suggestions above.")
     

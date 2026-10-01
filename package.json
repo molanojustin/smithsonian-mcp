@@ -9,11 +9,11 @@
   "scripts": {
     "start": "node bin/smithsonian-mcp.js",
     "test": "node bin/smithsonian-mcp.js --test",
-    "check-version": "node -e \"const pkg=require('./package.json'); const fs=require('fs'); const toml=fs.readFileSync('pyproject.toml','utf8'); const match=toml.match(/^version\\s*=\\s*\\\"([^\\\"]+)\\\"/m); if(!match||pkg.version!==match[1]){console.error('❌ Version mismatch: package.json='+pkg.version+', pyproject.toml='+(match?match[1]:'not found')); process.exit(1);} console.log('✅ Versions match: '+pkg.version);\"",
+    "check-version": "node -e \"const pkg=require('./package.json'); const fs=require('fs'); const toml=fs.readFileSync('pyproject.toml','utf8'); const match=toml.match(/^version\\s*=\\s*\\\"([^\\\"]+)\\\"/m); if(!match||pkg.version!==match[1]){console.error('Version mismatch: package.json='+pkg.version+', pyproject.toml='+(match?match[1]:'not found')); process.exit(1);} console.log('Versions match: '+pkg.version);\"",
     "sync-requirements": "node scripts/sync-requirements.js",
     "prepublishOnly": "npm run check-version && npm test",
     "preversion": "npm test",
-    "version": "node -e \"const fs=require('fs'); const pkg=require('./package.json'); const toml=fs.readFileSync('pyproject.toml','utf8'); fs.writeFileSync('pyproject.toml', toml.replace(/^version\\s*=\\s*\\\"[^\\\"]+\\\"/m, 'version = \\\"'+pkg.version+'\\\"')); require('child_process').execSync('uv lock')\" && npm run sync-requirements && python smithsonian_mcp/write_version.py && git add pyproject.toml uv.lock config/requirements.txt smithsonian_mcp/_version.py package.json package-lock.json",
+    "version": "node -e \"const fs=require('fs'); const pkg=require('./package.json'); const toml=fs.readFileSync('pyproject.toml','utf8'); fs.writeFileSync('pyproject.toml', toml.replace(/^version\\s*=\\s*\\\"[^\\\"]+\\\"/m, 'version = \\\"'+pkg.version+'\\\"')); require('child_process').execSync('uv lock')\" && npm run sync-requirements && uv run --no-project python smithsonian_mcp/write_version.py && git add pyproject.toml uv.lock config/requirements.txt smithsonian_mcp/_version.py package.json package-lock.json",
     "postversion": "git push && git push --tags",
     "bump:patch": "npm version patch -m \"chore(release): %s\" --tag-version-prefix=\"v\"",
     "bump:minor": "npm version minor -m \"feat(release): %s\" --tag-version-prefix=\"v\"",
@@ -65,12 +65,12 @@
     "pyproject.toml",
     "uv.lock",
     "smithsonian_mcp/",
-    "scripts/",
+    "!smithsonian_mcp/**/__pycache__/",
+    "scripts/verify-setup.py",
     "examples/",
     ".env.example"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
     "cross-spawn": "^7.0.6",
     "dotenv": "^18.0.5"
   },
@@ -84,6 +84,5 @@
   "funding": {
     "type": "individual",
     "url": "https://github.com/sponsors/molanojustin"
-  },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  }
 }
