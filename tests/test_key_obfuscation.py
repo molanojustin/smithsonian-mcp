@@ -1,50 +1,96 @@
 """
-Test to ensure keys gets masked in logs
+Tests that the API key never reaches request URLs or log output.
 """
 
-import asyncio
-import unittest
-from unittest.mock import patch, AsyncMock
+import logging
+
+import httpx
+import pytest
 
 from smithsonian_mcp.api_client import SmithsonianAPIClient
+from smithsonian_mcp.models import APIError, CollectionSearchFilter
 
-class TestKeyObfuscation(unittest.TestCase):
-    def setUp(self):
-        self.client = SmithsonianAPIClient()
-        self.client.api_key = "test_api_key"
+pytest.importorskip("pytest_asyncio")
 
-    def test_api_key_not_logged(self):
-        test_params = {
-            "q": "test_query",
-            "unit_code": "ABCdefG",
-            "maker": "RuPaul_Charles",
-            "start": 0,
-            "rows": 10,
-        }
+SECRET = "SECRET-test-key-0123456789"
 
-        # Setup fake session so we don't need a real connection
-        self.client.session = AsyncMock()
-        self.client.session.get.side_effect = Exception("Fake API error")
 
-        with patch('smithsonian_mcp.api_client.logger') as mock_logger:
-            try:
-                asyncio.run(self.client._make_request(
-                    endpoint="test",
-                    params=test_params
-                ))
-            except Exception:
-                pass  # expected error so we can test logging
+def _handler(request: httpx.Request) -> httpx.Response:
+    """Serve canned responses for the endpoints the client uses."""
+    path = request.url.path
+    if path.endswith("/search"):
+        return httpx.Response(200, json={"response": {"rows": [], "rowCount": 0}})
+    if path.endswith("/stats"):
+        return httpx.Response(500, json={"error": "boom"})
+    if "/content/" in path:
+        return httpx.Response(404, json={"response": {"error": "not found"}})
+    if path.endswith("/terms/unit_code"):
+        return httpx.Response(200, json={"response": {"terms": ["NMAH"]}})
+    return httpx.Response(429, json={})
 
-            # Ensure logger was called
-            self.assertTrue(mock_logger.debug.called)
 
-            # Extract full formatted log message
-            log_args = mock_logger.debug.call_args
-            log_format_string = log_args[0][0]
-            log_params = log_args[0][1:]
-            logged_message = log_format_string % log_params
+@pytest.mark.asyncio
+async def test_api_key_only_in_header_and_never_logged(caplog):
+    """Exercise every request path at DEBUG and check URLs and logs for the key."""
+    requests = []
 
-            print("Logged message:", logged_message)
+    def recording_handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return _handler(request)
 
-            self.assertNotIn("test_api_key", logged_message)
-            self.assertIn("api_key=%2A%2A%2A%2A", logged_message)  # Ensure api_key is masked
+    caplog.set_level(logging.DEBUG)
+    for name in ("httpx", "httpcore", "smithsonian_mcp"):
+        logging.getLogger(name).setLevel(logging.DEBUG)
+
+    client = SmithsonianAPIClient(
+        api_key=SECRET, transport=httpx.MockTransport(recording_handler)
+    )
+    try:
+        await client.search_collections(
+            CollectionSearchFilter(query="muppet", unit_code="NMAH", on_view=True)
+        )
+        await client.get_object_by_id("nmah_1448973")
+        await client.get_units()
+        with pytest.raises(APIError):
+            await client._make_request("stats")
+        with pytest.raises(APIError):
+            await client._make_request("other", {"api_key": SECRET, "q": "x"})
+    finally:
+        await client.disconnect()
+        logging.getLogger("httpx").setLevel(logging.NOTSET)
+        logging.getLogger("httpcore").setLevel(logging.NOTSET)
+        logging.getLogger("smithsonian_mcp").setLevel(logging.NOTSET)
+
+    assert len(requests) >= 5
+    for request in requests:
+        assert SECRET not in str(request.url)
+        assert "api_key" not in str(request.url)
+        assert request.headers["X-Api-Key"] == SECRET
+        assert request.headers["User-Agent"].startswith("smithsonian-mcp/")
+
+    # httpx logs each request URL; the key must not appear anywhere
+    assert any("HTTP Request" in r.getMessage() for r in caplog.records)
+    assert SECRET not in caplog.text
+    for record in caplog.records:
+        assert SECRET not in record.getMessage()
+
+
+@pytest.mark.asyncio
+async def test_api_key_not_in_error_messages():
+    """Transport errors are wrapped without exposing the key."""
+
+    def failing_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = SmithsonianAPIClient(
+        api_key=SECRET, transport=httpx.MockTransport(failing_handler)
+    )
+    try:
+        with pytest.raises(APIError) as excinfo:
+            await client._make_request("search", {"q": "test"})
+    finally:
+        await client.disconnect()
+
+    assert excinfo.value.error == "request_error"
+    assert SECRET not in str(excinfo.value)
+    assert SECRET not in repr(excinfo.value.details)

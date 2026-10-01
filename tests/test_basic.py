@@ -17,9 +17,24 @@ class TestConfig:
 
     def test_default_values(self):
         """Test default configuration values."""
+        import smithsonian_mcp
+
         assert Config.SERVER_NAME == "Smithsonian Open Access"
-        assert Config.SERVER_VERSION == "1.0.0"
-        assert Config.DEFAULT_RATE_LIMIT == 60
+        assert Config.SERVER_VERSION == smithsonian_mcp.__version__
+        assert smithsonian_mcp.__version__ in Config.USER_AGENT
+
+    def test_unused_settings_removed(self):
+        """Settings that nothing reads are not defined."""
+        for name in (
+            "API_DATA_GOV_BASE_URL",
+            "EDAN_API_PATH",
+            "DEFAULT_RATE_LIMIT",
+            "ENABLE_CACHE",
+            "CACHE_TTL_SECONDS",
+            "MAX_IMAGE_SIZE_MB",
+            "get_headers",
+        ):
+            assert not hasattr(Config, name), name
 
 
 class TestModels:

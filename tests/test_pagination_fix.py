@@ -13,8 +13,10 @@ import pytest
 from smithsonian_mcp.api_client import create_client
 from smithsonian_mcp.models import CollectionSearchFilter
 
-
 pytest.importorskip("pytest_asyncio")
+
+# These tests page through live search results.
+pytestmark = pytest.mark.live
 
 
 @pytest.mark.asyncio
