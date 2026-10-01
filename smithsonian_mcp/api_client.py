@@ -1055,6 +1055,8 @@ class SmithsonianAPIClient:
                     status_code=status_code,
                     details={"url": url},
                 ) from e
+            if status_code == 403:
+                raise self._forbidden_error(e.response, url) from e
             error_msg = f"HTTP {status_code} error for {url}"
             logger.error(error_msg)
             raise APIError(
@@ -1081,6 +1083,62 @@ class SmithsonianAPIClient:
                 status_code=None,
                 details={"exception_type": type(e).__name__},
             ) from e
+
+    @staticmethod
+    def _forbidden_error(response: httpx.Response, url: str) -> APIError:
+        """
+        Classify an HTTP 403 response.
+
+        api.data.gov rejects a missing or invalid key with a JSON body such as
+        ``{"error": {"code": "API_KEY_INVALID", ...}}``. A firewall in front of the
+        API answers queries that look like SQL, script or path injection
+        (``' OR 1=1 --``, ``<script>``, ``../``) with an HTML "Request Rejected"
+        page instead, which says nothing about the key.
+
+        Args:
+            response: The 403 response.
+            url: Request URL without parameters, for the error details.
+
+        Returns:
+            APIError: ``query_rejected`` for the firewall page, ``api_key_rejected``
+            for key errors, ``http_error`` otherwise.
+        """
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            message = (
+                "The Smithsonian API firewall rejected the request (HTTP 403). "
+                "This is not an API key problem: rephrase the query without "
+                "text that looks like SQL, HTML/script tags or file paths."
+            )
+            logger.warning("Request rejected by the API firewall: %s", url)
+            return APIError(
+                error="query_rejected",
+                message=message,
+                status_code=403,
+                details={"url": url},
+            )
+        error = _as_dict(body.get("error"))
+        code = error.get("code") if isinstance(error.get("code"), str) else None
+        if code and code.startswith("API_KEY"):
+            message = f"The API key was rejected ({code}): {error.get('message')}"
+            logger.error(message)
+            return APIError(
+                error="api_key_rejected",
+                message=message,
+                status_code=403,
+                details={"url": url, "code": code},
+            )
+        message = f"HTTP 403 error for {url}"
+        logger.error(message)
+        return APIError(
+            error="http_error",
+            message=message,
+            status_code=403,
+            details={"url": url},
+        )
 
     @staticmethod
     def _parse_on_view_status(indexed_structured: Dict[str, Any]) -> bool:

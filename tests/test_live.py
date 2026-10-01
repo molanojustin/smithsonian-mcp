@@ -309,6 +309,24 @@ async def test_date_filters_use_whole_decades(client):
     assert open_start.total_count < await _direct_count('* AND date:["1860s" TO *]')
 
 
+async def test_firewall_rejection_is_reported_as_query_problem(client):
+    from smithsonian_mcp.models import APIError
+
+    for query in ["<script>alert(1)</script>", "../../etc/passwd"]:
+        with pytest.raises(APIError) as excinfo:
+            await client.search_collections(
+                CollectionSearchFilter(query=query, limit=0)
+            )
+        assert excinfo.value.error == "query_rejected"
+    bad_key = SmithsonianAPIClient(api_key="INVALID-KEY-FOR-TEST")
+    try:
+        with pytest.raises(APIError) as excinfo:
+            await bad_key.search_collections(CollectionSearchFilter(query="x", limit=0))
+    finally:
+        await bad_key.disconnect()
+    assert excinfo.value.error == "api_key_rejected"
+
+
 async def test_invalid_date_is_rejected(client):
     with pytest.raises(ValueError):
         await client.search_collections(CollectionSearchFilter(date_start="500"))

@@ -320,6 +320,59 @@ class TestSearch:
         )
 
 
+FIREWALL_PAGE = (
+    "<html><head><title>Request Rejected</title></head><body>...</body></html>"
+)
+
+
+class TestForbidden:
+    """HTTP 403 responses: firewall rejections versus key errors."""
+
+    @staticmethod
+    async def _error_for(response: httpx.Response) -> APIError:
+        client = SmithsonianAPIClient(
+            api_key="test", transport=httpx.MockTransport(lambda request: response)
+        )
+        try:
+            with pytest.raises(APIError) as excinfo:
+                await client.search_collections(
+                    CollectionSearchFilter(query="x", limit=0)
+                )
+        finally:
+            await client.disconnect()
+        return excinfo.value
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("content_type", ["text/html; charset=utf-8", "text/html"])
+    async def test_html_403_is_a_rejected_query(self, content_type):
+        error = await self._error_for(
+            httpx.Response(
+                403, content=FIREWALL_PAGE, headers={"content-type": content_type}
+            )
+        )
+        assert error.error == "query_rejected"
+        assert error.status_code == 403
+        assert "rephrase the query" in error.message
+        assert "not an API key problem" in error.message
+
+    @pytest.mark.asyncio
+    async def test_json_403_is_a_key_error(self):
+        body = {
+            "error": {
+                "code": "API_KEY_INVALID",
+                "message": "An invalid api_key was supplied.",
+            }
+        }
+        error = await self._error_for(httpx.Response(403, json=body))
+        assert error.error == "api_key_rejected"
+        assert "API_KEY_INVALID" in error.message
+
+    @pytest.mark.asyncio
+    async def test_other_json_403_stays_an_http_error(self):
+        error = await self._error_for(httpx.Response(403, json={"status": 403}))
+        assert error.error == "http_error"
+
+
 class TestUnits:
     """get_units uses /terms/unit_code with a cache and a static fallback."""
 
