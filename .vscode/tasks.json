@@ -7,7 +7,7 @@
       "command": "bash",
       "args": [
         "-c",
-        "set -a && source .env && set +a && .venv/bin/python -m smithsonian_mcp.server"
+        "set -a && source .env && set +a && .venv/bin/smithsonian-mcp"
       ],
       "group": {
         "kind": "build",
@@ -34,8 +34,8 @@
     {
       "label": "Install Dependencies",
       "type": "shell",
-      "command": ".venv/bin/pip",
-      "args": ["install", "-r", "requirements.txt"],
+      "command": "uv",
+      "args": ["sync", "--group", "dev"],
       "group": "build"
     },
     {
@@ -68,7 +68,7 @@
       "command": "bash",
       "args": [
         "-c",
-        "set -a && source .env && set +a && npx @modelcontextprotocol/inspector .venv/bin/python -m smithsonian_mcp.server"
+        "set -a && source .env && set +a && npx @modelcontextprotocol/inspector .venv/bin/smithsonian-mcp"
       ],
       "group": "test"
     }

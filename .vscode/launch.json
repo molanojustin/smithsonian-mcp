@@ -5,7 +5,7 @@
       "name": "Debug MCP Server",
       "type": "debugpy",
       "request": "launch",
-      "module": "smithsonian_mcp.server",
+      "module": "smithsonian_mcp.main",
       "console": "integratedTerminal",
       "envFile": "${workspaceFolder}/.env",
       "python": "${workspaceFolder}/.venv/bin/python",
@@ -24,7 +24,7 @@
       "name": "Debug MCP Server (External Terminal)",
       "type": "debugpy",
       "request": "launch",
-      "module": "smithsonian_mcp.server",
+      "module": "smithsonian_mcp.main",
       "console": "externalTerminal",
       "python": "${workspaceFolder}/.venv/bin/python",
       "envFile": "${workspaceFolder}/.env"
