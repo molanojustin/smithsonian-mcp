@@ -473,6 +473,50 @@ class TestSharedClient:
         await context.close_api_client()
         assert context.peek_api_client() is None
 
+    def test_client_is_recreated_on_a_new_event_loop(self, monkeypatch):
+        created = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_search_response([], 7))
+
+        async def fake_create():
+            client = SmithsonianAPIClient(
+                api_key="test", transport=httpx.MockTransport(handler)
+            )
+            await client.connect()
+            created.append((client, asyncio.get_running_loop()))
+            return client
+
+        monkeypatch.setattr(context, "create_client", fake_create)
+        context.set_api_client(None)
+
+        async def use_twice():
+            first = await context.get_api_client()
+            second = await context.get_api_client()
+            assert first is second  # reused within one loop
+            return first, await first.count_matches("*")
+
+        client_one, count_one = asyncio.run(use_twice())
+        client_two, count_two = asyncio.run(use_twice())
+
+        assert count_one == count_two == 7
+        assert client_one is not client_two
+        assert len(created) == 2 and created[0][1] is not created[1][1]
+        context.set_api_client(None)
+
+    @pytest.mark.live
+    def test_shared_client_works_across_asyncio_runs_live(self):
+        async def use():
+            client = await context.get_api_client()
+            return await client.count_matches("muppet")
+
+        context.set_api_client(None)
+        try:
+            assert asyncio.run(use()) > 0
+            assert asyncio.run(use()) > 0  # was "Event loop is closed"
+        finally:
+            context.set_api_client(None)
+
 
 def _run_python(code_or_args, env_overrides=None, timeout=60):
     env = {k: v for k, v in os.environ.items() if not k.startswith("SMITHSONIAN")}
