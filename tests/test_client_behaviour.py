@@ -129,6 +129,120 @@ class TestParsing:
         messages = [record.getMessage() for record in caplog.records]
         assert any("Parsed 2 images" in message for message in messages)
 
+    @pytest.mark.parametrize(
+        "unit,names,indexed,expected",
+        [
+            # Label sets taken from real records of each unit
+            (
+                "NMAI",
+                [
+                    ("Culture/People", "Lakota"),
+                    ("Seller", "Some Dealer"),
+                    ("Previous owner", "A Collector"),
+                    ("Collector", "Field Collector"),
+                    ("Artist/Maker", "Real Maker"),
+                ],
+                ["Some Dealer", "A Collector"],
+                ["Real Maker"],
+            ),
+            (
+                "NMNHMINSCI",
+                [("Site Name", "Synthetic"), ("Taxon", "Cubic zirconia - Primary")],
+                [],
+                [],
+            ),
+            (
+                "NMNHANTHRO",
+                [
+                    ("Donor Name", "Donor"),
+                    ("Collector", "Collector"),
+                    ("Site Name", "X"),
+                ],
+                [],
+                [],
+            ),
+            (
+                "NMAAHC",
+                [
+                    ("subject of", "Subject Person"),
+                    ("photograph by", "Photographer"),
+                    ("owned by", "Owner"),
+                    ("signed by", "Signer"),
+                    ("created by", "Creator"),
+                ],
+                [],
+                ["Photographer", "Creator"],
+            ),
+            (
+                "NPG",
+                [("Sitter", "Jack London"), ("Artist", "Finn Frolich")],
+                [],
+                ["Finn Frolich"],
+            ),
+            (
+                "SAAM",
+                [
+                    ("Artist", "A"),
+                    ("Copy after", "B"),
+                    ("Commissioner", "C"),
+                    ("Sitter", "D"),
+                ],
+                [],
+                ["A"],
+            ),
+            (
+                "NASM",
+                [
+                    ("Manufacturer", "Boeing"),
+                    ("Manufactured for", "US Navy"),
+                    ("Owner", "O"),
+                ],
+                [],
+                ["Boeing"],
+            ),
+            ("HMSG", [("Artist", "A"), ("Formerly attributed to", "B")], [], ["A"]),
+            (
+                "CHNDM",
+                [("Designer", "D"), ("Print maker", "P"), ("After", "X")],
+                [],
+                ["D", "P"],
+            ),
+            # No creator in freetext: indexed names (dealers, collectors) are not used
+            ("NMAA", [], ["Kobayashi, Bunshichi", "Freer, Charles Lang"], []),
+            # Unlabeled name entries have no known role
+            ("NMAH", [(None, "Unknown Role")], [], []),
+        ],
+    )
+    def test_makers_are_creators_only(self, unit, names, indexed, expected):
+        client = SmithsonianAPIClient(api_key="test")
+        entries = [
+            (
+                {"content": content}
+                if label is None
+                else {"label": label, "content": content}
+            )
+            for label, content in names
+        ]
+        row = {
+            "id": "ld1-x",
+            "title": "t",
+            "unitCode": unit,
+            "content": {
+                "freetext": {"name": entries},
+                "indexedStructured": {"name": indexed},
+            },
+        }
+        assert client._parse_object_data(row).maker == expected
+
+    def test_maker_block_entries_count_without_label(self):
+        client = SmithsonianAPIClient(api_key="test")
+        row = {
+            "id": "ld1-x",
+            "title": "t",
+            "content": {"freetext": {"maker": [{"content": "Unlabeled Maker"}]}},
+        }
+        assert client._parse_object_data(row).maker == ["Unlabeled Maker"]
+
     def test_exhibition_room_is_optional(self):
         client = SmithsonianAPIClient(api_key="test")
         indexed = {"exhibition": [{"building": "NMAH", "room": "East 1"}]}

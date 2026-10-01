@@ -60,20 +60,82 @@ ON_VIEW_CLAUSE = 'onPhysicalExhibit:"Yes"'
 # "AND NOT onPhysicalExhibit" undercounts on this API; a match-all group does not.
 NOT_ON_VIEW_CLAUSE = '(* NOT onPhysicalExhibit:"Yes")'
 
-# freetext.name labels that describe subjects or owners rather than makers.
-_NON_MAKER_LABELS = frozenset(
+# freetext.name labels that name the creator of an object. The other labels in
+# that block name subjects, sitters, owners, sellers, donors, collectors,
+# cultures, places, vessels or taxa. Derived from label frequencies in random
+# samples of 26 units.
+_MAKER_LABELS = frozenset(
     {
-        "sitter",
-        "subject",
-        "depicted",
-        "associated person",
-        "associated name",
-        "associated institution",
-        "owner",
-        "previous owner",
-        "donor",
+        "artist",
+        "artist/maker",
+        "maker",
+        "creator",
+        "created by",
+        "made by",
+        "manufacturer",
+        "manufactured by",
+        "author",
+        "written by",
+        "writer",
+        "photographer",
+        "photograph by",
+        "photographed by",
+        "designer",
+        "designed by",
+        "engraver",
+        "engraved by",
+        "printer",
+        "printed by",
+        "print maker",
+        "printmaker",
+        "lithographer",
+        "publisher",
+        "published by",
+        "sculptor",
+        "architect",
+        "illustrator",
+        "illustrated by",
+        "calligrapher",
+        "embroiderer",
+        "model maker",
+        "attributed to",
+        "attribution",
+        "possibly",
+        "studio",
+        "mint",
+        "founder",
+        "assembler",
+        "contractor",
+        "inventor",
+        "collaborator",
+        "composer",
+        "performer",
+        "recording artist",
+        "producer",
+        "produced by",
+        "editor",
+        "edited by",
     }
 )
+# Label fragments of further creator roles ("Artist (attributed)", "Silversmith").
+_MAKER_LABEL_FRAGMENTS = (
+    "artist",
+    "maker",
+    "manufactur",
+    "photograph",
+    "designer",
+    "engraver",
+    "sculpt",
+    "illustrat",
+    "lithograph",
+    "painter",
+    "potter",
+    "weaver",
+    "smith",
+    "carver",
+)
+# Labels that mention a creator but describe someone else's role.
+_NOT_MAKER_LABEL_PREFIXES = ("formerly", "copy after", "after", "possible owner")
 
 # ---------------------------------------------------------------------------
 # Query building
@@ -724,6 +786,20 @@ def _label_of(item: Any) -> str:
     return ""
 
 
+def _is_maker_label(label: str) -> bool:
+    """Whether a freetext.name label is a creator role."""
+    # "manufactured for", "printed for" name the client, not the maker
+    if (
+        not label
+        or label.startswith(_NOT_MAKER_LABEL_PREFIXES)
+        or label.endswith(" for")
+    ):
+        return False
+    return label in _MAKER_LABELS or any(
+        fragment in label for fragment in _MAKER_LABEL_FRAGMENTS
+    )
+
+
 def _first_text(*candidates: Any) -> Optional[str]:
     """Return the first non-empty string content among candidate entry lists."""
     for candidate in candidates:
@@ -1121,21 +1197,32 @@ class SmithsonianAPIClient:
         return images
 
     @staticmethod
-    def _parse_makers(
-        freetext: Dict[str, Any], indexed_structured: Dict[str, Any]
-    ) -> List[str]:
-        """Collect maker names from freetext.maker / freetext.name entries."""
+    def _parse_makers(freetext: Dict[str, Any]) -> List[str]:
+        """
+        Collect creator names from the freetext block.
+
+        Entries under ``freetext.name`` count only when their label is a creator
+        role (artist, manufacturer, author, photograph by, ...); unlabeled entries
+        have no known role and are skipped. Entries under ``freetext.maker`` count
+        unless their label names another role. indexedStructured.name is not used:
+        it mixes makers with dealers, collectors and subjects.
+
+        Args:
+            freetext: The freetext block of a record.
+
+        Returns:
+            List[str]: Distinct maker names in record order.
+        """
         makers: List[str] = []
-        for item in _as_list(freetext.get("maker")) + _as_list(freetext.get("name")):
-            if _label_of(item) in _NON_MAKER_LABELS:
+        candidates = [(item, True) for item in _as_list(freetext.get("maker"))]
+        candidates += [(item, False) for item in _as_list(freetext.get("name"))]
+        for item, from_maker_block in candidates:
+            label = _label_of(item)
+            if not (_is_maker_label(label) or (from_maker_block and not label)):
                 continue
             text = clean_text(_content_of(item))
             if text and text not in makers:
                 makers.append(text)
-        if not makers:
-            makers = [
-                clean_text(name) for name in _strings(indexed_structured.get("name"))
-            ]
         return makers
 
     def _parse_object_data(self, raw_data: Dict[str, Any]) -> SmithsonianObject:
@@ -1262,7 +1349,7 @@ class SmithsonianAPIClient:
             record_link=_safe_url(descriptive.get("record_link")),
             last_modified=_parse_timestamp(raw_data.get("lastTimeUpdated"))
             or _parse_timestamp(raw_data.get("modified")),
-            maker=self._parse_makers(freetext, indexed),
+            maker=self._parse_makers(freetext),
             object_type=_first_text(
                 freetext.get("objectType"), indexed.get("object_type")
             ),

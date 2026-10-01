@@ -66,6 +66,17 @@ async def _direct_count(query: str) -> int:
         return response.json()["response"]["rowCount"]
 
 
+async def _direct_rows(query: str, rows: int = 100) -> list:
+    async with httpx.AsyncClient(
+        timeout=60, headers={"X-Api-Key": Config.API_KEY}
+    ) as http:
+        response = await http.get(
+            BASE_URL + "search", params={"q": query, "rows": rows}
+        )
+        response.raise_for_status()
+        return response.json()["response"]["rows"]
+
+
 async def _client_ids(client, **filters) -> Set[str]:
     result = await client.search_collections(
         CollectionSearchFilter(limit=1000, **filters)
@@ -324,3 +335,48 @@ async def test_titles_are_plain_text(client):
     titles = [obj.title for obj in result.objects]
     assert "The Muppets Lunch Box" in titles
     assert all("<" not in title for title in titles)
+
+
+NON_CREATOR_LABELS = {
+    "sitter",
+    "seller",
+    "culture/people",
+    "previous owner",
+    "collector",
+    "donor name",
+    "subject of",
+    "owned by",
+    "taxon",
+    "site name",
+}
+
+
+@pytest.mark.parametrize(
+    "unit",
+    ["SAAM", "NPG", "NMAH", "NASM", "NMAA", "NMAI", "CHNDM", "NMAAHC", "NMNHMINSCI"],
+)
+async def test_makers_exclude_non_creators(client, unit):
+    rows = await _direct_rows(f"unit_code:{unit}", rows=100)
+    assert rows
+    for row in rows:
+        obj = client._parse_object_data(row)
+        entries = row["content"].get("freetext", {}).get("name") or []
+        creators = {
+            entry.get("content")
+            for entry in entries
+            if (entry.get("label") or "").lower() not in NON_CREATOR_LABELS
+        }
+        for entry in entries:
+            if (entry.get("label") or "").lower() in NON_CREATOR_LABELS:
+                content = entry.get("content")
+                assert content in creators or content not in obj.maker, row["id"]
+
+
+async def test_hope_diamond_replica_has_no_maker(client):
+    result = await client.search_collections(
+        CollectionSearchFilter(
+            query="Hope Diamond Replica", unit_code="NMNHMINSCI", limit=5
+        )
+    )
+    assert result.objects
+    assert all(obj.maker == [] for obj in result.objects)
