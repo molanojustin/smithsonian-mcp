@@ -8,32 +8,132 @@ A **Model Context Protocol (MCP)** server that provides AI assistants with acces
 
 ## Quick Start
 
-### Option 1: npm/npx Installation (Easiest)
+You need:
 
-The npm package includes automatic Python dependency management and works across platforms:
+- A free API key from [api.data.gov/signup](https://api.data.gov/signup/)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/). uv downloads a compatible Python (3.10 or newer) if one is not already installed.
 
-```bash
-# Install globally
-npm install -g @molanojustin/smithsonian-mcp
+The server speaks MCP over stdio. MCP clients such as Claude Desktop start it on demand; you do not run it in the background yourself.
 
-# Or run directly with npx (no installation needed)
-npx -y @molanojustin/smithsonian-mcp
+### Claude Desktop with uvx (recommended)
 
-# Set your API key
-export SMITHSONIAN_API_KEY=your_key_here
+Add this to `claude_desktop_config.json`. It installs and runs the server straight from the GitHub repository, with no clone or virtual environment to manage:
 
-# Start the server
-smithsonian-mcp
+```json
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/molanojustin/smithsonian-mcp",
+        "smithsonian-mcp"
+      ],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_key_here"
+      }
+    }
+  }
+}
 ```
 
-### Option 2: Automated Setup (Recommended for Python users)
+Restart Claude Desktop, then ask "What Smithsonian museums are available?"
 
-The enhanced setup script now includes:
+Notes:
 
-- ✅ **API key validation** - Tests your key before saving
-- ✅ **Service installation** - Auto-install as system service
-- ✅ **Claude Desktop config** - Automatic configuration
-- ✅ **Health checks** - Verify everything works
+- The package is not published on PyPI, so `--from` points uvx at the GitHub repository. Append `@<tag or commit>` to the URL to pin a version.
+- uvx caches the build. To pick up newer commits, run `uvx --refresh --from git+https://github.com/molanojustin/smithsonian-mcp smithsonian-mcp` once in a terminal.
+- If Claude Desktop reports that `uvx` cannot be found, use its absolute path as the `command` (`which uvx` on macOS/Linux, `where uvx` on Windows).
+
+### Other ways to run the server
+
+All of these start the same `smithsonian-mcp` command and take the API key from the same `env` block.
+
+#### npm/npx
+
+The npm package is a small Node.js wrapper that uses uv to install the Python dependencies on first start. It requires Node.js 16 or newer and uv:
+
+```json
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "npx",
+      "args": ["-y", "@molanojustin/smithsonian-mcp"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_key_here"
+      }
+    }
+  }
+}
+```
+
+You can also install it globally with `npm install -g @molanojustin/smithsonian-mcp` and run `smithsonian-mcp`. Run `smithsonian-mcp --test` to check your API key and connection.
+
+#### From a local clone
+
+```bash
+git clone https://github.com/molanojustin/smithsonian-mcp.git
+cd smithsonian-mcp
+uv sync
+```
+
+`uv sync` creates `.venv` from `uv.lock` and installs the `smithsonian-mcp` command into it. Point Claude Desktop at the clone:
+
+```json
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "uv",
+      "args": ["--directory", "/absolute/path/to/smithsonian-mcp", "run", "smithsonian-mcp"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_key_here"
+      }
+    }
+  }
+}
+```
+
+Alternatively, use the installed command directly as `"command": "/absolute/path/to/smithsonian-mcp/.venv/bin/smithsonian-mcp"` (on Windows, `.venv\Scripts\smithsonian-mcp.exe`) with no `args`.
+
+#### Python virtual environment without uv
+
+Requires Python 3.10 or newer:
+
+```bash
+git clone https://github.com/molanojustin/smithsonian-mcp.git
+cd smithsonian-mcp
+python3 -m venv .venv
+.venv/bin/pip install -e .
+```
+
+Then use `/absolute/path/to/smithsonian-mcp/.venv/bin/smithsonian-mcp` as the `command`. This installs the newest compatible dependencies rather than the versions pinned in `uv.lock`.
+
+#### Docker
+
+Build the image from a clone. The `-i` flag keeps stdin open for the stdio transport, and `-e SMITHSONIAN_API_KEY` passes the key from the `env` block into the container:
+
+```bash
+docker build -t smithsonian-mcp .
+```
+
+```json
+{
+  "mcpServers": {
+    "smithsonian_open_access": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "SMITHSONIAN_API_KEY", "smithsonian-mcp"],
+      "env": {
+        "SMITHSONIAN_API_KEY": "your_key_here"
+      }
+    }
+  }
+}
+```
+
+### Automated Setup Scripts
+
+For a local clone, the setup scripts install dependencies (with `uv sync` when uv is available, otherwise a Python 3.10+ virtual environment and pip), validate your API key and save it to `.env`, and can optionally add the server to your Claude Desktop config, generate an mcpo config and run a health check.
+
 **macOS/Linux:**
 
 ```bash
@@ -47,19 +147,17 @@ config/setup.sh
 config\setup.ps1
 ```
 
-### Option 3: Manual Setup
+### API Key in `.env`
 
-1. **Get API Key**: [api.data.gov/signup](https://api.data.gov/signup/) (free)
-2. **Install**: `uv pip install -r config/requirements.txt`
-3. **Configure**: Copy `.env.example` to `.env` and set your API key
-4. **Test**: `python examples/test-api-connection.py`
+When you run the server from a clone, it also reads `SMITHSONIAN_API_KEY` from a `.env` file in the project root. Copy `.env.example` to `.env` and set your key. A key set in the MCP client's `env` block takes precedence.
 
 ### Verify Setup
 
-Run the verification script to check your installation:
+Check an installation from a clone:
 
 ```bash
-python scripts/verify-setup.py
+uv run python examples/test-api-connection.py
+uv run python scripts/verify-setup.py
 ```
 
 ## Features
@@ -93,43 +191,7 @@ python scripts/verify-setup.py
 
 ### Claude Desktop
 
-#### Option 1: Using npm/npx (Recommended)
-
-1. **Configure** (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "smithsonian_open_access": {
-      "command": "npx",
-      "args": ["-y", "@molanojustin/smithsonian-mcp"],
-      "env": {
-        "SMITHSONIAN_API_KEY": "your_key_here"
-      }
-    }
-  }
-}
-```
-
-#### Option 2: Using Python installation
-
-1. **Configure** (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "smithsonian_open_access": {
-      "command": "python",
-      "args": ["-m", "smithsonian_mcp.server"],
-      "env": {
-        "SMITHSONIAN_API_KEY": "your_key_here"
-      }
-    }
-  }
-}
-```
-
-2. **Test**: Ask Claude "What Smithsonian museums are available?"
+See [Quick Start](#quick-start) for Claude Desktop configurations using uvx, npm/npx, a local clone, a virtual environment or Docker. A ready-to-copy example is in `examples/claude-desktop-config.json`.
 
 ### mcpo Integration (MCP Orchestrator)
 
@@ -138,23 +200,27 @@ python scripts/verify-setup.py
 #### Installation
 
 ```bash
-# Install mcpo
-uvx mcpo
+# Install mcpo as a uv tool
+uv tool install mcpo
 
-# Or using uvx
+# Or run it without installing
 uvx mcpo --help
 ```
 
 #### Configuration
 
-Create a `examples/mcpo-config.json` file:
+Copy `examples/mcpo-config.json` to `mcpo-config.json` in the project root and fill in your paths and API key, or let `config/setup.sh` generate it. The generated file contains your API key, so do not commit it. A minimal configuration:
 
 ```json
 {
   "mcpServers": {
     "smithsonian_open_access": {
-      "command": "python",
-      "args": ["-m", "smithsonian_mcp.main"],
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/molanojustin/smithsonian-mcp",
+        "smithsonian-mcp"
+      ],
       "env": {
         "SMITHSONIAN_API_KEY": "your_api_key_here"
       }
@@ -175,10 +241,10 @@ Create a `examples/mcpo-config.json` file:
 
 ```bash
 # Start mcpo with hot-reload
-mcpo --config examples/mcpo-config.json --port 8000 --hot-reload
+mcpo --config mcpo-config.json --port 8000 --hot-reload
 
 # With API key authentication
-mcpo --config examples/mcpo-config.json --port 8000 --api-key "your_secret_key"
+mcpo --config mcpo-config.json --port 8000 --api-key "your_secret_key"
 
 # Access endpoints:
 # - Smithsonian: http://localhost:8000/smithsonian_open_access
@@ -201,7 +267,7 @@ Type=simple
 User=your-user
 WorkingDirectory=/path/to/your/config
 Environment=PATH=/path/to/venv/bin
-ExecStart=/path/to/venv/bin/mcpo --config examples/mcpo-config.json --port 8000
+ExecStart=/path/to/venv/bin/mcpo --config mcpo-config.json --port 8000
 Restart=always
 RestartSec=10
 
@@ -226,9 +292,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed mcpo troubleshooting, 
 
 ### VS Code
 
-1. **Open Workspace**: `code .vscode/smithsonian-mcp-workspace.code-workspace`
-2. **Run Tasks**: Debug, test, and develop the MCP server
-3. **Claude Code**: AI-assisted development with Smithsonian data
+Open the clone with `code .`. After `uv sync --group dev`, `.vscode/tasks.json` provides tasks to start the server, run the tests, format and lint the code, and open the MCP Inspector, and `.vscode/launch.json` provides debugger configurations for the server and the tests.
 
 ## Available Data
 
@@ -317,16 +381,22 @@ This approach ensures reliable metrics while respecting API rate limits and avoi
 
 ## Requirements
 
-### For npm/npx installation:
+### For uvx or a local clone:
 
-- Node.js 16.0 or higher
-- Python 3.10 or higher (auto-detected and dependencies managed)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs Python 3.10 or newer if needed
 - API key from [api.data.gov](https://api.data.gov/signup/) (free)
 - Internet connection for API access
 
-### For Python installation:
+### For npm/npx installation:
 
-- Python 3.10 or higher
+- Node.js 16.0 or higher
+- uv (the wrapper uses it to install the Python dependencies)
+- API key from [api.data.gov](https://api.data.gov/signup/) (free)
+- Internet connection for API access
+
+### For a virtual environment without uv:
+
+- Python 3.10 or higher (CI tests 3.10 through 3.14)
 - API key from [api.data.gov](https://api.data.gov/signup/) (free)
 - Internet connection for API access
 
@@ -345,35 +415,37 @@ smithsonian-mcp
 smithsonian-mcp --help
 ```
 
-### Using Python:
+### From a local clone:
 
 ```bash
-# Test API connection
-python examples/test-api-connection.py
+# Install runtime and development dependencies
+uv sync --group dev
 
-# Run MCP server
-python -m smithsonian_mcp.server
+# Test API connection
+uv run python examples/test-api-connection.py
+
+# Run MCP server (stdio; normally your MCP client starts it)
+uv run smithsonian-mcp
+
+# Explore the server interactively with the MCP Inspector
+npx @modelcontextprotocol/inspector .venv/bin/smithsonian-mcp
 
 # Run test suite
-pytest tests/
+uv run pytest tests/
 
 # Run on-view functionality tests
-pytest tests/test_on_view.py -v
+uv run pytest tests/test_on_view.py -v
 
 # Run basic tests
-pytest tests/test_basic.py -v
+uv run pytest tests/test_basic.py -v
 
 # Verify complete setup
-python scripts/verify-setup.py
-
-# VS Code Tasks (if using workspace)
-# - Test MCP Server
-# - Run Tests
-# - Format Code
-# - Lint Code
+uv run python scripts/verify-setup.py
 ```
 
 ## Service Management
+
+The setup scripts can register the server as a background service. Because the server uses the stdio transport, it exits as soon as no client is attached, so a standalone service is rarely useful. To expose the tools as a long-running HTTP service, run them behind [mcpo](#mcpo-integration-mcp-orchestrator) instead.
 
 ### Linux (systemd)
 
