@@ -338,3 +338,26 @@ async def test_bert_puppet_parsing():
     assert nmah_unit is not None
     assert str(nmah_unit.website) == "https://americanhistory.si.edu/"
     await client.disconnect()
+
+
+@pytest.mark.parametrize(
+    "record_id, expected",
+    [
+        (
+            "nmah_1444757",
+            "https://americanhistory.si.edu/collections/object/nmah_1444757",
+        ),
+        ("fsg_F1900.47", "https://asia.si.edu/object/F1900.47"),
+        ("siris_arc_403511", "https://siarchives.si.edu/collections/siris_arc_403511"),
+        ("saam_1983.95.90", None),  # needs record_link
+        ("nmafa_2005-6-55", None),  # needs guid
+        ("unknown_1", None),
+        ("nounderscore", None),
+        (None, None),
+    ],
+)
+def test_record_page_url_needs_no_request(record_id, expected):
+    """Pattern URLs are built from the record_id alone, or not at all."""
+    from smithsonian_mcp.utils import record_page_url
+
+    assert record_page_url(record_id) == expected

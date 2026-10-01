@@ -407,14 +407,55 @@ def _normalize_museum_code(record_id_prefix: str) -> str:
     return prefix.upper()
 
 
+def record_page_url(record_id: Optional[str]) -> Optional[str]:
+    """
+    Build an object page URL from a record_id alone, without any request.
+
+    Only museums whose URL pattern needs nothing but the record_id or accession
+    number are handled (NMAH, NMAA, NPG, NPM, SIA, several NMNH departments, ...).
+    Museums whose pages need record data (record_link, guid, EDAN URL or IDS id)
+    return None.
+
+    Args:
+        record_id: Record identifier such as ``nmah_1448973`` or ``fsg_F1900.47``.
+
+    Returns:
+        Optional[str]: The page URL, or None if it cannot be built from the id.
+    """
+    if not record_id or "_" not in record_id:
+        return None
+    record_id_prefix, accession = record_id.split("_", 1)
+
+    # Smithsonian Institution Archives records use SIRIS ids ("siris_arc_403511")
+    if record_id_prefix.lower() == "siris" and accession.lower().startswith("arc_"):
+        museum_code = "SIA"
+    else:
+        museum_code = _normalize_museum_code(record_id_prefix)
+
+    from .constants import (  # pylint: disable=import-outside-toplevel
+        MUSEUM_URL_PATTERNS,
+    )
+
+    pattern = MUSEUM_URL_PATTERNS.get(museum_code)
+    if not pattern or pattern["identifier"] not in ("record_ID", "accession"):
+        return None
+    base_url = pattern["base_url"]
+    if "{" in base_url:
+        return None
+    try:
+        path = pattern["path_template"].format(record_ID=record_id, accession=accession)
+    except (KeyError, ValueError):
+        return None
+    return base_url.rstrip("/") + path
+
+
 async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str]:
     """
     Construct a URL from a record_id using museum-specific URL patterns.
 
-    This function uses predefined URL construction patterns for each Smithsonian museum
-    to generate accurate object URLs. Different museums have different URL formats and
-    identifier requirements. Museums whose URLs need record data are looked up through
-    the shared API client.
+    Museums whose URLs follow from the record_id are built directly by
+    ``record_page_url``. Other museums, whose pages need record data (record_link
+    or guid), are looked up through the shared API client.
 
     Args:
         record_id: The record identifier (e.g., "nmah_1448973", "fsg_F1900.47")
@@ -428,66 +469,10 @@ async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str
 
         construct_url_from_record_id("fsg_F1900.47")
         # Returns: "https://asia.si.edu/object/F1900.47"
-
-        construct_url_from_record_id("nmnhinvertebratezoology_14688577")
-        # Returns: "https://naturalhistory.si.edu/object/nmnhinvertebratezoology_14688577"
     """
     if not record_id or "_" not in record_id:
         return None
-
-    # Extract components from record_id
-    parts = record_id.split("_", 1)
-    if len(parts) != 2:
-        return None
-
-    record_id_prefix = parts[0]
-    accession = parts[1]
-
-    # Normalize to museum code. Smithsonian Institution Archives records use
-    # SIRIS archive IDs such as "siris_arc_403511".
-    if record_id_prefix.lower() == "siris" and accession.lower().startswith("arc_"):
-        museum_code = "SIA"
-    else:
-        museum_code = _normalize_museum_code(record_id_prefix)
-
-    from .constants import (  # pylint: disable=import-outside-toplevel
-        MUSEUM_URL_PATTERNS,
-    )
-
-    pattern = MUSEUM_URL_PATTERNS.get(museum_code)
-    if not pattern:
-        # Unknown museum, fall back to API lookup
-        return await _get_url_from_api_record_id(record_id)
-
-    # Handle different identifier types
-    identifier_type = pattern["identifier"]
-    base_url = pattern["base_url"]
-    path_template = pattern["path_template"]
-
-    if identifier_type not in ("record_ID", "accession"):
-        # record_link, guid, url and idsId all need record data from the API
-        return await _get_url_from_api_record_id(record_id)
-
-    # Handle template variables in base_url
-    if "{record_link}" in base_url or "{guid}" in base_url:
-        return await _get_url_from_api_record_id(record_id)
-
-    # Construct the URL
-    try:
-        url = base_url.rstrip("/")
-        if path_template:
-            formatted_path = path_template.format(
-                record_ID=record_id,
-                accession=accession,
-                url=record_id,  # fallback
-                idsId=record_id,  # fallback
-                guid=record_id,  # fallback
-            )
-            url += formatted_path
-        return url
-    except (KeyError, ValueError):
-        # Template formatting failed, fall back to API
-        return await _get_url_from_api_record_id(record_id)
+    return record_page_url(record_id) or await _get_url_from_api_record_id(record_id)
 
 
 async def _get_url_from_api_record_id(record_id: str) -> Optional[str]:

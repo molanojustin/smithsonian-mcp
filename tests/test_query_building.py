@@ -418,3 +418,15 @@ class TestSearchParams:
             CollectionSearchFilter(query="x", object_type="Paintings", on_view=True)
         )
         assert set(params) == {"q", "start", "rows"}
+
+    @pytest.mark.parametrize(
+        "sort,expected", [(None, None), ("relevancy", None), ("random", "random")]
+    )
+    def test_sort_is_sent_only_when_not_default(self, sort, expected):
+        client = SmithsonianAPIClient(api_key="test")
+        params = client._build_search_params(CollectionSearchFilter(sort=sort))
+        assert params.get("sort") == expected
+
+    def test_unknown_sort_is_rejected(self):
+        with pytest.raises(ValueError):
+            CollectionSearchFilter(sort="title")

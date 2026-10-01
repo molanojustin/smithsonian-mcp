@@ -69,10 +69,10 @@ __version__: str = _resolve_version()
 __author__ = "Justin Molano"
 __email__ = "justinmolano2@gmail.com"
 
-# Public attribute name -> (submodule, attribute). Importing "main" for ``mcp``
-# guarantees that tools, resources and prompts are registered on the app.
+# Public attribute name -> (submodule, attribute). The app module registers the
+# tools, resources and prompts when it creates ``mcp``.
 _LAZY_ATTRIBUTES: Dict[str, Tuple[str, str]] = {
-    "mcp": ("main", "mcp"),
+    "mcp": ("app", "mcp"),
     "Config": ("config", "Config"),
     "SmithsonianObject": ("models", "SmithsonianObject"),
     "SearchResult": ("models", "SearchResult"),
@@ -90,7 +90,6 @@ _LAZY_SUBMODULES = frozenset(
         "context",
         "main",
         "models",
-        "museum_data",
         "prompts",
         "resources",
         "server",
