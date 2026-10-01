@@ -29,7 +29,7 @@ async def test_api_connection():
 
     # Check API key
     if not Config.validate_api_key():
-        print("❌ API key not configured!")
+        print("Error: API key not configured.")
         print()
         print("Please set your API key:")
         print("1. Get a key from https://api.data.gov/signup/")
@@ -47,9 +47,9 @@ async def test_api_connection():
             # Test 1: Get Smithsonian units
             print("Test 1: Getting Smithsonian units...")
             units = await client.get_units()
-            print(f"✅ Found {len(units)} Smithsonian units")
+            print(f"OK: Found {len(units)} Smithsonian units")
             for unit in units[:3]:  # Show first 3
-                print(f"   • {unit.code}: {unit.name}")
+                print(f"   - {unit.code}: {unit.name}")
             print()
 
             # Test 2: Basic search
@@ -71,7 +71,7 @@ async def test_api_connection():
             )
             results = await client.search_collections(filters)
             print(
-                f"✅ Search returned {results.returned_count} of {results.total_count} results"
+                f"OK: Search returned {results.returned_count} of {results.total_count} results"
             )
 
             for i, obj in enumerate(results.objects, 1):
@@ -87,7 +87,7 @@ async def test_api_connection():
                 detailed_obj = await client.get_object_by_id(first_obj.id)
 
                 if detailed_obj:
-                    print(f"✅ Retrieved detailed info for: {detailed_obj.title}")
+                    print(f"OK: Retrieved detailed info for: {detailed_obj.title}")
                     print(
                         f"   Images: {len(detailed_obj.images) if detailed_obj.images else 0} available"
                     )
@@ -109,7 +109,7 @@ async def test_api_connection():
             available_units = [unit for unit in units_data if unit.get("unit") in unit_name_map]
             selected_units = random.sample(available_units, min(3, len(available_units)))
 
-            print(f"✅ Sample statistics from {len(selected_units)} museums:")
+            print(f"OK: Sample statistics from {len(selected_units)} museums:")
             for unit_data in selected_units:
                 unit_code = unit_data.get("unit", "")
                 unit_name = unit_name_map.get(unit_code, unit_code)
@@ -126,7 +126,7 @@ async def test_api_connection():
         return True
 
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        print(f"Error: Test failed: {e}")
         print()
         print("Troubleshooting:")
         print("1. Check your API key is valid")
