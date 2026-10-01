@@ -57,6 +57,10 @@ check_mcpo() {
     return 1
 }
 
+# Note: the optional setup steps below are called as `step || warning ...`.
+# Bash disables `set -e` inside a function called that way, so each function
+# checks its critical commands explicitly and returns 1 on failure.
+
 # Function to write mcpo-config.json from the example with local paths and the API key.
 # The example under examples/ is left untouched.
 setup_mcpo_config() {
@@ -74,11 +78,16 @@ setup_mcpo_config() {
     fi
 
     local python_path="$PROJECT_DIR/$VENV_DIR/bin/python"
-    sed -e "s|/path/to/your/project/.venv/bin/python|$python_path|g" \
+    # Create the file with owner-only permissions before the key is written to it
+    if ! (umask 077 && sed -e "s|/path/to/your/project/.venv/bin/python|$python_path|g" \
         -e "s|/path/to/your/project|$PROJECT_DIR|g" \
         -e "s|your_api_key_here|$api_key|g" \
-        "$MCPO_EXAMPLE" > "$MCPO_CONFIG"
-    chmod 600 "$MCPO_CONFIG"
+        "$MCPO_EXAMPLE" > "$MCPO_CONFIG"); then
+        error "Could not write $MCPO_CONFIG."
+        rm -f "$MCPO_CONFIG"
+        return 1
+    fi
+    chmod 600 "$MCPO_CONFIG" || return 1
 
     info "mcpo configuration written to: $PROJECT_DIR/$MCPO_CONFIG"
     info "It contains your API key. Do not commit it."
@@ -168,16 +177,18 @@ setup_service() {
     case "$os" in
         "linux")
             if command_exists systemctl; then
-                setup_systemd_service
+                setup_systemd_service || return 1
             else
                 warning "systemctl not found. Manual service setup required."
+                return 1
             fi
             ;;
         "macos")
-            setup_launchd_service
+            setup_launchd_service || return 1
             ;;
         "windows")
             warning "Windows service setup not implemented in this script."
+            return 1
             ;;
     esac
 }
@@ -212,14 +223,20 @@ RestartSec=10
 WantedBy=multi-user.target"
 
     if [ "$service_file" = "$user_service_file" ]; then
-        echo "$service_content" > "$service_file"
-        systemctl --user daemon-reload
-        systemctl --user enable "$SERVICE_NAME"
+        echo "$service_content" > "$service_file" \
+            || { error "Could not write $service_file."; return 1; }
+        systemctl --user daemon-reload \
+            || { error "systemctl --user daemon-reload failed."; return 1; }
+        systemctl --user enable "$SERVICE_NAME" \
+            || { error "systemctl --user enable $SERVICE_NAME failed."; return 1; }
         info "User service installed. Start with: systemctl --user start $SERVICE_NAME"
     else
-        echo "$service_content" | sudo tee "$service_file" > /dev/null
-        sudo systemctl daemon-reload
-        sudo systemctl enable "$SERVICE_NAME"
+        echo "$service_content" | sudo tee "$service_file" > /dev/null \
+            || { error "Could not write $service_file."; return 1; }
+        sudo systemctl daemon-reload \
+            || { error "systemctl daemon-reload failed."; return 1; }
+        sudo systemctl enable "$SERVICE_NAME" \
+            || { error "systemctl enable $SERVICE_NAME failed."; return 1; }
         info "System service installed. Start with: sudo systemctl start $SERVICE_NAME"
     fi
 }
@@ -250,9 +267,12 @@ setup_launchd_service() {
 </dict>
 </plist>"
 
-    mkdir -p "$(dirname "$plist_file")"
-    echo "$plist_content" > "$plist_file"
-    launchctl load "$plist_file"
+    mkdir -p "$(dirname "$plist_file")" \
+        || { error "Could not create $(dirname "$plist_file")."; return 1; }
+    echo "$plist_content" > "$plist_file" \
+        || { error "Could not write $plist_file."; return 1; }
+    launchctl load "$plist_file" \
+        || { error "launchctl load $plist_file failed."; return 1; }
     info "Launchd service installed and started."
 }
 
@@ -283,26 +303,43 @@ setup_claude_config() {
     config_file="$config_dir/claude_desktop_config.json"
 
     # Create config directory if it doesn't exist
-    mkdir -p "$config_dir"
+    mkdir -p "$config_dir" \
+        || { error "Could not create $config_dir."; return 1; }
 
     # Backup existing config
     if [ -f "$config_file" ]; then
-        cp "$config_file" "$config_file.backup.$(date +%Y%m%d_%H%M%S)"
+        cp "$config_file" "$config_file.backup.$(date +%Y%m%d_%H%M%S)" \
+            || { error "Could not back up $config_file."; return 1; }
         info "Backed up existing Claude Desktop config."
     fi
 
-    CONFIG_FILE="$config_file" SERVER_EXEC="$SERVER_EXEC" SMITHSONIAN_API_KEY="$api_key" \
+    # Merge the server entry into the existing config. On invalid JSON the
+    # file is left unchanged and the step fails.
+    if ! CONFIG_FILE="$config_file" SERVER_EXEC="$SERVER_EXEC" SMITHSONIAN_API_KEY="$api_key" \
         "$PYTHON_EXEC" - <<'PY'
 import json
 import os
+import sys
 from pathlib import Path
 
 path = Path(os.environ["CONFIG_FILE"])
 config = {}
-if path.exists() and path.read_text(encoding="utf-8").strip():
-    config = json.loads(path.read_text(encoding="utf-8"))
+if path.exists():
+    text = path.read_text(encoding="utf-8-sig")
+    if text.strip():
+        try:
+            config = json.loads(text)
+        except ValueError as exc:
+            print(f"ERROR: {path} is not valid JSON ({exc}).", file=sys.stderr)
+            print("ERROR: Fix the file or add the server entry by hand.", file=sys.stderr)
+            sys.exit(1)
 
-config.setdefault("mcpServers", {})["smithsonian_open_access"] = {
+servers = config.setdefault("mcpServers", {}) if isinstance(config, dict) else None
+if not isinstance(servers, dict):
+    print(f"ERROR: {path} does not contain a JSON object with an mcpServers object.", file=sys.stderr)
+    sys.exit(1)
+
+servers["smithsonian_open_access"] = {
     "command": os.environ["SERVER_EXEC"],
     "args": [],
     "env": {
@@ -310,8 +347,11 @@ config.setdefault("mcpServers", {})["smithsonian_open_access"] = {
         "LOG_LEVEL": "INFO",
     },
 }
-path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 PY
+    then
+        return 1
+    fi
 
     info "Claude Desktop configuration updated at: $config_file"
     info "Restart Claude Desktop to apply changes."
@@ -423,7 +463,7 @@ if check_mcpo; then
     echo -n "Do you want to create an mcpo configuration file? (y/N): "
     read -r setup_mcpo
     if [[ "$setup_mcpo" =~ ^[Yy]$ ]]; then
-        setup_mcpo_config "$api_key" || true
+        setup_mcpo_config "$api_key" || warning "mcpo configuration did not complete."
     fi
 else
     info "mcpo not found. For multi-MCP orchestration, install with: uvx mcpo"
