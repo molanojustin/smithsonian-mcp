@@ -106,8 +106,12 @@ async def test_api_connection():
             unit_name_map = {unit.code: unit.name for unit in await client.get_units()}
 
             # Randomly select 3 units that have stats data
-            available_units = [unit for unit in units_data if unit.get("unit") in unit_name_map]
-            selected_units = random.sample(available_units, min(3, len(available_units)))
+            available_units = [
+                unit for unit in units_data if unit.get("unit") in unit_name_map
+            ]
+            selected_units = random.sample(
+                available_units, min(3, len(available_units))
+            )
 
             print(f"OK: Sample statistics from {len(selected_units)} museums:")
             for unit_data in selected_units:
