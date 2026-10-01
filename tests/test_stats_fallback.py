@@ -1,51 +1,107 @@
 """
-Tests for collection statistics fallback handling.
+Tests for collection statistics: /stats plus one count query, no sampling.
 """
-# TODO: FIX TEST
-import pytest
+
 from unittest.mock import AsyncMock
 
+import pytest
+
 from smithsonian_mcp.api_client import SmithsonianAPIClient
-from smithsonian_mcp.models import SearchResult, SmithsonianUnit, APIError
+from smithsonian_mcp.models import APIError
 
 pytest.importorskip("pytest_asyncio")
+
+STATS_RESPONSE = {
+    "response": {
+        "time": "2026-09",
+        "total_objects": 1000,
+        "metrics": {"CC0_records": 600, "CC0_records_with_CC0_media": 200},
+        "units": [
+            {
+                "unit": "NMAH",
+                "total_objects": 700,
+                "metrics": {"CC0_records": 400, "CC0_records_with_CC0_media": 150},
+                "data_source": "National Museum of American History",
+            },
+            {
+                "unit": "NEWUNIT",
+                "total_objects": 300,
+                "metrics": {"CC0_records": 200, "CC0_records_with_CC0_media": 50},
+                "data_source": "A New Unit",
+            },
+        ],
+    }
+}
+
+
+def _fake_requests(stats_ok: bool = True, search_ok: bool = True):
+    """Build a _make_request replacement that records calls."""
+    calls = []
+
+    async def fake(endpoint, params=None):
+        calls.append((endpoint, params))
+        if endpoint == "stats":
+            if stats_ok:
+                return STATS_RESPONSE
+            raise APIError(error="http_error", message="stats down", status_code=500)
+        if endpoint == "search":
+            if not search_ok:
+                raise APIError(
+                    error="http_error", message="search down", status_code=500
+                )
+            counts = {"*": 120, 'online_media_type:"Images"': 45}
+            return {"response": {"rows": [], "rowCount": counts[params["q"]]}}
+        raise AssertionError(f"unexpected endpoint {endpoint}")
+
+    return fake, calls
+
+
+@pytest.mark.asyncio
+async def test_stats_use_stats_endpoint_and_one_count_query(monkeypatch):
+    """Totals, units and CC0 come from /stats; images from one rows=0 query."""
+    client = SmithsonianAPIClient(api_key="test-key")
+    fake, calls = _fake_requests()
+    monkeypatch.setattr(client, "_make_request", fake)
+
+    stats = await client.get_collection_stats()
+
+    assert len(calls) == 2
+    search_calls = [params for endpoint, params in calls if endpoint == "search"]
+    assert search_calls == [{"q": 'online_media_type:"Images"', "start": 0, "rows": 0}]
+    assert stats.total_objects == 1000
+    assert stats.total_cc0 == 600
+    assert stats.total_cc0_objects_with_cc0_media == 200
+    assert stats.total_with_images == 45
+    assert stats.object_type_breakdown is None
+    assert stats.last_updated.year == 2026 and stats.last_updated.month == 9
+    assert [u.unit_code for u in stats.units] == ["NMAH", "NEWUNIT"]
+    nmah = stats.units[0]
+    assert nmah.unit_name == "National Museum of American History"
+    assert (nmah.total_objects, nmah.cc0_objects) == (700, 400)
+    assert nmah.cc0_objects_with_cc0_media == 150
+    assert nmah.objects_with_images is None
+    assert stats.units[1].unit_name == "A New Unit"
+
+
+@pytest.mark.asyncio
+async def test_stats_tolerate_failed_image_count(monkeypatch):
+    """A failed image count leaves total_with_images unset."""
+    client = SmithsonianAPIClient(api_key="test-key")
+    fake, _ = _fake_requests(search_ok=False)
+    monkeypatch.setattr(client, "_make_request", fake)
+
+    stats = await client.get_collection_stats()
+
+    assert stats.total_objects == 1000
+    assert stats.total_with_images is None
 
 
 @pytest.mark.asyncio
 async def test_get_stats_context_handles_stats_endpoint_failure(monkeypatch):
-    """Ensure stats context handles fallback data with missing metrics."""
+    """When /stats fails, a count query supplies the total and the context renders."""
     client = SmithsonianAPIClient(api_key="test-key")
-
-    stats_failure = AsyncMock(
-        side_effect=APIError(
-            error="http_error",
-            message="stats endpoint unavailable",
-            status_code=500,
-            details=None,
-        )
-    )
-    monkeypatch.setattr(client, "_make_request", stats_failure)
-
-    fallback_search_result = SearchResult(
-        objects=[],
-        total_count=120,
-        returned_count=0,
-        offset=0,
-        has_more=False,
-        next_offset=None,
-    )
-    monkeypatch.setattr(
-        client,
-        "search_collections",
-        AsyncMock(return_value=fallback_search_result),
-    )
-
-    fallback_units = [
-        SmithsonianUnit(code="NMAH", name="National Museum of American History", description="", website=None, location=""),
-        SmithsonianUnit(code="NMNH", name="National Museum of Natural History", description="", website=None, location=""),
-    ]
-    monkeypatch.setattr(client, "get_units", AsyncMock(return_value=fallback_units))
-
+    fake, calls = _fake_requests(stats_ok=False)
+    monkeypatch.setattr(client, "_make_request", fake)
     monkeypatch.setattr(
         "smithsonian_mcp.resources.get_api_client",
         AsyncMock(return_value=client),
@@ -56,13 +112,19 @@ async def test_get_stats_context_handles_stats_endpoint_failure(monkeypatch):
     result = await resources_module.get_stats_context()
 
     assert "Total Objects: 120" in result
-    assert "Digitized Objects: 0" in result
-    assert "CC0 Licensed Objects: 120" in result
-    assert "Objects with Images (est.): 0" in result
+    assert "Digitized Objects: 45" in result
+    assert "CC0 Licensed Objects: Unavailable" in result
+    assert "Objects with Images (est.): 45" in result
+    assert len(calls) == 3
 
-    assert "  NMAH: 120 total, 0 with images (est.)" in result
-    assert "  NMNH: 120 total, 0 with images (est.)" in result
 
-    stats_failure.assert_awaited_once()
-    assert client.search_collections.call_count == 9
-    client.get_units.assert_awaited_once()
+@pytest.mark.asyncio
+async def test_stats_raise_when_everything_fails(monkeypatch):
+    """If /stats and the count queries all fail, an APIError is raised."""
+    client = SmithsonianAPIClient(api_key="test-key")
+    fake, _ = _fake_requests(stats_ok=False, search_ok=False)
+    monkeypatch.setattr(client, "_make_request", fake)
+
+    with pytest.raises(APIError) as excinfo:
+        await client.get_collection_stats()
+    assert excinfo.value.error == "stats_failed"

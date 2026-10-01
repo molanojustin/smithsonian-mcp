@@ -6,20 +6,26 @@ the API has no separate filter parameter. The API key is sent only in the
 ``X-Api-Key`` header so it never appears in request URLs or logs.
 """
 
+import asyncio
 import json
 import logging
 import re
 import string
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 import httpx
 from pydantic import HttpUrl, ValidationError
 
 from .config import Config
-from .constants import UNIT_INFO
+from .constants import (
+    ARCHIVAL_UNIT_CODES,
+    KNOWN_UNIT_CODES,
+    NMNH_AGGREGATE_CODE,
+    UNIT_INFO,
+)
 from .models import (
     SmithsonianObject,
     SearchResult,
@@ -686,6 +692,18 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
         return None
 
 
+def _parse_stats_time(value: Any) -> Optional[datetime]:
+    """Parse the /stats ``time`` value (e.g. "2026-09")."""
+    if not isinstance(value, str):
+        return None
+    for fmt in ("%Y-%m-%d", "%Y-%m"):
+        try:
+            return datetime.strptime(value.strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def _object_id_candidates(object_id: str) -> List[str]:
     """
     ID formats to try with /content, most likely first.
@@ -710,6 +728,9 @@ class SmithsonianAPIClient:
     This client handles authentication, query building and data transformation
     for the Smithsonian collections available through api.data.gov.
     """
+
+    # Unit codes from /terms/unit_code, shared by all clients in the process.
+    _unit_codes_cache: ClassVar[Optional[List[str]]] = None
 
     def __init__(
         self,
@@ -1288,456 +1309,213 @@ class SmithsonianAPIClient:
         )
         return None
 
-    async def _sample_objects_for_stats(
-        self, sample_size: int = 1000
-    ) -> tuple[int, int]:
+    async def get_unit_codes(self, refresh: bool = False) -> List[str]:
         """
-        Sample objects and count how many have images.
+        Get the unit codes used by the search index.
+
+        Codes come from ``GET /terms/unit_code`` and are cached for the life of the
+        process. The built-in list is used if the endpoint fails.
 
         Args:
-            sample_size: Number of objects to sample
+            refresh: Fetch again even if cached.
 
         Returns:
-            Tuple of (total_sampled, count_with_images)
+            List[str]: Unit codes such as ``NMAH`` and ``NMNHPALEO``.
         """
-        # Search for sample objects
-        # Note: unit filtering doesn't work in the API
-        filters = CollectionSearchFilter(
-            query="*",  # Required for API
-            limit=sample_size,
-            offset=0,
-            unit_code=None,  # Filtering doesn't work
-            object_type=None,
-            date_start=None,
-            date_end=None,
-            maker=None,
-            material=None,
-            topic=None,
-            has_images=None,
-            is_cc0=None,
-            on_view=None,
-        )
-
+        cached = SmithsonianAPIClient._unit_codes_cache
+        if cached is not None and not refresh:
+            return list(cached)
         try:
-            results = await self.search_collections(filters)
-            objects = results.objects
+            data = await self._make_request("terms/unit_code")
+        except APIError as exc:
+            logger.warning("Could not fetch unit codes, using built-in list: %s", exc)
+            return list(KNOWN_UNIT_CODES)
+        terms = [
+            term.strip()
+            for term in _as_list(_as_dict(data.get("response")).get("terms"))
+            if isinstance(term, str) and term.strip()
+        ]
+        if not terms:
+            return list(KNOWN_UNIT_CODES)
+        SmithsonianAPIClient._unit_codes_cache = terms
+        return list(terms)
 
-            count_with_images = sum(1 for obj in objects if obj.images)
+    @classmethod
+    def clear_unit_code_cache(cls) -> None:
+        """Forget cached unit codes so the next call fetches them again."""
+        cls._unit_codes_cache = None
 
-            return len(objects), count_with_images
-
-        except APIError as e:
-            logger.warning("Failed to sample objects for stats: %s", e)
-            return 0, 0
-
-    async def _sample_object_types_for_stats(
-        self, sample_size: int = 2000
-    ) -> Dict[str, int]:
-        """
-        Sample objects and count occurrences of each object type.
-
-        Args:
-            sample_size: Number of objects to sample
-
-        Returns:
-            Dictionary mapping object types to counts
-        """
-        filters = CollectionSearchFilter(
-            query="*",  # Required for API
-            limit=sample_size,
-            offset=0,
-            unit_code=None,
-            object_type=None,
-            date_start=None,
-            date_end=None,
-            maker=None,
-            material=None,
-            topic=None,
-            has_images=None,
-            is_cc0=None,
-            on_view=None,
+    @staticmethod
+    def _unit_from_code(code: str) -> SmithsonianUnit:
+        """Build a SmithsonianUnit from the static unit information."""
+        info = UNIT_INFO.get(code)
+        if not info:
+            return SmithsonianUnit(
+                code=code,
+                name=code,
+                description="Smithsonian unit",
+                website=None,
+                location=None,
+                archival_only=code in ARCHIVAL_UNIT_CODES,
+            )
+        description = info.get("description")
+        if code in ARCHIVAL_UNIT_CODES:
+            description = f"{description} (archival records only; not returned by object searches)"
+        return SmithsonianUnit(
+            code=code,
+            name=info["name"],
+            description=description,
+            website=info.get("website"),
+            location=info.get("location"),
+            archival_only=code in ARCHIVAL_UNIT_CODES,
         )
-
-        try:
-            results = await self.search_collections(filters)
-            objects = results.objects
-
-            type_counts = {}
-            for obj in objects:
-                obj_type = obj.object_type
-                if obj_type:
-                    obj_type = obj_type.lower().strip()
-                    type_counts[obj_type] = type_counts.get(obj_type, 0) + 1
-
-            return type_counts
-
-        except APIError as e:
-            logger.warning("Failed to sample object types for stats: %s", e)
-            return {}
 
     async def get_units(self) -> List[SmithsonianUnit]:
         """
-        Get list of available Smithsonian units/museums.
+        Get the Smithsonian units/museums available as search filters.
+
+        Includes every code from ``/terms/unit_code`` plus ``NMNH``, which covers
+        all National Museum of Natural History departments.
 
         Returns:
             List of Smithsonian units
         """
-        # The Smithsonian API doesn't have a dedicated endpoint for units.
-        # Return a hardcoded list of known units based on documentation
-        known_units = [
-            SmithsonianUnit(
-                code="NMNH",
-                name="National Museum of Natural History",
-                description="Natural history museum",
-                website=HttpUrl("https://naturalhistory.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="NPG",
-                name="National Portrait Gallery",
-                description="Portrait art museum",
-                website=HttpUrl("https://npg.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="SAAM",
-                name="Smithsonian American Art Museum",
-                description="American art museum",
-                website=HttpUrl("https://americanart.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="HMSG",
-                name="Hirshhorn Museum and Sculpture Garden",
-                description="Modern and contemporary art",
-                website=HttpUrl("https://hirshhorn.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="FSG",
-                name="Freer and Sackler Galleries",
-                description="Asian art museum",
-                website=HttpUrl("https://www.asia.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="NMAfA",
-                name="National Museum of African Art",
-                description="African art museum",
-                website=HttpUrl("https://africa.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="NMAI",
-                name="National Museum of the American Indian",
-                description="Native American art and culture",
-                website=HttpUrl("https://americanindian.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="NASM",
-                name="National Air and Space Museum",
-                description="Air and space museum",
-                website=HttpUrl("https://airandspace.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="NMAH",
-                name="National Museum of American History",
-                description="American history museum",
-                website=HttpUrl("https://americanhistory.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="SAAM",
-                name="Smithsonian American Art Museum",
-                description="American art museum",
-                website=HttpUrl("https://americanart.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="CHNDM",
-                name="Cooper Hewitt, Smithsonian Design Museum",
-                description="Design museum",
-                website=HttpUrl("https://cooperhewitt.org/"),
-                location="New York, NY",
-            ),
-            SmithsonianUnit(
-                code="NMAAHC",
-                name="National Museum of African American History and Culture",
-                description="African American history and culture museum",
-                website=HttpUrl("https://nmaahc.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="SIA",
-                name="Smithsonian Institution Archives",
-                description="Archives of the Smithsonian Institution",
-                website=HttpUrl("https://siarchives.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="NPM",
-                name="National Postal Museum",
-                description="Postal history museum",
-                website=HttpUrl("https://postalmuseum.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="NZP",
-                name="National Zoo and Conservation Biology Institute",
-                description="National Zoo",
-                website=HttpUrl("https://nationalzoo.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="AAA",
-                name="Archives of American Art",
-                description="Archives of American Art",
-                website=HttpUrl("https://aaa.si.edu/"),
-                location="Washington, DC",
-            ),
-            SmithsonianUnit(
-                code="ACM",
-                name="Anacostia Community Museum",
-                description="Anacostia",
-                website=HttpUrl("https://anacostia.si.edu/"),
-                location="Washington, DC",
-            ),
-        ]
+        codes = await self.get_unit_codes()
+        units = [self._unit_from_code(code) for code in codes]
+        if NMNH_AGGREGATE_CODE not in codes:
+            position = next(
+                (
+                    i
+                    for i, code in enumerate(codes)
+                    if code.startswith(NMNH_AGGREGATE_CODE)
+                ),
+                len(units),
+            )
+            units.insert(position, self._unit_from_code(NMNH_AGGREGATE_CODE))
+        return units
 
-        return known_units
-
-    async def get_collection_stats(
-        self,
-    ) -> CollectionStats:  # pylint: disable=too-many-locals
+    async def get_collection_stats(self) -> CollectionStats:
         """
         Get overall collection statistics.
 
-        Note: The Smithsonian API stats endpoint only provides CC0 object counts.
-        Image statistics are estimated via sampling since the API doesn't provide
-        per-media-type metrics. Additionally, the current API version does not
-        include online_media data in detailed content responses, so actual image
-        availability cannot be verified. Per-museum image counts are approximations
-        based on overall collection proportions and may not reflect actual
-        museum-specific digitization patterns.
+        Totals, per-unit counts and CC0 counts come from ``/stats``. The number of
+        objects with images comes from one ``rows=0`` count query. Both requests
+        run concurrently; no objects are sampled.
+
+        Returns:
+            CollectionStats: Collection statistics.
+
+        Raises:
+            APIError: If neither /stats nor the fallback count query succeeds.
+        """
+        stats_result, images_result = await asyncio.gather(
+            self._make_request("stats"),
+            self.count_matches(HAS_IMAGES_CLAUSE),
+            return_exceptions=True,
+        )
+        for result in (stats_result, images_result):
+            if isinstance(result, BaseException) and not isinstance(result, APIError):
+                raise result
+
+        total_with_images: Optional[int] = None
+        if isinstance(images_result, APIError):
+            logger.warning("Could not count objects with images: %s", images_result)
+        else:
+            total_with_images = images_result
+
+        if isinstance(stats_result, APIError):
+            logger.warning(
+                "Stats endpoint failed, using count queries: %s", stats_result
+            )
+            return await self._fallback_collection_stats(
+                total_with_images, stats_result
+            )
+
+        stats = _as_dict(stats_result.get("response"))
+        metrics = _as_dict(stats.get("metrics"))
+        unit_stats = []
+        for unit in _as_list(stats.get("units")):
+            if not isinstance(unit, dict) or not isinstance(unit.get("unit"), str):
+                continue
+            code = unit["unit"]
+            unit_metrics = _as_dict(unit.get("metrics"))
+            data_source = unit.get("data_source")
+            unit_stats.append(
+                UnitStats(
+                    unit_code=code,
+                    unit_name=UNIT_INFO.get(code, {}).get("name")
+                    or (data_source if isinstance(data_source, str) else None)
+                    or code,
+                    total_objects=_safe_int(unit.get("total_objects")) or 0,
+                    digitized_objects=None,
+                    cc0_objects=_safe_int(unit_metrics.get("CC0_records")),
+                    objects_with_images=None,
+                    cc0_objects_with_cc0_media=_safe_int(
+                        unit_metrics.get("CC0_records_with_CC0_media")
+                    ),
+                    object_types=None,
+                )
+            )
+
+        return CollectionStats(
+            total_objects=_safe_int(stats.get("total_objects")) or 0,
+            total_digitized=total_with_images,
+            total_cc0=_safe_int(metrics.get("CC0_records")),
+            total_with_images=total_with_images,
+            total_cc0_objects_with_cc0_media=_safe_int(
+                metrics.get("CC0_records_with_CC0_media")
+            ),
+            object_type_breakdown=None,
+            units=unit_stats,
+            last_updated=_parse_stats_time(stats.get("time")) or datetime.now(),
+            notes=(
+                "Totals, per-unit totals and CC0 counts are from the API /stats "
+                "endpoint and include archival records. total_with_images (also "
+                "used for total_digitized) counts searchable object records with "
+                "online images. The API does not provide per-unit image counts or "
+                "object type breakdowns."
+            ),
+        )
+
+    async def _fallback_collection_stats(
+        self, total_with_images: Optional[int], cause: APIError
+    ) -> CollectionStats:
+        """
+        Build minimal statistics from a count query when /stats is unavailable.
+
+        Args:
+            total_with_images: Count of objects with images, if known.
+            cause: The error from /stats.
+
+        Returns:
+            CollectionStats: Totals without per-unit data.
+
+        Raises:
+            APIError: If the count query fails too.
         """
         try:
-            # Get base stats (total objects, CC0 metrics) from the stats endpoint
-            stats_response = await self._make_request("stats")
-            stats_data = stats_response.get("response", {})
-            total_objects = stats_data.get("total_objects", 0)
-            metrics = stats_data.get("metrics", {})
-            total_cc0 = metrics.get("CC0_records", 0)
+            total_objects = await self.count_matches("*")
+        except APIError as fallback_error:
+            logger.error("Fallback count query also failed: %s", fallback_error)
+            raise APIError(
+                error="stats_failed",
+                message=f"Failed to retrieve collection statistics: {cause}",
+                status_code=None,
+            ) from fallback_error
 
-            # Get estimates via sampling (API doesn't support accurate filtered counts)
-            sample_size, sample_with_images = await self._sample_objects_for_stats(
-                sample_size=1000
-            )
-            if sample_size > 0:
-                total_with_images = int(
-                    (sample_with_images / sample_size) * total_objects
-                )
-            else:
-                total_with_images = 0
-
-            # Build unit statistics
-            unit_stats = []
-            units_data = stats_data.get("units", [])
-            unit_name_map = {unit.code: unit.name for unit in await self.get_units()}
-
-            # Note: Smithsonian API doesn't provide per-unit image statistics.
-            # We use overall collection proportions as estimates for each unit.
-            # This is a limitation of the API - different museum types should have
-            # different image percentages, but we can't determine this accurately.
-            overall_sample_size, overall_with_images = (
-                await self._sample_objects_for_stats(sample_size=1000)
-            )
-            if overall_sample_size > 0:
-                overall_images_ratio = overall_with_images / overall_sample_size
-            else:
-                overall_images_ratio = 0
-
-            for unit_data in units_data:
-                unit_code = unit_data.get("unit", "")
-                unit_metrics = unit_data.get("metrics", {})
-                unit_total = unit_data.get("total_objects", 0)
-
-                # Use overall proportions as estimates (API limitation)
-                unit_with_images = int(overall_images_ratio * unit_total)
-
-                unit_stats.append(
-                    UnitStats(
-                        unit_code=unit_code,
-                        unit_name=unit_name_map.get(unit_code, unit_code)
-                        or "Unknown Unit",
-                        total_objects=unit_total,
-                        digitized_objects=unit_with_images,
-                        cc0_objects=unit_metrics.get("CC0_records", 0),
-                        objects_with_images=unit_with_images,
-                        object_types=None,  # Will be populated separately
-                    )
-                )
-
-            # Sample object types for overall breakdown
-            object_type_breakdown = await self._sample_object_types_for_stats(
-                sample_size=2000
-            )
-
-            return CollectionStats(
-                total_objects=total_objects,
-                total_digitized=total_with_images,
-                total_cc0=total_cc0,
-                total_with_images=total_with_images,
-                object_type_breakdown=object_type_breakdown,
-                units=unit_stats,
-                last_updated=datetime.now(),
-            )
-
-        except APIError as e:
-            logger.error("Failed to get collection stats from API: %s", e)
-            # Fallback to basic search if stats endpoint fails
-            try:
-                total_objects = (
-                    await self.search_collections(
-                        CollectionSearchFilter(
-                            query="*",
-                            limit=0,
-                            offset=0,
-                            unit_code=None,
-                            object_type=None,
-                            date_start=None,
-                            date_end=None,
-                            maker=None,
-                            material=None,
-                            topic=None,
-                            has_images=None,
-                            is_cc0=None,
-                            on_view=None,
-                        )
-                    )
-                ).total_count
-
-                # Get estimates via sampling
-                sample_size, sample_with_images = await self._sample_objects_for_stats(
-                    sample_size=1000
-                )
-                if sample_size > 0:
-                    total_with_images = int(
-                        (sample_with_images / sample_size) * total_objects
-                    )
-                else:
-                    total_with_images = 0
-
-                total_cc0 = (
-                    await self.search_collections(
-                        CollectionSearchFilter(
-                            query="*",
-                            limit=0,
-                            offset=0,
-                            unit_code=None,
-                            object_type=None,
-                            date_start=None,
-                            date_end=None,
-                            maker=None,
-                            material=None,
-                            topic=None,
-                            has_images=None,
-                            is_cc0=True,
-                            on_view=None,
-                        )
-                    )
-                ).total_count
-
-                units = await self.get_units()
-
-                # Get overall proportions for fallback
-                overall_sample_size, overall_with_images = (
-                    await self._sample_objects_for_stats(sample_size=1000)
-                )
-                if overall_sample_size > 0:
-                    overall_images_ratio = overall_with_images / overall_sample_size
-                else:
-                    overall_images_ratio = 0
-
-                unit_stats = []
-                for unit in units:
-                    unit_total = (
-                        await self.search_collections(
-                            CollectionSearchFilter(
-                                query="*",
-                                limit=0,
-                                offset=0,
-                                unit_code=unit.code,
-                                object_type=None,
-                                date_start=None,
-                                date_end=None,
-                                maker=None,
-                                material=None,
-                                topic=None,
-                                has_images=None,
-                                is_cc0=None,
-                                on_view=None,
-                            )
-                        )
-                    ).total_count
-
-                    # Use overall proportions since per-unit filtering doesn't work
-                    unit_images = int(overall_images_ratio * unit_total)
-
-                    unit_cc0 = (
-                        await self.search_collections(
-                            CollectionSearchFilter(
-                                query="*",
-                                limit=0,
-                                offset=0,
-                                unit_code=unit.code,
-                                object_type=None,
-                                date_start=None,
-                                date_end=None,
-                                maker=None,
-                                material=None,
-                                topic=None,
-                                has_images=None,
-                                is_cc0=True,
-                                on_view=None,
-                            )
-                        )
-                    ).total_count
-
-                    unit_stats.append(
-                        UnitStats(
-                            unit_code=unit.code,
-                            unit_name=unit.name,
-                            total_objects=unit_total,
-                            digitized_objects=unit_images,
-                            cc0_objects=unit_cc0,
-                            objects_with_images=unit_images,
-                            object_types=None,  # Will be populated separately
-                        )
-                    )
-
-                # Sample object types for overall breakdown (fallback)
-                object_type_breakdown = await self._sample_object_types_for_stats(
-                    sample_size=2000
-                )
-
-                return CollectionStats(
-                    total_objects=total_objects,
-                    total_digitized=total_with_images,
-                    total_cc0=total_cc0,
-                    total_with_images=total_with_images,
-                    object_type_breakdown=object_type_breakdown,
-                    units=unit_stats,
-                    last_updated=datetime.now(),
-                )
-            except Exception as fallback_error:
-                logger.error("Fallback also failed: %s", fallback_error)
-                raise APIError(
-                    error="stats_failed",
-                    message=f"Failed to retrieve collection statistics: {e}",
-                    status_code=None,
-                ) from fallback_error
+        return CollectionStats(
+            total_objects=total_objects,
+            total_digitized=total_with_images,
+            total_cc0=None,
+            total_with_images=total_with_images,
+            object_type_breakdown=None,
+            units=[],
+            last_updated=datetime.now(),
+            notes=(
+                "The /stats endpoint was unavailable; total_objects counts "
+                "searchable object records. CC0 and per-unit figures are missing."
+            ),
+        )
 
 
 # Utility function for creating client instance
