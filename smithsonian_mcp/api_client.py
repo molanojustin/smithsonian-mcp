@@ -134,6 +134,11 @@ _MAKER_LABEL_FRAGMENTS = (
     "smith",
     "carver",
 )
+# physicalDescription labels that hold materials, and prefixes of labels that
+# hold dimensions.
+_MATERIAL_LABELS = frozenset({"medium", "materials", "material", "media/materials"})
+_DIMENSION_LABELS = ("dimension", "measurement")
+_DECADE_RE = re.compile(r"^(\d{3,4})s$")
 # Labels that mention a creator but describe someone else's role.
 _NOT_MAKER_LABEL_PREFIXES = ("formerly", "copy after", "after", "possible owner")
 
@@ -818,6 +823,80 @@ def _is_maker_label(label: str) -> bool:
     )
 
 
+def _material_of(item: Any) -> Optional[str]:
+    """
+    Return the text of a physicalDescription entry that describes materials.
+
+    Entries labelled Medium, Materials or Media/Materials qualify. "Physical
+    description" entries qualify only when they name a material ("vinyl (overall
+    material)" at NMAH); elsewhere that label holds extents such as "3 p.". Other
+    labels (Dimensions, Object Name, Techniques, Contents, Preparation, ...) do
+    not describe materials.
+    """
+    text = _content_of(item)
+    if not text or not text.strip():
+        return None
+    label = _label_of(item)
+    if label in _MATERIAL_LABELS:
+        return text
+    if label == "physical description" and "material" in text.lower():
+        return text
+    return None
+
+
+def _earliest_decade(values: List[str]) -> Optional[str]:
+    """
+    Return the earliest decade term (e.g. "1490s" from ["1520s", "1490s"]).
+
+    Values that are not decades are ignored unless nothing else is present, in
+    which case the first value is returned.
+    """
+    decades = []
+    for value in values:
+        match = _DECADE_RE.match(value.strip())
+        if match:
+            decades.append((int(match.group(1)), value.strip()))
+    if decades:
+        return min(decades)[1]
+    return values[0] if values else None
+
+
+def _rights_statement(entries: Any) -> Optional[str]:
+    """
+    Join the rights statements of a record.
+
+    Records can carry several, e.g. "© Bernard J. Kleina" and "Permission required
+    for use". Entries labelled "Restrictions & Rights" are used when present;
+    other labels (NPG "Copyright" holds internal notes) only when they are not.
+    """
+    items = _as_list(entries)
+    preferred = [item for item in items if _label_of(item) == "restrictions & rights"]
+    statements: List[str] = []
+    for item in preferred or items:
+        text = clean_text(_content_of(item))
+        if text and text not in statements:
+            statements.append(text)
+    return "; ".join(statements) or None
+
+
+def _has_cc0_media(descriptive: Dict[str, Any]) -> bool:
+    """Whether any online media item of the record is CC0."""
+    online_media = descriptive.get("online_media")
+    if isinstance(online_media, dict):
+        media = online_media.get("media")
+        items = media if isinstance(media, list) else [online_media]
+    else:
+        items = _as_list(online_media)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        usage = item.get("usage")
+        access = usage.get("access") if isinstance(usage, dict) else usage
+        if access == "CC0":
+            return True
+    return False
+
+
 def _first_text(*candidates: Any) -> Optional[str]:
     """Return the first non-empty string content among candidate entry lists."""
     for candidate in candidates:
@@ -1355,12 +1434,12 @@ class SmithsonianAPIClient:
 
         physical = _as_list(freetext.get("physicalDescription"))
         dimensions = [
-            _content_of(item) for item in physical if "dimension" in _label_of(item)
+            _content_of(item)
+            for item in physical
+            if _label_of(item).startswith(_DIMENSION_LABELS)
         ]
         materials = [
-            text
-            for item in physical
-            if "dimension" not in _label_of(item) and (text := _content_of(item))
+            text for item in physical if (text := _material_of(item)) is not None
         ]
         legacy_date = _as_dict(descriptive.get("date"))
         legacy_physical = _as_list(descriptive.get("physicalDescription"))
@@ -1401,7 +1480,7 @@ class SmithsonianAPIClient:
             date_standardized=(
                 legacy_date.get("date_standardized")
                 if isinstance(legacy_date.get("date_standardized"), str)
-                else _first_text(indexed.get("date"))
+                else _earliest_decade(_strings(indexed.get("date")))
             ),
             dimensions=(
                 "; ".join(d for d in dimensions if d)
@@ -1416,7 +1495,7 @@ class SmithsonianAPIClient:
                 if isinstance(descriptive.get("creditLine"), str)
                 else None
             ),
-            rights=_first_text(freetext.get("objectRights"))
+            rights=_rights_statement(freetext.get("objectRights"))
             or (
                 descriptive.get("rights")
                 if isinstance(descriptive.get("rights"), str)
@@ -1433,7 +1512,9 @@ class SmithsonianAPIClient:
             topics=_strings(indexed.get("topic")),
             culture=_strings(indexed.get("culture")),
             place=_strings(indexed.get("place")),
-            is_cc0=_as_dict(descriptive.get("metadata_usage")).get("access") == "CC0",
+            is_cc0=_has_cc0_media(descriptive),
+            metadata_is_cc0=_as_dict(descriptive.get("metadata_usage")).get("access")
+            == "CC0",
             is_on_view=self._parse_on_view_status(indexed),
             exhibition_title=self._parse_exhibition_title(indexed),
             exhibition_location=self._parse_exhibition_location(indexed),

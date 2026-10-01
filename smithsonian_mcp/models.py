@@ -181,7 +181,14 @@ class SmithsonianObject(BaseModel):
     # Rights and access
     credit_line: Optional[str] = Field(None, description="Credit line")
     rights: Optional[str] = Field(None, description="Rights statement")
-    is_cc0: bool = Field(default=False, description="CC0 license status")
+    is_cc0: bool = Field(
+        default=False,
+        description="Whether the object has CC0 (public domain) media to reuse",
+    )
+    metadata_is_cc0: bool = Field(
+        default=False,
+        description="Whether the record's descriptive text is CC0",
+    )
 
     # Exhibition information
     is_on_view: bool = Field(

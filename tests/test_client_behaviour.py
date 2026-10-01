@@ -234,6 +234,81 @@ class TestParsing:
         }
         assert client._parse_object_data(row).maker == expected
 
+    @staticmethod
+    def _parse(content, **extra):
+        client = SmithsonianAPIClient(api_key="test")
+        return client._parse_object_data(
+            {"id": "ld1-x", "title": "t", "content": content, **extra}
+        )
+
+    def test_date_standardized_is_the_earliest_decade(self):
+        # HMSG lists later decades first for an object dated 1497-98
+        obj = self._parse({"indexedStructured": {"date": ["1520s", "1490s", "1500s"]}})
+        assert obj.date_standardized == "1490s"
+        obj = self._parse({"indexedStructured": {"date": ["20th century", "1950s"]}})
+        assert obj.date_standardized == "1950s"
+        obj = self._parse({"indexedStructured": {"date": ["Ming dynasty"]}})
+        assert obj.date_standardized == "Ming dynasty"
+
+    def test_rights_keep_every_statement(self):
+        rights = [
+            {"label": "Restrictions & Rights", "content": "© Bernard J. Kleina"},
+            {
+                "label": "Restrictions & Rights",
+                "content": "Permission required for use.",
+            },
+        ]
+        obj = self._parse({"freetext": {"objectRights": rights}})
+        assert obj.rights == "© Bernard J. Kleina; Permission required for use."
+        npg = [
+            {"label": "Restrictions & Rights", "content": "CC0"},
+            {"label": "Copyright", "content": "death date 1923"},
+        ]
+        assert self._parse({"freetext": {"objectRights": npg}}).rights == "CC0"
+
+    def test_materials_come_from_material_labels(self):
+        nmai = [
+            {"label": "Object Name", "content": "Jar"},
+            {"label": "Media/Materials", "content": "Pottery"},
+            {"label": "Techniques", "content": "Painted"},
+            {"label": "Dimensions", "content": "10 cm"},
+        ]
+        obj = self._parse({"freetext": {"physicalDescription": nmai}})
+        assert obj.materials == ["Pottery"]
+        assert obj.dimensions == "10 cm"
+        nmah = [
+            {"label": "Physical Description", "content": "vinyl (overall material)"},
+            {
+                "label": "Physical Description",
+                "content": "woven (overall production method/technique)",
+            },
+            {"label": "Measurements", "content": "overall: 13 in x 8 in"},
+        ]
+        obj = self._parse({"freetext": {"physicalDescription": nmah}})
+        assert obj.materials == ["vinyl (overall material)"]
+        assert obj.dimensions == "overall: 13 in x 8 in"
+        sil = [{"label": "Physical description", "content": "xii, 300 p. : ill."}]
+        assert self._parse({"freetext": {"physicalDescription": sil}}).materials == []
+
+    def test_is_cc0_reflects_media_usage(self):
+        # NMAAHC: CC0 metadata, copyrighted object with no CC0 media
+        copyrighted = self._parse(
+            {"descriptiveNonRepeating": {"metadata_usage": {"access": "CC0"}}}
+        )
+        assert copyrighted.is_cc0 is False
+        assert copyrighted.metadata_is_cc0 is True
+        with_media = self._parse(
+            {
+                "descriptiveNonRepeating": {
+                    "metadata_usage": {"access": "CC0"},
+                    "online_media": {
+                        "media": [{"type": "Images", "usage": {"access": "CC0"}}]
+                    },
+                }
+            }
+        )
+        assert with_media.is_cc0 is True and with_media.metadata_is_cc0 is True
+
     def test_maker_block_entries_count_without_label(self):
         client = SmithsonianAPIClient(api_key="test")
         row = {
