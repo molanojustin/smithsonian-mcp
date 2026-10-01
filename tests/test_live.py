@@ -339,11 +339,22 @@ async def test_rows_above_limit_are_clamped(client):
     assert result.returned_count == 1000
 
 
-async def test_collection_stats_are_fast(client):
+async def test_collection_stats_are_fast(client, monkeypatch):
+    calls = []
+    original = client._make_request
+
+    async def counting(endpoint, params=None):
+        calls.append(endpoint)
+        return await original(endpoint, params)
+
+    monkeypatch.setattr(client, "_make_request", counting)
     start = time.monotonic()
     stats = await client.get_collection_stats()
     elapsed = time.monotonic() - start
-    assert elapsed < 2.0, f"stats took {elapsed:.2f}s"
+    # Two concurrent requests and no sampling. Typically under a second; the
+    # bound only catches a return to sampling (about 11 seconds).
+    assert sorted(calls) == ["search", "stats"]
+    assert elapsed < 8.0, f"stats took {elapsed:.2f}s"
     assert stats.total_objects > 1_000_000
     assert stats.total_cc0 and stats.total_with_images
     assert any(unit.unit_code == "NMAH" for unit in stats.units)
