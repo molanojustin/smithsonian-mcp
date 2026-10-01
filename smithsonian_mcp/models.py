@@ -28,9 +28,6 @@ class ImageData(BaseModel):
     is_cc0: bool = Field(default=False, description="Whether image is CC0 licensed")
 
 
-
-
-
 class SmithsonianUnit(BaseModel):
     """Represents a Smithsonian institution unit/museum."""
 
@@ -39,31 +36,85 @@ class SmithsonianUnit(BaseModel):
     description: Optional[str] = Field(None, description="Unit description")
     website: Optional[HttpUrl] = Field(None, description="Unit website URL")
     location: Optional[str] = Field(None, description="Physical location")
+    archival_only: bool = Field(
+        default=False,
+        description=(
+            "True if the unit only publishes archival records, which object "
+            "searches do not return"
+        ),
+    )
 
 
 class CollectionSearchFilter(BaseModel):
-    """Search filter parameters for collection queries."""
+    """
+    Search filter parameters for collection queries.
 
-    query: Optional[str] = Field(None, description="General search query")
-    unit_code: Optional[str] = Field(None, description="Filter by Smithsonian unit")
+    Every filter becomes a fielded term inside the search ``q`` parameter (the API
+    has no separate filter parameter). Text filters match the API vocabularies,
+    which are case-sensitive, so common case and singular/plural variants are tried.
+    """
+
+    query: Optional[str] = Field(
+        None,
+        description=(
+            "General search query. Supports AND, OR, NOT, quoted phrases, "
+            "parentheses and fielded terms; words without an operator must all match"
+        ),
+    )
+    unit_code: Optional[str] = Field(
+        None,
+        description=(
+            "Filter by Smithsonian unit code (e.g. NMAH). NMNH covers every Natural "
+            "History department; the legacy code FSG maps to NMAA"
+        ),
+    )
     object_type: Optional[str] = Field(
-        None, description="Type of object (painting, sculpture, etc.)"
+        None,
+        description="Type of object, matched against object_type (e.g. Paintings)",
     )
     date_start: Optional[str] = Field(
-        None, description="Start date for date range filtering"
+        None,
+        description=(
+            "Start year (1000-2999) for date filtering. The API indexes dates by "
+            "decade, so matching is at decade granularity"
+        ),
     )
     date_end: Optional[str] = Field(
-        None, description="End date for date range filtering"
+        None,
+        description=(
+            "End year (1000-2999) for date filtering, matched at decade granularity"
+        ),
     )
-    maker: Optional[str] = Field(None, description="Creator/maker name")
-    material: Optional[str] = Field(None, description="Material or medium")
+    maker: Optional[str] = Field(
+        None,
+        description=(
+            "Creator/maker name, matched against the name field "
+            '(indexed as "Last, First"; "First Last" is also tried)'
+        ),
+    )
+    material: Optional[str] = Field(
+        None,
+        description="Material or medium, matched as a phrase in physicalDescription",
+    )
     topic: Optional[str] = Field(None, description="Subject topic or theme")
-    has_images: Optional[bool] = Field(None, description="Filter objects with images")
-    is_cc0: Optional[bool] = Field(None, description="Filter CC0 licensed objects")
-    on_view: Optional[bool] = Field(
-        None, description="Filter objects currently on physical exhibit"
+    has_images: Optional[bool] = Field(
+        None,
+        description="True keeps only objects with images; False or None: no filter",
     )
-    limit: int = Field(default=20, description="Maximum number of results")
+    is_cc0: Optional[bool] = Field(
+        None,
+        description="True keeps only objects with CC0 media; False or None: no filter",
+    )
+    on_view: Optional[bool] = Field(
+        None,
+        description=(
+            "True keeps objects on physical exhibit, False keeps objects not on "
+            "exhibit, None applies no filter"
+        ),
+    )
+    limit: int = Field(
+        default=20, description="Maximum number of results (clamped to 0-1000)"
+    )
     offset: int = Field(default=0, description="Result offset for pagination")
 
 
@@ -72,7 +123,12 @@ class SmithsonianObject(BaseModel):
 
     # Core identification
     id: str = Field(..., description="Unique object identifier")
-    record_id: Optional[str] = Field(None, description="Official record identifier (e.g., nmah_1448973)")
+    record_id: Optional[str] = Field(
+        None, description="Official record identifier (e.g., nmah_1448973)"
+    )
+    guid: Optional[str] = Field(
+        None, description="Persistent identifier URL (ark), when published"
+    )
     title: str = Field(..., description="Object title")
     url: Optional[HttpUrl] = Field(None, description="URL to object page")
 
@@ -144,7 +200,8 @@ class SmithsonianObject(BaseModel):
 
     # Raw metadata (removed to prevent context bloat - not used in codebase)
     raw_metadata: Optional[Dict[str, Any]] = Field(
-        default=None, description="Original API response (not populated to reduce context size)"
+        default=None,
+        description="Original API response (not populated to reduce context size)",
     )
 
 
@@ -154,10 +211,16 @@ class SimpleSearchResult(BaseModel):
     summary: str = Field(..., description="Human-readable summary of results")
     object_count: int = Field(..., description="Number of objects found")
     total_available: int = Field(..., description="Total matching objects in database")
-    object_ids: List[str] = Field(..., description="List of object IDs for get_object_details")
-    first_object_id: Optional[str] = Field(None, description="ID of first result (easiest to use)")
+    object_ids: List[str] = Field(
+        ..., description="List of object IDs for get_object_details"
+    )
+    first_object_id: Optional[str] = Field(
+        None, description="ID of first result (easiest to use)"
+    )
     has_more: bool = Field(..., description="Whether more results are available")
-    next_offset: Optional[int] = Field(None, description="Offset for next page if has_more is true")
+    next_offset: Optional[int] = Field(
+        None, description="Offset for next page if has_more is true"
+    )
 
     @classmethod
     def from_search_result(cls, search_result: "SearchResult") -> "SimpleSearchResult":
@@ -176,10 +239,14 @@ class SimpleSearchResult(BaseModel):
             summary_lines.append(f"{i}. '{title}' by {maker}")
 
         if search_result.returned_count > 5:
-            summary_lines.append(f"... and {search_result.returned_count - 5} more objects")
+            summary_lines.append(
+                f"... and {search_result.returned_count - 5} more objects"
+            )
 
         if search_result.has_more:
-            summary_lines.append(f"More results available (use offset={search_result.next_offset})")
+            summary_lines.append(
+                f"More results available (use offset={search_result.next_offset})"
+            )
 
         return cls(
             summary="\n".join(summary_lines),
@@ -188,7 +255,7 @@ class SimpleSearchResult(BaseModel):
             object_ids=search_result.object_ids,
             first_object_id=search_result.first_object_id,
             has_more=search_result.has_more,
-            next_offset=search_result.next_offset
+            next_offset=search_result.next_offset,
         )
 
 
@@ -230,10 +297,13 @@ class UnitStats(BaseModel):
     objects_with_images: Optional[int] = Field(
         None, description="Objects with images count"
     )
-    object_types: Optional[List[str]] = Field(
-        None, description="Available object types in this museum's Open Access collection"
+    cc0_objects_with_cc0_media: Optional[int] = Field(
+        None, description="CC0 records that also have CC0 media (from /stats)"
     )
-
+    object_types: Optional[List[str]] = Field(
+        None,
+        description="Available object types in this museum's Open Access collection",
+    )
 
 
 class CollectionStats(BaseModel):
@@ -243,6 +313,9 @@ class CollectionStats(BaseModel):
     total_digitized: Optional[int] = Field(None, description="Total digitized objects")
     total_cc0: Optional[int] = Field(None, description="Total CC0 licensed objects")
     total_with_images: Optional[int] = Field(None, description="Objects with images")
+    total_cc0_objects_with_cc0_media: Optional[int] = Field(
+        None, description="CC0 records that also have CC0 media"
+    )
 
     object_type_breakdown: Optional[Dict[str, int]] = Field(
         None, description="Count of objects by type across all collections"
@@ -250,6 +323,9 @@ class CollectionStats(BaseModel):
 
     units: List[UnitStats] = Field(..., description="Per-unit statistics")
     last_updated: datetime = Field(..., description="Statistics last updated")
+    notes: Optional[str] = Field(
+        None, description="How the figures were obtained and their limitations"
+    )
 
 
 class MuseumCollectionTypes(BaseModel):
@@ -257,9 +333,13 @@ class MuseumCollectionTypes(BaseModel):
 
     museum_code: str = Field(..., description="Museum unit code")
     museum_name: str = Field(..., description="Full museum name")
-    available_object_types: List[str] = Field(..., description="Object types available in Open Access")
+    available_object_types: List[str] = Field(
+        ..., description="Object types available in Open Access"
+    )
     total_sampled: int = Field(..., description="Number of objects sampled")
-    notes: Optional[str] = Field(None, description="Additional notes about collection scope")
+    notes: Optional[str] = Field(
+        None, description="Additional notes about collection scope"
+    )
 
 
 class ObjectTypeAvailability(BaseModel):
