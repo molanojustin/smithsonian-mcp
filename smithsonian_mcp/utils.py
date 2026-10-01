@@ -2,7 +2,53 @@
 Utility functions for the Smithsonian MCP server.
 """
 
-from typing import Dict, Any, Optional, List
+import html
+import logging
+import re
+from typing import Any, Dict, List, Optional
+
+from pydantic import HttpUrl
+
+logger = logging.getLogger(__name__)
+
+_TAG_RE = re.compile(r"</?[A-Za-z][^<>]*>")
+_WHITESPACE_RE = re.compile(r"\s+")
+_PLAIN_CODE_RE = re.compile(r"^[A-Za-z0-9]+$")
+_WILDCARD_CODE_RE = re.compile(r"^[A-Za-z0-9_\-]+\*$")
+_LUCENE_SPECIAL_RE = re.compile(r'([+\-&|!(){}\[\]^"~*?:\\/,\s])')
+
+# Words that carry no information when matching museum names.
+_NAME_STOP_WORDS = frozenset(
+    {
+        "the",
+        "smithsonian",
+        "museum",
+        "museums",
+        "national",
+        "of",
+        "and",
+        "gallery",
+        "galleries",
+        "art",
+        "arts",
+        "history",
+        "american",
+        "center",
+        "institution",
+        "collection",
+        "collections",
+    }
+)
+_NAME_PREFIXES = (
+    "the ",
+    "smithsonian ",
+    "national museum of the ",
+    "national museum of ",
+    "museum of the ",
+    "museum of ",
+)
+_NAME_SUFFIXES = (" museum", " gallery", " galleries")
+
 
 def mask_api_key(params: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -21,72 +67,253 @@ def mask_api_key(params: Dict[str, Any]) -> Dict[str, Any]:
     return params
 
 
+def clean_text(value: Optional[str]) -> Optional[str]:
+    """
+    Strip HTML tags, unescape entities and collapse whitespace for display.
+
+    Titles from the API can contain markup such as ``<i>The Muppets</i> Lunch Box``.
+
+    Args:
+        value: Raw text from the API.
+
+    Returns:
+        Optional[str]: Cleaned text, or the input unchanged if it is not a string.
+    """
+    if not isinstance(value, str):
+        return value
+    text = html.unescape(_TAG_RE.sub("", value))
+    return _WHITESPACE_RE.sub(" ", text).strip()
+
+
+def escape_query_phrase(value: str) -> str:
+    """
+    Quote a value as a phrase for the search ``q`` parameter.
+
+    Backslashes and double quotes are escaped so user input cannot end the phrase
+    and inject query syntax.
+
+    Args:
+        value: Raw filter value.
+
+    Returns:
+        str: The value wrapped in double quotes.
+    """
+    text = _WHITESPACE_RE.sub(" ", str(value)).strip()
+    text = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{text}"'
+
+
+def escape_query_term(value: str) -> str:
+    """
+    Escape a value for use as a single unquoted query term (e.g. before a wildcard).
+
+    Args:
+        value: Raw term.
+
+    Returns:
+        str: The term with query syntax characters and whitespace escaped.
+    """
+    text = _WHITESPACE_RE.sub(" ", str(value)).strip()
+    return _LUCENE_SPECIAL_RE.sub(r"\\\1", text)
+
+
+def normalize_unit_code(code: Optional[str]) -> Optional[str]:
+    """
+    Normalize a unit code to the spelling used by the search index.
+
+    Legacy codes are mapped (``FSG`` to ``NMAA``) and known codes are matched
+    case-insensitively (``nmafa`` to ``NMAfA``). Unknown codes are returned stripped.
+
+    Args:
+        code: Unit code as supplied by a caller.
+
+    Returns:
+        Optional[str]: Canonical unit code, or None for empty input.
+    """
+    if not code or not code.strip():
+        return None
+
+    # Import here to avoid circular imports
+    from .constants import (  # pylint: disable=import-outside-toplevel
+        UNIT_CODE_ALIASES,
+        VALID_MUSEUM_CODES,
+    )
+
+    raw = code.strip()
+    upper = raw.upper()
+    if upper in UNIT_CODE_ALIASES:
+        return UNIT_CODE_ALIASES[upper]
+    for known in VALID_MUSEUM_CODES:
+        if known.upper() == upper:
+            return known
+    return raw
+
+
+def unit_code_query_clause(code: Optional[str]) -> Optional[str]:
+    """
+    Build the fielded ``unit_code`` clause for a unit code or alias.
+
+    ``NMNH`` expands to the wildcard ``unit_code:NMNH*`` because Natural History
+    records are indexed under department codes such as ``NMNHPALEO``.
+
+    Args:
+        code: Unit code, legacy code or aggregate code.
+
+    Returns:
+        Optional[str]: Query clause such as ``unit_code:NMAH``, or None for empty input.
+    """
+    from .constants import (  # pylint: disable=import-outside-toplevel
+        NMNH_AGGREGATE_CODE,
+    )
+
+    canonical = normalize_unit_code(code)
+    if not canonical:
+        return None
+    if canonical == NMNH_AGGREGATE_CODE:
+        return f"unit_code:{NMNH_AGGREGATE_CODE}*"
+    if _PLAIN_CODE_RE.match(canonical):
+        return f"unit_code:{canonical}"
+    if _WILDCARD_CODE_RE.match(canonical):
+        return f"unit_code:{escape_query_term(canonical[:-1])}*"
+    return f"unit_code:{escape_query_phrase(canonical)}"
+
+
+def unit_code_matches(
+    object_unit_code: Optional[str], filter_code: Optional[str]
+) -> bool:
+    """
+    Check whether an object's unit code falls under a filter unit code.
+
+    Args:
+        object_unit_code: Unit code of a returned object (e.g. ``NMNHPALEO``).
+        filter_code: Unit code used as a filter (e.g. ``NMNH`` or ``FSG``).
+
+    Returns:
+        bool: True if the object belongs to the filtered unit.
+    """
+    from .constants import (  # pylint: disable=import-outside-toplevel
+        NMNH_AGGREGATE_CODE,
+    )
+
+    canonical = normalize_unit_code(filter_code)
+    if not object_unit_code or not canonical:
+        return False
+    if canonical == NMNH_AGGREGATE_CODE:
+        return object_unit_code.upper().startswith(NMNH_AGGREGATE_CODE)
+    if canonical.endswith("*"):
+        return object_unit_code.upper().startswith(canonical[:-1].upper())
+    return object_unit_code.upper() == canonical.upper()
+
+
+def _normalize_museum_name(text: str) -> str:
+    """Lowercase a museum name and reduce punctuation to single spaces."""
+    text = text.lower().replace("&", " and ")
+    text = re.sub(r"['’`]s\b", "", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def _strip_name_affixes(text: str) -> str:
+    """Remove prefixes such as 'smithsonian' and suffixes such as 'museum'."""
+    changed = True
+    while changed:
+        changed = False
+        for prefix in _NAME_PREFIXES:
+            if text.startswith(prefix):
+                text = text[len(prefix) :].strip()
+                changed = True
+        for suffix in _NAME_SUFFIXES:
+            if text.endswith(suffix) and len(text) > len(suffix):
+                text = text[: -len(suffix)].strip()
+                changed = True
+    return text
+
+
+def _normalized_museum_map() -> Dict[str, str]:
+    """Return MUSEUM_MAP with keys normalized like user input."""
+    from .constants import MUSEUM_MAP  # pylint: disable=import-outside-toplevel
+
+    return {_normalize_museum_name(key): code for key, code in MUSEUM_MAP.items()}
+
+
 def resolve_museum_code(museum_name: str) -> Optional[str]:
     """
     Resolve a museum name or code to the correct Smithsonian unit code.
 
     This function provides flexible matching for museum names, handling common
     variations and partial matches. It supports:
-    - Exact matches: "asian art" -> "FSG"
-    - Partial matches: "Smithsonian Asian Art Museum" -> "FSG"
-    - Direct codes: "SAAM" -> "SAAM"
-    - Case-insensitive matching
+    - Exact matches: "asian art" -> "NMAA"
+    - Partial matches: "Smithsonian Asian Art Museum" -> "NMAA"
+    - Direct codes, case-insensitive: "SAAM" -> "SAAM", "nmafa" -> "NMAfA"
+    - Legacy codes: "FSG" -> "NMAA"
+    - Natural History: "natural history" and "NMNH" -> "NMNH", which searches
+      expand to every NMNH department (unit_code:NMNH*)
 
     Args:
         museum_name: Museum name or code to resolve
 
     Returns:
-        The corresponding museum code (e.g., "FSG", "SAAM"), or None if not found
+        The corresponding museum code (e.g., "NMAA", "SAAM"), or None if not found
 
     Examples:
-        resolve_museum_code("Smithsonian Asian Art Museum")  # -> "FSG"
-        resolve_museum_code("Asian Art")                      # -> "FSG"
-        resolve_museum_code("SAAM")                          # -> "SAAM"
-        resolve_museum_code("Natural History Museum")        # -> "NMNH"
+        resolve_museum_code("Smithsonian Asian Art Museum")  # -> "NMAA"
+        resolve_museum_code("Asian Art")                      # -> "NMAA"
+        resolve_museum_code("SAAM")                           # -> "SAAM"
+        resolve_museum_code("Natural History Museum")         # -> "NMNH"
     """
     if not museum_name or not museum_name.strip():
         return None
 
-    # Import here to avoid circular imports
-    from .constants import MUSEUM_MAP, VALID_MUSEUM_CODES
+    from .constants import (  # pylint: disable=import-outside-toplevel
+        UNIT_CODE_ALIASES,
+        VALID_MUSEUM_CODES,
+    )
 
-    # Normalize input
-    normalized = museum_name.lower().strip()
+    raw = museum_name.strip()
+    upper = raw.upper()
+    if upper in UNIT_CODE_ALIASES or any(
+        upper == c.upper() for c in VALID_MUSEUM_CODES
+    ):
+        return normalize_unit_code(raw)
 
-    # Try exact match on original first
-    if normalized in MUSEUM_MAP:
-        return MUSEUM_MAP[normalized]
+    museum_map = _normalized_museum_map()
+    normalized = _normalize_museum_name(raw)
+    if not normalized:
+        return None
+    if normalized in museum_map:
+        return museum_map[normalized]
 
-    # Remove common prefixes that don't help with matching
-    cleaned = normalized
-    prefixes_to_remove = ["smithsonian", "national museum of", "museum of"]
-    for prefix in prefixes_to_remove:
-        if cleaned.startswith(prefix + " "):
-            cleaned = cleaned[len(prefix) + 1:].strip()
+    cleaned = _strip_name_affixes(normalized)
+    if cleaned in museum_map:
+        return museum_map[cleaned]
 
-    # Try exact match on cleaned version
-    if cleaned in MUSEUM_MAP:
-        return MUSEUM_MAP[cleaned]
+    # Longest map key contained in the input as whole words
+    padded = f" {normalized} "
+    contained = [key for key in museum_map if f" {key} " in padded]
+    if contained:
+        return museum_map[max(contained, key=len)]
 
-    # Try direct code match
-    if normalized.upper() in VALID_MUSEUM_CODES:
-        return normalized.upper()
+    # Input contained in a map key, ignoring generic words such as "museum"
+    informative = [w for w in cleaned.split() if w not in _NAME_STOP_WORDS]
+    if informative:
+        phrase = f" {' '.join(informative)} "
+        containing = [key for key in museum_map if phrase in f" {key} "]
+        if containing:
+            return museum_map[min(containing, key=len)]
 
-    # Try partial matches - check if normalized contains any map key
-    for map_key in MUSEUM_MAP:
-        if map_key in normalized or normalized in map_key:
-            return MUSEUM_MAP[map_key]
+    # Word overlap on informative words
+    input_words = set(informative)
+    best_code: Optional[str] = None
+    best_score = 0.0
+    for key, code in museum_map.items():
+        key_words = set(key.split()) - _NAME_STOP_WORDS
+        if not key_words or not input_words:
+            continue
+        score = len(input_words & key_words) / len(key_words)
+        if score > 0.5 and score > best_score:
+            best_code, best_score = code, score
 
-    # Try word-based matching for multi-word museum names
-    normalized_words = set(normalized.split())
-    for map_key, code in MUSEUM_MAP.items():
-        map_words = set(map_key.split())
-        # If there's significant overlap (more than 50% of words match)
-        if len(normalized_words & map_words) / len(map_words) > 0.5:
-            return code
-
-    # No match found
-    return None
+    return best_code
 
 
 def validate_url(url_str: Optional[str]) -> Optional[str]:
@@ -113,9 +340,8 @@ def validate_url(url_str: Optional[str]) -> Optional[str]:
         return None
 
     try:
-        from pydantic import HttpUrl
         parsed = HttpUrl(url_str)
-        if parsed.scheme in ('http', 'https'):
+        if parsed.scheme in ("http", "https"):
             return str(parsed)
     except (ValueError, TypeError):
         pass
@@ -125,35 +351,38 @@ def validate_url(url_str: Optional[str]) -> Optional[str]:
 
 def prioritize_objects_by_unit_code(objects: List, unit_code: Optional[str]) -> List:
     """
-    Reorder search results to prioritize objects whose IDs start with the unit code.
+    Reorder search results so objects from the requested unit come first.
 
-    This ensures that when searching with a specific unit_code (e.g., "NMAH"),
-    objects from that museum appear first, even if the API ordered them differently.
+    An object matches when its ``unit_code`` falls under the filter code (``NMNH``
+    covers every NMNH department, ``FSG`` means ``NMAA``) or, for objects without a
+    unit code, when its ID starts with the lowercase code and an underscore.
 
     Args:
         objects: List of SmithsonianObject instances from search results
-        unit_code: The unit code used in the search (e.g., "NMAH", "FSG")
+        unit_code: The unit code used in the search (e.g., "NMAH", "NMNH")
 
     Returns:
-        Reordered list with museum-specific objects first
+        Reordered list with museum-specific objects first, relative order kept
     """
     if not unit_code or not objects:
         return objects
 
-    # Convert unit_code to lowercase for case-insensitive matching
     unit_prefix = f"{unit_code.lower()}_"
 
-    # Separate objects into prioritized and others
     prioritized = []
     others = []
 
     for obj in objects:
-        if obj.id and obj.id.lower().startswith(unit_prefix):
+        object_code = getattr(obj, "unit_code", None)
+        if object_code:
+            matched = unit_code_matches(object_code, unit_code)
+        else:
+            matched = bool(obj.id and obj.id.lower().startswith(unit_prefix))
+        if matched:
             prioritized.append(obj)
         else:
             others.append(obj)
 
-    # Return prioritized objects first, then others (maintaining their relative order)
     return prioritized + others
 
 
@@ -165,17 +394,15 @@ def _normalize_museum_code(record_id_prefix: str) -> str:
     if prefix.startswith("nmnh"):
         if "invertebratezoology" in prefix:
             return "NMNHINV"
-        elif "anthropology" in prefix:
+        if "anthropology" in prefix:
             return "NMNHANTHRO"
-        elif "education" in prefix:
+        if "education" in prefix:
             return "NMNHEDUCATION"
-        elif "mineralsciences" in prefix:
+        if "mineralsciences" in prefix:
             return "NMNHMINSCI"
-        elif "paleobiology" in prefix:
+        if "paleobiology" in prefix:
             return "NMNHPALEO"
-        # Add more as needed
-        else:
-            return prefix.upper()  # fallback
+        return prefix.upper()  # fallback
 
     return prefix.upper()
 
@@ -186,7 +413,8 @@ async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str
 
     This function uses predefined URL construction patterns for each Smithsonian museum
     to generate accurate object URLs. Different museums have different URL formats and
-    identifier requirements.
+    identifier requirements. Museums whose URLs need record data are looked up through
+    the shared API client.
 
     Args:
         record_id: The record identifier (e.g., "nmah_1448973", "fsg_F1900.47")
@@ -215,11 +443,16 @@ async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str
     record_id_prefix = parts[0]
     accession = parts[1]
 
-    # Normalize to museum code
-    museum_code = _normalize_museum_code(record_id_prefix)
+    # Normalize to museum code. Smithsonian Institution Archives records use
+    # SIRIS archive IDs such as "siris_arc_403511".
+    if record_id_prefix.lower() == "siris" and accession.lower().startswith("arc_"):
+        museum_code = "SIA"
+    else:
+        museum_code = _normalize_museum_code(record_id_prefix)
 
-    # Import patterns
-    from .constants import MUSEUM_URL_PATTERNS
+    from .constants import (  # pylint: disable=import-outside-toplevel
+        MUSEUM_URL_PATTERNS,
+    )
 
     pattern = MUSEUM_URL_PATTERNS.get(museum_code)
     if not pattern:
@@ -231,29 +464,18 @@ async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str
     base_url = pattern["base_url"]
     path_template = pattern["path_template"]
 
-    if identifier_type == "record_ID":
-        # Use the full record_id
-        identifier = record_id
-    elif identifier_type == "accession":
-        # Use just the accession part
-        identifier = accession
-    elif identifier_type in ["record_link", "guid", "url", "idsId"]:
-        # Need to get this from API
-        return await _get_url_from_api_record_id(record_id)
-    else:
-        # Unknown identifier type, fall back to API
+    if identifier_type not in ("record_ID", "accession"):
+        # record_link, guid, url and idsId all need record data from the API
         return await _get_url_from_api_record_id(record_id)
 
     # Handle template variables in base_url
     if "{record_link}" in base_url or "{guid}" in base_url:
-        # Need API data for these
         return await _get_url_from_api_record_id(record_id)
 
     # Construct the URL
     try:
         url = base_url.rstrip("/")
         if path_template:
-            # Format the path template with available variables
             formatted_path = path_template.format(
                 record_ID=record_id,
                 accession=accession,
@@ -270,43 +492,33 @@ async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str
 
 async def _get_url_from_api_record_id(record_id: str) -> Optional[str]:
     """
-    Fallback function to get URL from API when pattern-based construction fails
-    or when API data is required (record_link, guid, etc.).
+    Look up an object's web URL through the shared API client.
+
+    Used when pattern-based construction fails or when the URL needs record data
+    (record_link or guid). The record is fetched directly by its EDAN URL
+    (``edanmdm:<record_id>``), which is a single request.
+
+    Args:
+        record_id: Record identifier such as ``saam_1956.11.37``.
+
+    Returns:
+        Optional[str]: The record_link or guid URL, or None if unavailable.
     """
-    from .api_client import SmithsonianAPIClient
-    from .models import CollectionSearchFilter
+    # Imported here to avoid circular imports (api_client imports this module)
+    from .context import get_api_client  # pylint: disable=import-outside-toplevel
+    from .models import APIError  # pylint: disable=import-outside-toplevel
 
-    client = SmithsonianAPIClient()
     try:
-        await client.connect()
-
-        # Try to find the object by record_id
-        # First, search for it
-        filters = CollectionSearchFilter(
-            query=record_id,
-            unit_code=None,
-            object_type=None,
-            date_start=None,
-            date_end=None,
-            maker=None,
-            material=None,
-            topic=None,
-            has_images=None,
-            is_cc0=None,
-            on_view=None,
-            limit=1,
-            offset=0,
-        )
-
-        results = await client.search_collections(filters=filters)
-        if results.objects and results.objects[0].record_link:
-            return str(results.objects[0].record_link)
-
-        # If that doesn't work, try direct lookup if the API supports it
-        # For now, return None if we can't construct it
+        client = await get_api_client()
+        obj = await client.get_object_by_id(f"edanmdm:{record_id}")
+    except (APIError, ValueError) as exc:
+        logger.debug("URL lookup failed for record_id %s: %s", record_id, exc)
         return None
 
-    except Exception:
+    if obj is None:
         return None
-    finally:
-        await client.disconnect()
+    for candidate in (obj.record_link, getattr(obj, "guid", None)):
+        valid = validate_url(str(candidate)) if candidate else None
+        if valid:
+            return valid
+    return None
