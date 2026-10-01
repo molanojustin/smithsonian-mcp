@@ -287,15 +287,50 @@ class TestFilters:
         )
 
     def test_dates(self):
-        assert date_clause("1943", "1967") == 'date:["1940s" TO "1960s"]'
-        assert date_clause("1967-05-01", "c. 1943") == 'date:["1940s" TO "1960s"]'
-        assert date_clause("1900", None) == 'date:["1900s" TO *]'
-        assert date_clause(None, "1800s") == 'date:[* TO "1800s"]'
-        assert date_clause("500 BC", None) is None
+        # Decades are listed explicitly: date ranges compare text, so
+        # ["1860s" TO *] also matched "300s" and "BCE" values
+        decades = 'date:("1940s" OR "1950s" OR "1960s")'
+        assert date_clause("1943", "1967") == decades
+        assert date_clause("1967-05-01", "c. 1943") == decades
+        assert q(date_start="1950", date_end="1959") == '* AND date:"1950s"'
         assert date_clause(None, None) is None
+        assert date_clause("", "  ") is None
+
+    def test_open_date_ranges_are_clamped(self, monkeypatch):
+        import smithsonian_mcp.api_client as api_client
+
+        class FixedDatetime(api_client.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 10, 1, tzinfo=tz)
+
+        monkeypatch.setattr(api_client, "datetime", FixedDatetime)
         assert (
-            q(date_start="1950", date_end="1959") == '* AND date:["1950s" TO "1950s"]'
+            date_clause("1990", None)
+            == 'date:("1990s" OR "2000s" OR "2010s" OR "2020s")'
         )
+        assert date_clause("2900", None) == 'date:"2900s"'
+        start_open = date_clause(None, "1030")
+        assert start_open == 'date:("1000s" OR "1010s" OR "1020s" OR "1030s")'
+        widest = date_clause("1000", None)
+        assert widest.count(" OR ") == 102 and widest.endswith('"2020s")')
+        assert len(widest) < 1200
+
+    @pytest.mark.parametrize(
+        "date_start,date_end",
+        [
+            ("19th century", None),
+            ("500", None),
+            (None, "500 BC"),
+            ("1900", "3000"),
+            ("circa", None),
+        ],
+    )
+    def test_invalid_dates_raise(self, date_start, date_end):
+        with pytest.raises(ValueError, match="four-digit year between 1000 and 2999"):
+            date_clause(date_start, date_end)
+        with pytest.raises(ValueError):
+            q(date_start=date_start, date_end=date_end)
 
     def test_boolean_filters(self):
         assert q(has_images=True) == '* AND online_media_type:"Images"'

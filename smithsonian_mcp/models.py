@@ -76,13 +76,15 @@ class CollectionSearchFilter(BaseModel):
         None,
         description=(
             "Start year (1000-2999) for date filtering. The API indexes dates by "
-            "decade, so matching is at decade granularity"
+            "decade, so matching is at decade granularity; other values are "
+            "rejected with an error"
         ),
     )
     date_end: Optional[str] = Field(
         None,
         description=(
-            "End year (1000-2999) for date filtering, matched at decade granularity"
+            "End year (1000-2999) for date filtering, matched at decade "
+            "granularity; other values are rejected with an error"
         ),
     )
     maker: Optional[str] = Field(

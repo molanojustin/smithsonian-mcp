@@ -152,6 +152,9 @@ _BOOLEAN_OPERATORS = {
 _GROUP_PREFIXES = frozenset({"+", "-", "!"})
 _RANGE_RE = re.compile(r"^[\[{]\s*\S+\s+TO\s+\S+\s*[\]}]$")
 _YEAR_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
+# Years accepted by date_start/date_end; decades are matched as "1950s" terms.
+MIN_DATE_YEAR = 1000
+MAX_DATE_YEAR = 2999
 # Letters, digits, spaces and the punctuation found in personal names.
 _PERSON_NAME_RE = re.compile(r"^[^\W_][\w .,'’-]*$")
 _NAME_SUFFIX_RE = re.compile(r"[,\s]+(?:jr|sr|ii|iii|iv)\.?$", re.IGNORECASE)
@@ -637,50 +640,65 @@ def maker_clause(maker: str) -> Optional[str]:
     return f"({' OR '.join(terms)})"
 
 
-def _parse_year(value: Optional[str]) -> Optional[int]:
-    """Extract a four-digit year between 1000 and 2999 from a date string."""
-    if value is None:
+def _parse_year(name: str, value: Optional[str]) -> Optional[int]:
+    """
+    Extract a four-digit year between 1000 and 2999 from a date string.
+
+    Args:
+        name: Filter name for the error message (``date_start`` or ``date_end``).
+        value: Year or date such as "1943" or "1943-05-01"; None or blank for none.
+
+    Returns:
+        Optional[int]: The year, or None if no value was given.
+
+    Raises:
+        ValueError: If a value was given but has no supported year.
+    """
+    if value is None or not str(value).strip():
         return None
     match = _YEAR_RE.search(str(value))
-    if not match:
-        return None
-    year = int(match.group(1))
-    return year if 1000 <= year <= 2999 else None
+    year = int(match.group(1)) if match else None
+    if year is None or not MIN_DATE_YEAR <= year <= MAX_DATE_YEAR:
+        raise ValueError(
+            f"{name} {value!r} is not supported: use a four-digit year between "
+            f"{MIN_DATE_YEAR} and {MAX_DATE_YEAR}, e.g. '1865' or '1865-04-14'"
+        )
+    return year
 
 
 def date_clause(date_start: Optional[str], date_end: Optional[str]) -> Optional[str]:
     """
-    Build a decade range clause for date filtering.
+    Build a decade clause for date filtering.
 
-    The ``date`` field holds decade terms such as "1950s", which sort correctly as
-    text for four-digit years, so a range query selects the decades in between.
+    The ``date`` field holds normalized terms, mostly decades such as "1950s",
+    alongside centuries, three-digit decades and free text. Range queries on it
+    compare text, so the decades in the range are listed explicitly. An open
+    start begins at the 1000s and an open end stops at the current decade.
 
     Args:
         date_start: Start year or date (e.g. "1943" or "1943-05-01").
         date_end: End year or date.
 
     Returns:
-        Optional[str]: Clause such as ``date:["1940s" TO "1960s"]``, or None.
+        Optional[str]: Clause such as ``date:("1940s" OR "1950s" OR "1960s")``,
+        or None when neither bound is given.
+
+    Raises:
+        ValueError: If a bound is given but is not a year from 1000 to 2999.
     """
-    start = _parse_year(date_start)
-    end = _parse_year(date_end)
-    for label, raw, parsed in (
-        ("date_start", date_start, start),
-        ("date_end", date_end, end),
-    ):
-        if raw not in (None, "") and parsed is None:
-            logger.warning(
-                "Ignoring %s %r: only four-digit years 1000-2999 are supported",
-                label,
-                raw,
-            )
+    start = _parse_year("date_start", date_start)
+    end = _parse_year("date_end", date_end)
     if start is None and end is None:
         return None
     if start is not None and end is not None and start > end:
         start, end = end, start
-    lower = f'"{start // 10 * 10}s"' if start is not None else "*"
-    upper = f'"{end // 10 * 10}s"' if end is not None else "*"
-    return f"date:[{lower} TO {upper}]"
+    first = (start if start is not None else MIN_DATE_YEAR) // 10 * 10
+    current_decade = datetime.now(timezone.utc).year // 10 * 10
+    last = (end if end is not None else max(current_decade, first)) // 10 * 10
+    decades = [f'"{decade}s"' for decade in range(first, last + 1, 10)]
+    if len(decades) == 1:
+        return f"date:{decades[0]}"
+    return f"date:({' OR '.join(decades)})"
 
 
 def build_filter_clauses(filters: CollectionSearchFilter) -> List[str]:

@@ -289,6 +289,31 @@ async def test_asian_art_and_natural_history_units(client):
     assert legacy.total_count == asian.total_count
 
 
+async def test_date_filters_use_whole_decades(client):
+    closed = await client.search_collections(
+        CollectionSearchFilter(date_start="1940", date_end="1960", limit=0)
+    )
+    assert closed.total_count == await _direct_count(
+        '* AND (date:"1940s" OR date:"1950s" OR date:"1960s")'
+    )
+    # An open start must not reach three-digit decades or text values
+    query = build_search_query(CollectionSearchFilter(date_start="1863"))
+    assert await _direct_count(f'{query} AND date:"900s"') <= await _direct_count(
+        '* AND date:"900s" AND date:("1860s" OR "1870s" OR "1880s" OR "1890s" OR '
+        '"1900s" OR "1910s" OR "1920s" OR "1930s" OR "1940s" OR "1950s" OR "1960s" '
+        'OR "1970s" OR "1980s" OR "1990s" OR "2000s" OR "2010s" OR "2020s")'
+    )
+    open_start = await client.search_collections(
+        CollectionSearchFilter(date_start="1863", limit=0)
+    )
+    assert open_start.total_count < await _direct_count('* AND date:["1860s" TO *]')
+
+
+async def test_invalid_date_is_rejected(client):
+    with pytest.raises(ValueError):
+        await client.search_collections(CollectionSearchFilter(date_start="500"))
+
+
 async def test_rows_above_limit_are_clamped(client):
     result = await client.search_collections(
         CollectionSearchFilter(query="art", limit=1500)

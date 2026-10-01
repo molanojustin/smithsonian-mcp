@@ -299,6 +299,17 @@ class TestSearch:
         assert result.has_more is False and result.next_offset is None
 
     @pytest.mark.asyncio
+    async def test_invalid_date_raises_before_any_request(self, monkeypatch):
+        client = SmithsonianAPIClient(api_key="test")
+        request = AsyncMock()
+        monkeypatch.setattr(client, "_make_request", request)
+        with pytest.raises(ValueError, match="date_start '19th century'"):
+            await client.search_collections(
+                CollectionSearchFilter(date_start="19th century")
+            )
+        request.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_count_matches_uses_rows_zero(self, monkeypatch):
         client = SmithsonianAPIClient(api_key="test")
         request = AsyncMock(return_value=_search_response([], 254))
