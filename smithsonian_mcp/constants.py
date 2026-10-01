@@ -674,10 +674,3 @@ MUSEUM_URL_PATTERNS: Dict[str, Dict[str, str]] = {
 }
 # Asian Art records keep the "fsg_" record_ID prefix, so NMAA shares the pattern.
 MUSEUM_URL_PATTERNS["NMAA"] = MUSEUM_URL_PATTERNS["FSG"]
-
-# Backward compatibility imports - these have been moved to museum_data.py
-from .museum_data import (  # pylint: disable=wrong-import-position,unused-import
-    MUSEUM_OBJECT_TYPES,
-    get_museum_object_types,
-    museum_has_object_type,
-)

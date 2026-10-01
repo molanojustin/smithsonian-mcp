@@ -2,8 +2,6 @@
 Tests for collection statistics: /stats plus one count query, no sampling.
 """
 
-from unittest.mock import AsyncMock
-
 import pytest
 
 from smithsonian_mcp.api_client import SmithsonianAPIClient
@@ -97,25 +95,42 @@ async def test_stats_tolerate_failed_image_count(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_stats_context_handles_stats_endpoint_failure(monkeypatch):
-    """When /stats fails, a count query supplies the total and the context renders."""
+async def test_stats_tool_handles_stats_endpoint_failure(monkeypatch):
+    """When /stats fails, a count query supplies the total and the tool still answers."""
+    from smithsonian_mcp import context
+    from smithsonian_mcp.tools import get_collection_stats
+
     client = SmithsonianAPIClient(api_key="test-key")
     fake, calls = _fake_requests(stats_ok=False)
     monkeypatch.setattr(client, "_make_request", fake)
-    monkeypatch.setattr(
-        "smithsonian_mcp.resources.get_api_client",
-        AsyncMock(return_value=client),
-    )
+    context.set_api_client(client)
 
-    from smithsonian_mcp import resources as resources_module
+    result = await get_collection_stats()
 
-    result = await resources_module.get_stats_context()
-
-    assert "Total Objects: 120" in result
-    assert "Digitized Objects: 45" in result
-    assert "CC0 Licensed Objects: Unavailable" in result
-    assert "Objects with Images (est.): 45" in result
+    assert result.total_objects == 120
+    assert result.with_images == 45
+    assert result.cc0 is None
+    assert result.museums == []
+    assert result.as_of is None
+    assert "unavailable" in result.note
     assert len(calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_stats_tool_reports_unavailable_api(monkeypatch):
+    """If every stats request fails, the tool raises a ToolError to retry later."""
+    from fastmcp.exceptions import ToolError
+
+    from smithsonian_mcp import context
+    from smithsonian_mcp.tools import get_collection_stats
+
+    client = SmithsonianAPIClient(api_key="test-key")
+    fake, _ = _fake_requests(stats_ok=False, search_ok=False)
+    monkeypatch.setattr(client, "_make_request", fake)
+    context.set_api_client(client)
+
+    with pytest.raises(ToolError, match="not responding"):
+        await get_collection_stats()
 
 
 @pytest.mark.asyncio

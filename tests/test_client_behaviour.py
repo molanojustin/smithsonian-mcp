@@ -677,25 +677,33 @@ class TestEntryPoints:
         async with Client(transport) as client:
             tools = await client.list_tools()
         names = {tool.name for tool in tools}
-        assert {"search_collections", "get_collection_statistics"} <= names
+        assert names == {
+            "search_objects",
+            "get_object",
+            "list_museums",
+            "explore_topic",
+            "get_collection_stats",
+        }
 
 
 def test_tool_layer_still_imports_constants():
-    """Names used by tools.py and resources.py remain available."""
+    """Names used by the tool layer remain available."""
     from smithsonian_mcp import constants, utils
 
     for name in (
+        "ARCHIVAL_UNIT_CODES",
         "MUSEUM_MAP",
-        "VALID_MUSEUM_CODES",
+        "NMNH_AGGREGATE_CODE",
         "SIZE_GUIDELINES",
         "MUSEUM_URL_PATTERNS",
+        "UNIT_INFO",
     ):
         assert hasattr(constants, name)
     for name in (
+        "normalize_unit_code",
         "resolve_museum_code",
-        "prioritize_objects_by_unit_code",
+        "record_page_url",
         "validate_url",
-        "construct_url_from_record_id",
     ):
         assert callable(getattr(utils, name))
     json.dumps(constants.MUSEUM_URL_PATTERNS)

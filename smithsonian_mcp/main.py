@@ -17,13 +17,7 @@ from . import __version__
 from .app import mcp
 from .config import Config
 
-# Import modules to register tools, resources and prompts with the mcp instance
-from . import tools, resources, prompts
-
 logger = logging.getLogger(__name__)
-
-# Keep the registration imports referenced for linters
-_ = [tools, resources, prompts]
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 

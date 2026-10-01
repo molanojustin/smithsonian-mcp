@@ -58,8 +58,30 @@ def _isolate_client_state(request: pytest.FixtureRequest, monkeypatch):
 
         monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _blocked)
 
+    from smithsonian_mcp import tools
+
     SmithsonianAPIClient.clear_unit_code_cache()
+    tools.clear_caches()
     previous_client = context.peek_api_client()
     yield
     context.set_api_client(previous_client)
     SmithsonianAPIClient.clear_unit_code_cache()
+    tools.clear_caches()
+
+
+@pytest.fixture
+def fake_api(monkeypatch):
+    """
+    Answer the client's HTTP requests from a FakeAPI instead of the network.
+
+    The real tool, client and parsing code all run; only the transport is faked.
+    """
+    from tests.fake_api import FakeAPI
+
+    api = FakeAPI()
+
+    async def _handle(self, http_request):  # pylint: disable=unused-argument
+        return await api.handle(http_request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _handle)
+    return api
