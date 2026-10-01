@@ -658,7 +658,11 @@ async def list_museums() -> List[MuseumInfo]:
             name=unit.name,
             object_count=counts.get(unit.code),
             archival_only=True if unit.archival_only else None,
-            aliases=_ALIASES.get(unit.code, []),
+            aliases=[
+                alias
+                for alias in _ALIASES.get(unit.code, [])
+                if alias != unit.name.lower()
+            ],
         )
         for unit in units
     ]
