@@ -12,7 +12,11 @@ PROJECT_DIR="$(pwd)"
 VENV_DIR=".venv"
 PYTHON_EXEC="$VENV_DIR/bin/python"
 PIP_EXEC="$VENV_DIR/bin/pip"
+# Console script installed into the virtual environment by this script
+SERVER_EXEC="$PROJECT_DIR/$VENV_DIR/bin/smithsonian-mcp"
 REQUIREMENTS_FILE="config/requirements.txt"
+MCPO_EXAMPLE="examples/mcpo-config.json"
+MCPO_CONFIG="mcpo-config.json"
 SERVICE_NAME="smithsonian-mcp"
 
 # --- Functions ---
@@ -35,6 +39,11 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to check that a Python interpreter is 3.10 or newer
+python_is_supported() {
+    "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null
+}
+
 # Function to check if mcpo is available
 check_mcpo() {
     if command_exists mcpo; then
@@ -48,42 +57,34 @@ check_mcpo() {
     return 1
 }
 
-# Function to setup mcpo configuration
+# Function to write mcpo-config.json from the example with local paths and the API key.
+# The example under examples/ is left untouched.
 setup_mcpo_config() {
     local api_key="$1"
     info "Setting up mcpo configuration..."
-    
-    if [ ! -f "examples/mcpo-config.json" ]; then
-        # Look for the original file to create from example
-        if [ -f "examples/mcpo-config.json" ]; then
-            warning "mcpo-config.json found but no example file. Using existing config."
-            return 1
-        else
-            warning "mcpo-config.json not found in examples/. Skipping mcpo setup."
-            return 1
-        fi
-    fi
-    
-    # Create mcpo config from example
-    local config_file="examples/mcpo-config.json"
-    # We already have the config file, just update it if needed
-    
-    # Replace paths and API key in config
-    local python_path="$PROJECT_DIR/$VENV_DIR/bin/python"
-    sed -i.bak "s|/path/to/your/project/.venv/bin/python|$python_path|g" "$config_file"
-    sed -i.bak "s|/path/to/your/project|$PROJECT_DIR|g" "$config_file"
-    
-    if [ -n "$api_key" ]; then
-        sed -i.bak "s/your_api_key_here/$api_key/g" "$config_file"
-        info "mcpo configuration created at: $config_file"
-        info "Python path set to: $python_path"
-        info "Project path set to: $PROJECT_DIR"
-        info "You can start mcpo with: mcpo --config $config_file --port 8000"
-        return 0
-    else
-        warning "No API key provided. Edit $config_file and add your API key."
+
+    if [ ! -f "$MCPO_EXAMPLE" ]; then
+        warning "$MCPO_EXAMPLE not found. Skipping mcpo setup."
         return 1
     fi
+
+    if [ -z "$api_key" ]; then
+        warning "No API key available. Skipping mcpo setup."
+        return 1
+    fi
+
+    local python_path="$PROJECT_DIR/$VENV_DIR/bin/python"
+    sed -e "s|/path/to/your/project/.venv/bin/python|$python_path|g" \
+        -e "s|/path/to/your/project|$PROJECT_DIR|g" \
+        -e "s|your_api_key_here|$api_key|g" \
+        "$MCPO_EXAMPLE" > "$MCPO_CONFIG"
+    chmod 600 "$MCPO_CONFIG"
+
+    info "mcpo configuration written to: $PROJECT_DIR/$MCPO_CONFIG"
+    info "It contains your API key. Do not commit it."
+    info "Python path set to: $python_path"
+    info "You can start mcpo with: mcpo --config $MCPO_CONFIG --port 8000"
+    return 0
 }
 
 # Function to detect OS
@@ -96,69 +97,60 @@ detect_os() {
     esac
 }
 
-# Function to validate API key
+# Function to validate API key against the live API.
+# The key is passed through the environment and an HTTP header, never on a
+# command line or in a URL. All output goes to stderr so that callers can
+# capture this function's stdout safely.
 validate_api_key() {
     local api_key="$1"
     if [ -z "$api_key" ] || [ "$api_key" = "your_api_key_here" ]; then
         return 1
     fi
-    
-    info "Validating API key..."
-    if "$PYTHON_EXEC" -c "
-import sys
-import asyncio
-import httpx
-sys.path.insert(0, '$PROJECT_DIR')
-from smithsonian_mcp.config import Config
-import os
-os.environ['SMITHSONIAN_API_KEY'] = '$api_key'
 
-async def test_api_key():
-    try:
-        headers = {'X-Api-Key': '$api_key'}
-        async with httpx.AsyncClient(headers=headers, timeout=10.0) as client:
-            response = await client.get('https://api.si.edu/openaccess/api/v1.0/search?q=test&rows=1')
-            if response.status_code == 200:
-                data = response.json()
-                if isinstance(data, dict) and 'response' in data and 'rows' in data['response']:
-                    print('API key is valid')
-                    return True
-                else:
-                    print('API key is valid')
-                    return True
-            else:
-                print(f'API returned status {response.status_code}')
-                return False
-    except Exception as e:
-        print(f'API key validation failed: {e}')
-        return False
+    info "Validating API key..." >&2
+    if SMITHSONIAN_API_KEY="$api_key" "$PYTHON_EXEC" - <<'PY'
+import os
+import sys
+
+import httpx
 
 try:
-    result = asyncio.run(test_api_key())
-    if result:
-        sys.exit(0)
-    else:
-        sys.exit(1)
-except Exception as e:
-    print(f'API key validation failed: {e}')
+    response = httpx.get(
+        "https://api.si.edu/openaccess/api/v1.0/search",
+        params={"q": "test", "rows": 1},
+        headers={"X-Api-Key": os.environ["SMITHSONIAN_API_KEY"]},
+        timeout=10.0,
+    )
+except httpx.HTTPError as exc:
+    print(f"API key validation failed: {exc}", file=sys.stderr)
     sys.exit(1)
-" 2>/dev/null; then
+
+if response.status_code == 200:
+    print("API key is valid", file=sys.stderr)
+    sys.exit(0)
+
+print(f"API returned status {response.status_code}", file=sys.stderr)
+sys.exit(1)
+PY
+    then
         return 0
     else
         return 1
     fi
 }
 
-# Function to get API key from user
+# Function to get API key from user.
+# Prompts and messages go to stderr; only the validated key is printed to stdout.
 get_api_key() {
+    local api_key
     while true; do
-        echo -n "Enter your Smithsonian API key (or press Enter to skip): "
+        printf "Enter your Smithsonian API key (or press Enter to skip): " >&2
         read -r api_key
         if [ -z "$api_key" ]; then
-            warning "Skipping API key setup. You'll need to configure it later."
+            warning "Skipping API key setup. You'll need to configure it later." >&2
             return 1
         fi
-        
+
         if validate_api_key "$api_key"; then
             echo "$api_key"
             return 0
@@ -172,7 +164,7 @@ get_api_key() {
 setup_service() {
     local os="$1"
     info "Setting up $os service..."
-    
+
     case "$os" in
         "linux")
             if command_exists systemctl; then
@@ -194,7 +186,7 @@ setup_service() {
 setup_systemd_service() {
     local service_file="/etc/systemd/system/$SERVICE_NAME.service"
     local user_service_file="$HOME/.config/systemd/user/$SERVICE_NAME.service"
-    
+
     # Prefer user service if directory exists
     if [ -d "$HOME/.config/systemd/user" ]; then
         service_file="$user_service_file"
@@ -202,7 +194,7 @@ setup_systemd_service() {
     else
         info "Creating system systemd service (requires sudo)..."
     fi
-    
+
     local service_content="[Unit]
 Description=Smithsonian MCP Server
 After=network.target
@@ -212,7 +204,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/$VENV_DIR/bin
-ExecStart=$PROJECT_DIR/$VENV_DIR/bin/python -m smithsonian_mcp.server
+ExecStart=$SERVER_EXEC
 Restart=always
 RestartSec=10
 
@@ -243,9 +235,7 @@ setup_launchd_service() {
     <string>com.smithsonian.mcp</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$PROJECT_DIR/$VENV_DIR/bin/python</string>
-        <string>-m</string>
-        <string>smithsonian_mcp.server</string>
+        <string>$SERVER_EXEC</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$PROJECT_DIR</string>
@@ -266,12 +256,13 @@ setup_launchd_service() {
     info "Launchd service installed and started."
 }
 
-# Function to setup Claude Desktop config
+# Function to add this server to the Claude Desktop config.
+# Existing entries in the config file are preserved; a backup is written first.
 setup_claude_config() {
     local api_key="$1"
     local config_dir=""
     local config_file=""
-    
+
     case "$(detect_os)" in
         "macos")
             config_dir="$HOME/Library/Application Support/Claude"
@@ -283,27 +274,45 @@ setup_claude_config() {
             config_dir="$APPDATA/Claude"
             ;;
     esac
-    
+
     if [ -z "$config_dir" ]; then
         warning "Could not detect Claude Desktop config directory."
         return 1
     fi
-    
+
     config_file="$config_dir/claude_desktop_config.json"
-    
+
     # Create config directory if it doesn't exist
     mkdir -p "$config_dir"
-    
+
     # Backup existing config
     if [ -f "$config_file" ]; then
         cp "$config_file" "$config_file.backup.$(date +%Y%m%d_%H%M%S)"
         info "Backed up existing Claude Desktop config."
     fi
-    
-    # Create or update config
-    local config_content="{\n  \"mcpServers\": {\n    \"smithsonian_open_access\": {\n      \"command\": \"$PROJECT_DIR/$VENV_DIR/bin/python\",\n      \"args\": [\"-m\", \"smithsonian_mcp.server\"],\n      \"env\": {\n        \"SMITHSONIAN_API_KEY\": \"$api_key\",\n        \"LOG_LEVEL\": \"INFO\"\n      }\n    }\n  }\n}"
-    
-    echo -e "$config_content" > "$config_file"
+
+    CONFIG_FILE="$config_file" SERVER_EXEC="$SERVER_EXEC" SMITHSONIAN_API_KEY="$api_key" \
+        "$PYTHON_EXEC" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path(os.environ["CONFIG_FILE"])
+config = {}
+if path.exists() and path.read_text(encoding="utf-8").strip():
+    config = json.loads(path.read_text(encoding="utf-8"))
+
+config.setdefault("mcpServers", {})["smithsonian_open_access"] = {
+    "command": os.environ["SERVER_EXEC"],
+    "args": [],
+    "env": {
+        "SMITHSONIAN_API_KEY": os.environ["SMITHSONIAN_API_KEY"],
+        "LOG_LEVEL": "INFO",
+    },
+}
+path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+PY
+
     info "Claude Desktop configuration updated at: $config_file"
     info "Restart Claude Desktop to apply changes."
 }
@@ -311,49 +320,62 @@ setup_claude_config() {
 # Function to run health check
 run_health_check() {
     info "Running health check..."
-    
+
     # Test API connection
     if "$PYTHON_EXEC" examples/test-api-connection.py; then
-        info "✓ API connection test passed"
+        info "API connection test passed"
     else
-        error "✗ API connection test failed"
+        error "API connection test failed"
         return 1
     fi
-    
-    # Test MCP server startup
-    if timeout 10s "$PYTHON_EXEC" -m smithsonian_mcp.server --test 2>/dev/null; then
-        info "✓ MCP server startup test passed"
+
+    # Start the server with no client attached: it should start, read EOF on
+    # stdin, and exit cleanly. A missing API key or import error exits non-zero.
+    if "$SERVER_EXEC" < /dev/null > /dev/null 2>&1; then
+        info "MCP server startup test passed"
     else
-        warning "MCP server startup test inconclusive (this may be normal)"
+        error "MCP server failed to start. Run $SERVER_EXEC to see the error."
+        return 1
     fi
-    
+
     info "Health check completed."
 }
 
 # --- Main Script ---
 
-# 1. Check for Python 3
-if ! command_exists python3; then
-    error "Python 3 is not installed. Please install it to continue."
-    exit 1
-fi
-info "Python 3 found."
-
-# 2. Create virtual environment if it doesn't exist
-if [ ! -d "$VENV_DIR" ]; then
-    info "Creating Python virtual environment in '$VENV_DIR'..."
-    python3 -m venv "$VENV_DIR"
-else
-    info "Virtual environment '$VENV_DIR' already exists."
-fi
-
-# 3. Install dependencies
-if [ -f "$REQUIREMENTS_FILE" ]; then
-    info "Installing dependencies from '$REQUIREMENTS_FILE'..."
-    "$PIP_EXEC" install -r "$REQUIREMENTS_FILE"
+# 1-3. Create the virtual environment and install dependencies plus the package
+if command_exists uv; then
+    info "uv found. Installing locked dependencies into '$VENV_DIR' with uv sync..."
+    uv sync --group dev
     info "Dependencies installed successfully."
 else
-    warning "Warning: '$REQUIREMENTS_FILE' not found. Skipping dependency installation."
+    info "uv not found. Falling back to python3 -m venv and pip."
+    if ! command_exists python3; then
+        error "Python 3 is not installed. Install Python 3.10 or newer, or install uv."
+        exit 1
+    fi
+    if ! python_is_supported python3; then
+        error "python3 is $(python3 --version 2>&1). Python 3.10 or newer is required."
+        exit 1
+    fi
+    info "$(python3 --version) found."
+
+    if [ ! -d "$VENV_DIR" ]; then
+        info "Creating Python virtual environment in '$VENV_DIR'..."
+        python3 -m venv "$VENV_DIR"
+    else
+        info "Virtual environment '$VENV_DIR' already exists."
+    fi
+
+    if [ -f "$REQUIREMENTS_FILE" ]; then
+        info "Installing dependencies from '$REQUIREMENTS_FILE'..."
+        "$PIP_EXEC" install -r "$REQUIREMENTS_FILE"
+    else
+        warning "'$REQUIREMENTS_FILE' not found. Installing runtime dependencies only."
+    fi
+    info "Installing the smithsonian-mcp package (editable)..."
+    "$PIP_EXEC" install -e .
+    info "Dependencies installed successfully."
 fi
 
 # 4. Setup .env file and get API key
@@ -382,10 +404,15 @@ if [ -f ".env" ]; then
 fi
 
 if [ -z "$api_key" ]; then
-    api_key=$(get_api_key)
+    api_key=$(get_api_key) || api_key=""
     if [ -n "$api_key" ]; then
-        # Update .env with the new API key
-        sed -i.bak "s/^SMITHSONIAN_API_KEY=.*/SMITHSONIAN_API_KEY=$api_key/" .env
+        # Update .env with the new API key without leaving a backup copy behind
+        if grep -q "^SMITHSONIAN_API_KEY=" .env; then
+            sed -i.bak "s/^SMITHSONIAN_API_KEY=.*/SMITHSONIAN_API_KEY=$api_key/" .env
+            rm -f .env.bak
+        else
+            echo "SMITHSONIAN_API_KEY=$api_key" >> .env
+        fi
         info "API key saved to .env file."
     fi
 fi
@@ -396,7 +423,7 @@ if check_mcpo; then
     echo -n "Do you want to create an mcpo configuration file? (y/N): "
     read -r setup_mcpo
     if [[ "$setup_mcpo" =~ ^[Yy]$ ]]; then
-        setup_mcpo_config "$api_key"
+        setup_mcpo_config "$api_key" || true
     fi
 else
     info "mcpo not found. For multi-MCP orchestration, install with: uvx mcpo"
@@ -405,10 +432,12 @@ fi
 # 6. Setup service
 os=$(detect_os)
 if [ "$os" != "unknown" ]; then
+    info "Note: the server uses the stdio transport. MCP clients such as Claude Desktop"
+    info "start it on demand, so most users do not need a background service."
     echo -n "Do you want to install $SERVICE_NAME as a system service? (y/N): "
     read -r install_service
     if [[ "$install_service" =~ ^[Yy]$ ]]; then
-        setup_service "$os"
+        setup_service "$os" || warning "Service setup did not complete."
     fi
 fi
 
@@ -417,7 +446,7 @@ if [ -n "$api_key" ]; then
     echo -n "Do you want to automatically configure Claude Desktop? (y/N): "
     read -r setup_claude
     if [[ "$setup_claude" =~ ^[Yy]$ ]]; then
-        setup_claude_config "$api_key"
+        setup_claude_config "$api_key" || warning "Claude Desktop configuration did not complete."
     fi
 fi
 
@@ -425,27 +454,26 @@ fi
 echo -n "Do you want to run a health check? (Y/n): "
 read -r run_check
 if [[ ! "$run_check" =~ ^[Nn]$ ]]; then
-    run_health_check
+    run_health_check || warning "Health check reported problems. See the messages above."
 fi
 
 info ""
-info "Setup complete!"
+info "Setup complete."
 info ""
 info "Next steps:"
 if [ -n "$api_key" ]; then
-    info "✓ API key configured and validated"
+    info "- API key configured and validated"
 else
-    info "Edit .env and add your API key from https://api.data.gov/signup/"
+    info "- Edit .env and add your API key from https://api.data.gov/signup/"
 fi
-info "✓ Dependencies installed"
-info "✓ Virtual environment created at $VENV_DIR"
+info "- Dependencies installed in $VENV_DIR"
 info ""
 info "Usage:"
 info "  Activate environment: source $VENV_DIR/bin/activate"
 info "  Test connection: python examples/test-api-connection.py"
-info "  Run server: python -m smithsonian_mcp.server"
-if command_exists systemctl && [ -f "/etc/systemd/system/$SERVICE_NAME.service" ] || [ -f "$HOME/.config/systemd/user/$SERVICE_NAME.service" ]; then
+info "  Run server (stdio): $SERVER_EXEC"
+if { command_exists systemctl && [ -f "/etc/systemd/system/$SERVICE_NAME.service" ]; } || [ -f "$HOME/.config/systemd/user/$SERVICE_NAME.service" ]; then
     info "  Manage service: systemctl --user start/stop/status $SERVICE_NAME"
 fi
 info ""
-info "For troubleshooting, see README.md or run: python scripts/verify-setup.py"
+info "For troubleshooting, see TROUBLESHOOTING.md or run: python scripts/verify-setup.py"
