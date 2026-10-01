@@ -2,7 +2,7 @@
 Pydantic data models for Smithsonian Open Access data structures.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -118,6 +118,13 @@ class CollectionSearchFilter(BaseModel):
         default=20, description="Maximum number of results (clamped to 0-1000)"
     )
     offset: int = Field(default=0, description="Result offset for pagination")
+    sort: Optional[Literal["relevancy", "id", "newest", "updated", "random"]] = Field(
+        None,
+        description=(
+            "Row order. None or relevancy is the API default; random returns a "
+            "random selection of the matches"
+        ),
+    )
 
 
 class SmithsonianObject(BaseModel):

@@ -1057,13 +1057,17 @@ class SmithsonianAPIClient:
             filters: Search filter parameters
 
         Returns:
-            Dictionary with ``q``, ``start`` and ``rows`` (clamped to 0..1000)
+            Dictionary with ``q``, ``start``, ``rows`` (clamped to 0..1000) and,
+            when a non-default order is requested, ``sort``
         """
-        return {
+        params: Dict[str, Any] = {
             "q": build_search_query(filters),
             "start": max(0, int(filters.offset or 0)),
             "rows": max(0, min(int(filters.limit or 0), MAX_ROWS)),
         }
+        if filters.sort and filters.sort != "relevancy":
+            params["sort"] = filters.sort
+        return params
 
     async def _make_request(
         self, endpoint: str, params: Optional[Dict[str, Any]] = None
