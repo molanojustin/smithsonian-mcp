@@ -48,19 +48,19 @@ The Smithsonian Open Access API provides access to diverse collections across al
 
 ### Service Startup Issues
 
-**"Service failed to start"**
+**"Service failed to start" or keeps restarting**
 
-- Run `python scripts/verify-setup.py` for diagnostics
+- The server uses the stdio transport and exits when no MCP client is attached, so a background service restarts repeatedly. MCP clients such as Claude Desktop start the server themselves. For a long-running HTTP service, run the server behind mcpo (see README.md).
+- Run `uv run python scripts/verify-setup.py` for diagnostics
 - Check logs:
   - Linux: `journalctl --user -u smithsonian-mcp`
   - macOS: `~/Library/Logs/com.smithsonian.mcp.log`
-- Ensure virtual environment is activated
-- Verify all dependencies are installed: `uv pip install -r config/requirements.txt`
+- Verify the package and its dependencies are installed: `uv sync`
 
 **Python environment issues:**
-- Activate virtual environment: `source .venv/bin/activate` (Linux/macOS) or `.\venv\Scripts\Activate.ps1` (Windows)
-- Check Python version: `python --version` (must be 3.10+)
-- Reinstall dependencies: `uv pip install -r config/requirements.txt`
+- Run commands through the project environment: `uv run <command>`, or activate it with `source .venv/bin/activate` (Linux/macOS) or `.\.venv\Scripts\Activate.ps1` (Windows)
+- Check Python version: `uv run python --version` (must be 3.10+)
+- Reinstall dependencies and the package: `uv sync`
 
 ### Claude Desktop Connection Issues
 
@@ -68,15 +68,25 @@ The Smithsonian Open Access API provides access to diverse collections across al
 
 - Restart Claude Desktop after configuration
 - Check Claude Desktop config file exists and contains correct paths
-- Verify MCP server is running: `python -m smithsonian_mcp.server`
+- Claude Desktop starts the server itself; you do not need to run it separately
+- If the log says `uvx`, `uv` or `npx` was not found, use the absolute path to the command (`which uvx` on macOS/Linux, `where uvx` on Windows)
+- Check that the server starts from a terminal with the same command and arguments as in the config, for example `uvx --from git+https://github.com/molanojustin/smithsonian-mcp smithsonian-mcp`. It should start and wait for input; press Ctrl+C to stop it
 - Check that the config file is properly formatted JSON
+
+**Server starts and exits immediately with no error**
+
+- In older versions, `python -m smithsonian_mcp.server` exited immediately without serving. Use the `smithsonian-mcp` command (or `python -m smithsonian_mcp.main`) instead
+
+**Client reports invalid JSON or fails during the handshake**
+
+- In stdio mode, stdout carries only MCP messages. Wrapper scripts or shell profiles that print to stdout corrupt the stream; send any diagnostics to stderr
 
 ### Module Import Errors
 
 **"Module import errors"**
 
-- Activate virtual environment: `source .venv/bin/activate` (Linux/macOS) or `.\venv\Scripts\Activate.ps1` (Windows)
-- Reinstall dependencies: `uv pip install -r config/requirements.txt`
+- Install the package into the project environment: `uv sync` (or `pip install -e .` in a virtual environment)
+- Point MCP clients at the installed `smithsonian-mcp` command, or use `uv --directory /path/to/smithsonian-mcp run smithsonian-mcp`
 - Check Python path issues in your configuration
 
 ### mcpo-Specific Issues
@@ -85,11 +95,21 @@ The Smithsonian Open Access API provides access to diverse collections across al
 
 This occurs when mcpo can't find the Smithsonian MCP module. Fix by:
 
-1. **Use absolute Python path** in your mcpo config:
+1. **Use the absolute path to the installed command** in your mcpo config:
+
+```json
+{
+  "command": "/full/path/to/your/project/.venv/bin/smithsonian-mcp",
+  "args": []
+}
+```
+
+Or use the Python interpreter with the module entry point:
 
 ```json
 {
   "command": "/full/path/to/your/project/.venv/bin/python",
+  "args": ["-m", "smithsonian_mcp.main"],
   "env": {
     "PYTHONPATH": "/full/path/to/your/project"
   }
@@ -109,14 +129,15 @@ ls -la /path/to/your/project/.venv/bin/python
 3. **Regenerate config** with setup script:
 
 ```bash
-config/setup.sh  # Will create examples/mcpo-config.json with correct paths
+config/setup.sh  # Writes mcpo-config.json in the project root with correct paths
 ```
 
 **"Connection closed" errors with mcpo**
 
 - Ensure API key is valid and set in environment
 - Check that the virtual environment has all dependencies installed
-- Verify the MCP server can start manually: `python -m smithsonian_mcp.server --test`
+- Verify the API connection: `uv run python examples/test-api-connection.py`
+- Verify the server starts: `uv run smithsonian-mcp` should start and wait for input (Ctrl+C to stop)
 
 **"Port 8000 already in use"**
 
@@ -129,7 +150,7 @@ mcpo --config mcpo-config.json --port 8001
 
 ## Getting Help
 
-1. **Run verification script**: `python scripts/verify-setup.py`
+1. **Run verification script**: `uv run python scripts/verify-setup.py`
 2. **Review [GitHub Issues](https://github.com/molanojustin/smithsonian-mcp/issues)**
 3. **Check the documentation**:
    - This troubleshooting guide
@@ -139,17 +160,18 @@ mcpo --config mcpo-config.json --port 8001
 
 **Test API connection:**
 ```bash
-python examples/test-api-connection.py
+uv run python examples/test-api-connection.py
 ```
 
 **Test MCP server:**
 ```bash
-python -m smithsonian_mcp.server --test
+# Lists the server's tools through the MCP Inspector CLI
+npx @modelcontextprotocol/inspector --cli .venv/bin/smithsonian-mcp --method tools/list
 ```
 
 **Verify complete setup:**
 ```bash
-python scripts/verify-setup.py
+uv run python scripts/verify-setup.py
 ```
 
 **Check service status:**
@@ -194,5 +216,5 @@ $env:LOG_LEVEL = "DEBUG"
 
 ### Windows
 - PowerShell script for setup
-- Services managed through PowerShell
-- Run setup with: `.\setup.ps1`
+- The installed command is `.venv\Scripts\smithsonian-mcp.exe`
+- Run setup from the project root with: `config\setup.ps1`
