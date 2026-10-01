@@ -452,7 +452,7 @@ Version 2.0 replaces all 28 tools of 1.x with 5. Calls to a 1.x tool name fail, 
 - Output shapes: searches return compact summaries instead of full records, and fields are renamed. `unit_code` is now `museum_code`, `unit_name` is `museum_name`, `is_on_view` is `on_view` and `returned_count` is `returned`. `has_more` is gone; `next_offset` is `null` on the last page. Links to object pages are in `web_url`.
 - Parameters: `museum` takes names or codes and replaces `unit_code`. The `is_cc0` filter is now `cc0_only`, `limit` defaults to 10 with a maximum of 50 (it was 500), and `date_from` and `date_to` filter by date.
 - Asian Art is unit code `NMAA`. `FSG` is still accepted as an alias, but results report `NMAA`.
-- `is_cc0` on an object now means the object has CC0 media. Records with CC0 text but restricted or no media, which are common at the National Museum of African American History and Culture, are no longer reported as CC0.
+- `is_cc0` on an object now means the object has CC0 media. Records with CC0 text but restricted or no media, such as copyrighted objects at the National Museum of African American History and Culture, are no longer reported as CC0.
 - Prompts drop the `_prompt` suffix from their names, and six prompts that only restated tool usage are removed. See the [changelog](CHANGELOG.md).
 
 ## Integration
