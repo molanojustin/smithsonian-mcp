@@ -18,7 +18,7 @@ This guide covers common problems with the Smithsonian Open Access MCP server an
 
 ### API key rejected or missing
 
-The server exits at startup with "API key not configured", or requests fail with "The API key was rejected".
+The server exits at startup with "API key not configured", or tools fail with "The Smithsonian API rejected the API key".
 
 - Get a free key from [api.data.gov/signup](https://api.data.gov/signup/).
 - Set `SMITHSONIAN_API_KEY` in the `env` block of your MCP client configuration. When you run the server from a clone, it can also come from `.env` in the project root: `SMITHSONIAN_API_KEY=your_key_here`, with no quotes or spaces. A key in the client's `env` block takes precedence.
@@ -26,6 +26,8 @@ The server exits at startup with "API key not configured", or requests fail with
 - Check the key with `smithsonian-mcp --test` (npm install) or `uv run smithsonian-mcp --test` (local clone).
 
 ### Rate limit exceeded (HTTP 429)
+
+Tools fail with "The Smithsonian API rate limit for this API key was reached".
 
 api.data.gov allows 1,000 requests per hour for each API key, counted over a rolling hour. Past the limit the API answers HTTP 429, and the response's `Retry-After` header gives the number of seconds to wait.
 
@@ -38,6 +40,12 @@ curl -s -o /dev/null -D - -H "X-Api-Key: $SMITHSONIAN_API_KEY" \
   "https://api.si.edu/openaccess/api/v1.0/terms/unit_code" | grep -i ratelimit
 ```
 
+`list_museums` and `get_collection_stats` cache the collection statistics for 6 hours, so repeating them costs no further requests.
+
+### The API is not responding
+
+Tools fail with "The Smithsonian API is not responding right now". The request timed out or the API returned a server error. Try again in a few minutes.
+
 ## Searches
 
 ### The query was rejected
@@ -48,10 +56,16 @@ A firewall in front of the API blocks query text that looks like SQL, HTML or sc
 
 ### A search returns nothing
 
+An empty result carries a `note` that explains it. Common causes:
+
 - Every word in `query` must match, so a full question or sentence usually finds nothing. Use 1 to 4 distinctive keywords, `OR` for alternatives, and `maker` for names. See [Search tips](README.md#search-tips).
-- 14 units, such as the Archives of American Art, publish only archival records, which object searches do not return. `list_museums` marks them.
-- A museum name the server does not recognize returns an error that lists the known names. `list_museums` shows every name and code.
-- Dates must be years from 1000 to 2999. Other values, such as "19th century", return an error that names the accepted format.
+- The `offset` is past the last result. The note gives the number of results; start again from `offset=0` or follow `next_offset`.
+
+Some searches return an error instead:
+
+- 14 units, such as the Archives of American Art, publish only archival records, which object searches do not return. Searching one of them returns an error that says so; `list_museums` marks them `archival_only`.
+- A museum name the server does not recognize returns an error with examples of accepted names. `list_museums` shows every code and its aliases.
+- Years must be from 1000 to 2999. Other years, such as 500, return an error that names the accepted range.
 
 ### An on-view search at Natural History is empty
 
@@ -59,7 +73,7 @@ A firewall in front of the API blocks query text that looks like SQL, HTML or sc
 
 ### Objects come back without images
 
-Some museums show images on their own websites under usage conditions that Open Access does not publish. The Elmo puppet at American History is an example: its record has no images, so `thumbnail_url` is `null` and `images` is empty. Some records, notably at American History, also match `has_images=true` without carrying image URLs. Other museums, such as Asian Art and Cooper Hewitt, publish images with many of their records.
+Some museums show images on their own websites under usage conditions that Open Access does not publish. The Elmo puppet at American History is an example: its record has no images, so results for it have no `thumbnail_url` or `images` field. Some records, notably at American History, also match `has_images=true` without carrying image URLs. Other museums, such as Asian Art and Cooper Hewitt, publish images with many of their records.
 
 ## Upgrading from 1.x
 
