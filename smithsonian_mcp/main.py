@@ -55,6 +55,30 @@ def configure_logging(level: Optional[str] = None) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def _quiet_cancelled_request(record: logging.LogRecord) -> bool:
+    """
+    Log a request cut off by shutdown as one line instead of a traceback.
+
+    When the server stops while a tool call is in flight, uvicorn cancels the
+    request after its grace period and logs the CancelledError with a full
+    traceback, although nothing went wrong. Used as a uvicorn.error log filter.
+
+    Args:
+        record: A uvicorn.error log record, rewritten in place if it is one.
+
+    Returns:
+        bool: Always True; the record is kept.
+    """
+    if record.exc_info and isinstance(record.exc_info[1], asyncio.CancelledError):
+        record.msg = "A request was cancelled because the server is stopping"
+        record.args = ()
+        record.exc_info = None
+        record.exc_text = None
+        record.levelno = logging.WARNING
+        record.levelname = logging.getLevelName(logging.WARNING)
+    return True
+
+
 def _port(value: str) -> int:
     """
     Parse a TCP port number.
@@ -274,6 +298,7 @@ def _serve_http(host: str, port: int, allowed_hosts: List[str]) -> None:
         allowed_hosts: Host header values to accept.
     """
     logger.info("Accepting Host headers: %s", ", ".join(allowed_hosts))
+    logging.getLogger("uvicorn.error").addFilter(_quiet_cancelled_request)
     signal.signal(signal.SIGTERM, signal.default_int_handler)
     try:
         mcp.run(
@@ -317,9 +342,12 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     if args.transport == "http":
         _serve_http(args.host, args.port, args.allowed_hosts)
-    else:
+        return
+    try:
         # The banner is noise on stderr for a stdio server
         mcp.run(transport="stdio", show_banner=False)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("Server stopped")
 
 
 if __name__ == "__main__":

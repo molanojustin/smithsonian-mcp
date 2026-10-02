@@ -229,12 +229,13 @@ class TestMainWiring:
     # Python 3.11+ ends an interrupted event loop with KeyboardInterrupt; 3.10
     # cancels its main task instead
     @pytest.mark.parametrize("interrupt", [KeyboardInterrupt, asyncio.CancelledError])
-    def test_interrupt_ends_http_mode_cleanly(self, runs, monkeypatch, interrupt):
+    @pytest.mark.parametrize("transport", ["http", "stdio"])
+    def test_interrupt_ends_cleanly(self, runs, monkeypatch, interrupt, transport):
         def interrupted(**kwargs):
             raise interrupt
 
         monkeypatch.setattr(main_module.mcp, "run", interrupted)
-        main_module.main(["--transport", "http"])  # returns instead of raising
+        main_module.main(["--transport", transport])  # returns instead of raising
 
 
 def _free_port() -> int:
