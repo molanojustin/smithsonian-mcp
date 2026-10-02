@@ -6,7 +6,7 @@ Access API. Codes in ``ARCHIVAL_UNIT_CODES`` only publish archival records, whic
 the object search used by this server does not return.
 """
 
-from typing import Dict, FrozenSet, List
+from typing import Dict, FrozenSet, List, Tuple
 
 from . import __version__
 
@@ -73,7 +73,7 @@ KNOWN_UNIT_CODES: List[str] = [
 ]
 
 # Units that only publish archival records (row_group "archives"), so object
-# searches return nothing for them.
+# searches return nothing for them; archive searches do.
 ARCHIVAL_UNIT_CODES: FrozenSet[str] = frozenset(
     {
         "AAA",
@@ -91,6 +91,13 @@ ARCHIVAL_UNIT_CODES: FrozenSet[str] = frozenset(
         "SAAMPAIK",
         "SI",
     }
+)
+
+# Units that publish archive records as well as objects (row_group "archives"
+# counts checked in October 2026: SIA 863,592, CFCHFOLKLIFE 73,400, NMAAHC
+# 16,427, SAAM 2,788, NPG 701, SIL 554).
+MIXED_UNIT_CODES: FrozenSet[str] = frozenset(
+    {"CFCHFOLKLIFE", "NMAAHC", "NPG", "SAAM", "SIA", "SIL"}
 )
 
 # Legacy or informal codes that users pass but the index does not use.
@@ -403,6 +410,44 @@ UNIT_INFO: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Exhibition building codes seen in onPhysicalExhibit records (October 2026),
+# with the building's name and place. Rooms are reported separately.
+EXHIBITION_BUILDINGS: Dict[str, Tuple[str, str]] = {
+    "ACM": ("Anacostia Community Museum", "Washington, DC"),
+    "CHNDM": ("Cooper Hewitt, Smithsonian Design Museum", "New York, NY"),
+    "Freer": (
+        "Freer Gallery of Art, National Museum of Asian Art",
+        "Washington, DC",
+    ),
+    "HAZY": (
+        "Steven F. Udvar-Hazy Center, National Air and Space Museum",
+        "Chantilly, VA",
+    ),
+    "HMSG": ("Hirshhorn Museum and Sculpture Garden", "Washington, DC"),
+    "NASM": ("National Air and Space Museum", "Washington, DC"),
+    "NMAAHC": (
+        "National Museum of African American History and Culture",
+        "Washington, DC",
+    ),
+    "NMAfA": ("National Museum of African Art", "Washington, DC"),
+    "NMAH": ("National Museum of American History", "Washington, DC"),
+    "NMAI DC": ("National Museum of the American Indian", "Washington, DC"),
+    "NMAI NY": (
+        "National Museum of the American Indian, George Gustav Heye Center",
+        "New York, NY",
+    ),
+    "NMNH": ("National Museum of Natural History", "Washington, DC"),
+    "NPG": ("National Portrait Gallery", "Washington, DC"),
+    "NPM": ("National Postal Museum", "Washington, DC"),
+    "Quadrangle": ("Smithsonian Quadrangle", "Washington, DC"),
+    "Renwick": ("Renwick Gallery, Smithsonian American Art Museum", "Washington, DC"),
+    "Sackler": (
+        "Arthur M. Sackler Gallery, National Museum of Asian Art",
+        "Washington, DC",
+    ),
+    "SAAM": ("Smithsonian American Art Museum", "Washington, DC"),
+}
+
 # Museum names (lowercase) mapped to unit codes, used by resolve_museum_code.
 MUSEUM_MAP: Dict[str, str] = {
     "american history": "NMAH",
@@ -460,6 +505,9 @@ MUSEUM_MAP: Dict[str, str] = {
     "cooper hewitt museum": "CHNDM",
     "smithsonian design museum": "CHNDM",
     "design": "CHNDM",
+    "african american museum": "NMAAHC",
+    "african american history museum": "NMAAHC",
+    "museum of african american history": "NMAAHC",
     "african american history": "NMAAHC",
     "african american history and culture": "NMAAHC",
     "smithsonian african american history": "NMAAHC",

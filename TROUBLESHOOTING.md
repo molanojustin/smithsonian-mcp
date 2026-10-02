@@ -40,7 +40,7 @@ curl -s -o /dev/null -D - -H "X-Api-Key: $SMITHSONIAN_API_KEY" \
   "https://api.si.edu/openaccess/api/v1.0/terms/unit_code" | grep -i ratelimit
 ```
 
-`list_museums` and `get_collection_stats` cache the collection statistics for 6 hours, so repeating them costs no further requests.
+`list_museums` caches the unit list for the life of the server, and `get_collection_stats` caches its counts for 6 hours per museum, so repeating them costs no further requests.
 
 ### The API is not responding
 
@@ -58,18 +58,18 @@ A firewall in front of the API blocks query text that looks like SQL, HTML or sc
 
 An empty result carries a `note` that explains it. Common causes:
 
-- Every word in `query` must match, so a full question or sentence usually finds nothing. Use 1 to 4 distinctive keywords, `OR` for alternatives, and `maker` for names. See [Search tips](README.md#search-tips).
+- Every word in `query` must match, so a full question or sentence usually finds nothing, or a few objects that miss the point. Results for a query with a question mark or five or more terms carry a `note` that says so. Use 1 to 4 distinctive keywords, `OR` for alternatives, `maker` for names, and filters such as `museum` and `on_view`. See [Search tips](README.md#search-tips).
 - The `offset` is past the last result. The note gives the number of results; start again from `offset=0` or follow `next_offset`.
 
 Some searches return an error instead:
 
-- 14 units, such as the Archives of American Art, publish only archival records, which object searches do not return. Searching one of them returns an error that says so; `list_museums` marks them `archival_only`.
-- A museum name the server does not recognize returns an error with examples of accepted names. `list_museums` shows every code and its aliases.
-- Years must be from 1000 to 2999. Other years, such as 500, return an error that names the accepted range.
+- 14 units, such as the Archives of American Art, publish only archive records, which object searches do not return. An object search limited to one of them returns an error that says to search again with `record_type="archives"`; `list_museums` shows each unit's `record_types`.
+- A museum name the server does not recognize returns an error with examples of accepted names, and leaving `museum` out searches every museum. `list_museums` shows every code and its aliases. "Smithsonian" on its own is not an error: it means every museum.
+- Years must be from 1000 to 2999, as numbers or as decades such as `"1860s"`. Other values, such as 500 or "the sixties", return an error that names the accepted forms.
 
 ### An on-view search at Natural History is empty
 
-`search_objects(on_view=true, museum="Natural History")` always returns nothing. The National Museum of Natural History publishes no exhibit data to Open Access, so the API cannot tell which of its objects are on display. This is a gap in the data, not a server fault, and the result's `note` says so. Check the museum's website for current exhibits.
+`search_objects(on_view=true, museum="Natural History")` always returns nothing. The National Museum of Natural History publishes no exhibit data to Open Access, so the API cannot tell which of its objects are on display. This is a gap in the data, not a server fault, and the result's `note` says so. For the same reason an on-view search without a museum never includes Natural History objects, and its `note` says that too. Check the museum's website for current exhibits.
 
 ### Objects come back without images
 

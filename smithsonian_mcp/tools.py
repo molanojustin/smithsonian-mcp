@@ -11,8 +11,10 @@ by the API firewall, an unknown object id, a rejected API key) raise ToolError
 with a next step. Any other exception is masked by the server.
 """
 
+import asyncio
 import inspect
 import logging
+import random
 import re
 import time
 from collections import Counter, deque
@@ -23,19 +25,29 @@ from typing import (
     Deque,
     Dict,
     List,
+    Literal,
     NoReturn,
     Optional,
     Tuple,
+    Union,
 )
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.tools import FunctionTool
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from .api_client import MAX_DATE_YEAR, MIN_DATE_YEAR, date_clause
+from .api_client import (
+    MAX_DATE_YEAR,
+    MIN_DATE_YEAR,
+    build_search_query,
+    date_clause,
+)
 from .constants import (
     ARCHIVAL_UNIT_CODES,
+    EXHIBITION_BUILDINGS,
+    MIXED_UNIT_CODES,
     MUSEUM_MAP,
     NMNH_AGGREGATE_CODE,
     UNIT_INFO,
@@ -45,9 +57,7 @@ from .models import (
     APIError,
     CollectionOverview,
     CollectionSearchFilter,
-    CollectionStats,
     ImageSummary,
-    MuseumCount,
     MuseumInfo,
     MuseumRef,
     ObjectDetails,
@@ -59,7 +69,6 @@ from .models import (
     TopicFacets,
 )
 from .utils import (
-    normalize_unit_code,
     record_page_url,
     resolve_museum_code,
     validate_url,
@@ -71,8 +80,13 @@ SEARCH_DEFAULT_LIMIT = 10
 SEARCH_MAX_LIMIT = 50
 EXPLORE_DEFAULT_LIMIT = 12
 EXPLORE_MAX_LIMIT = 30
-# Rows fetched at random for explore_topic; the sample and facets come from it.
-EXPLORE_POOL_SIZE = 60
+# Most relevant matches fetched for explore_topic; the sample and facets come
+# from them.
+EXPLORE_POOL_SIZE = 100
+# Words of a topic that do not identify it.
+_TOPIC_STOP_WORDS = frozenset(
+    {"and", "or", "not", "the", "of", "in", "on", "for", "with", "from", "a", "an"}
+)
 EXPLORE_MAX_TYPE_FACETS = 10
 
 MAX_IMAGES = 10
@@ -93,13 +107,33 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True, idempotentHin
 
 DATE_HELP = (
     f"date_from and date_to take four-digit years from {MIN_DATE_YEAR} to "
-    f"{MAX_DATE_YEAR}, e.g. 1865. Dates match by decade."
+    f'{MAX_DATE_YEAR}, such as 1865, or decades such as "1860s". Dates match '
+    "by decade."
 )
+_YEAR_TEXT_RE = re.compile(r"\s*(\d{1,4})\s*'?s?\s*")
 UNKNOWN_MUSEUM_HELP = (
     "Use a museum name or unit code such as 'American History' (NMAH), "
     "'Natural History' (NMNH), 'American Art' (SAAM), 'Asian Art' (NMAA), "
     "'Air and Space' (NASM) or 'Portrait Gallery' (NPG); list_museums shows "
-    "every unit."
+    "every unit. Omit museum to search every museum."
+)
+# museum values that mean the whole Smithsonian rather than one unit
+_WHOLE_SMITHSONIAN = frozenset(
+    {
+        "smithsonian",
+        "the smithsonian",
+        "smithsonian institution",
+        "the smithsonian institution",
+        "smithsonian museums",
+        "all smithsonian museums",
+        "all museums",
+        "all",
+        "any",
+    }
+)
+WHOLE_SMITHSONIAN_NOTE = (
+    "museum='{museum}' means every Smithsonian museum, so no museum filter was "
+    "applied."
 )
 NMNH_ON_VIEW_NOTE = (
     "Natural History (NMNH) records carry no on-exhibit data, so on_view=true "
@@ -109,12 +143,25 @@ NO_MATCH_NOTE = (
     "No matches. Every word in query must match: use fewer or broader keywords, "
     "OR between alternatives, maker for names, or drop a filter."
 )
+ON_VIEW_WITHOUT_MUSEUM_NOTE = (
+    "Natural History (NMNH) publishes no exhibit data, so its objects never "
+    "match on_view=true, even when on display."
+)
+SENTENCE_NOTE = (
+    "query reads like a sentence, but every word must match, so these results "
+    "can miss what was asked. Use 1-4 keywords and put the rest in filters "
+    "(museum, on_view, maker, object_type, date_from, cc0_only)."
+)
+# Free-text queries with this many terms (a quoted phrase counts once) are
+# treated as sentences.
+SENTENCE_TERMS = 5
+_QUERY_OPERATORS = frozenset({"AND", "OR", "NOT"})
 
 # Aliases from MUSEUM_MAP left out of list_museums: misspellings and a wrong
 # abbreviation that resolve_museum_code accepts but should not be advertised.
 _HIDDEN_ALIASES = frozenset({"ahm", "botony", "sculture garden"})
 
-_stats_cache: Dict[str, Tuple[float, CollectionStats]] = {}
+_stats_cache: Dict[str, Tuple[float, CollectionOverview]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +170,7 @@ _stats_cache: Dict[str, Tuple[float, CollectionStats]] = {}
 
 
 def clear_caches() -> None:
-    """Forget cached collection statistics so the next call fetches them."""
+    """Forget cached collection counts so the next call fetches them."""
     _stats_cache.clear()
 
 
@@ -143,6 +190,21 @@ def _unit_name(code: Optional[str], fallback: Optional[str] = None) -> Optional[
     return fallback or code
 
 
+def _whole_smithsonian(museum: Optional[str]) -> bool:
+    """
+    Whether a museum argument names the whole Smithsonian, such as "Smithsonian".
+
+    Args:
+        museum: The museum argument.
+
+    Returns:
+        bool: True for names of the whole institution.
+    """
+    if not museum:
+        return False
+    return " ".join(re.findall(r"[a-z]+", museum.lower())) in _WHOLE_SMITHSONIAN
+
+
 def _resolve_museum(museum: Optional[str]) -> Optional[MuseumRef]:
     """
     Resolve a museum name or code to a unit.
@@ -156,7 +218,7 @@ def _resolve_museum(museum: Optional[str]) -> Optional[MuseumRef]:
     Raises:
         ToolError: If the museum cannot be resolved.
     """
-    if museum is None or not museum.strip():
+    if museum is None or not museum.strip() or _whole_smithsonian(museum):
         return None
     code = resolve_museum_code(museum)
     if code is None:
@@ -191,27 +253,48 @@ def _raise_for_api_error(exc: APIError) -> NoReturn:
             "The Smithsonian API rate limit for this API key was reached. Try "
             "again later."
         ) from exc
-    if exc.error in ("request_error", "stats_failed") or (exc.status_code or 0) >= 500:
+    if exc.error == "request_error" or (exc.status_code or 0) >= 500:
         raise ToolError(
             "The Smithsonian API is not responding right now. Try again shortly."
         ) from exc
     raise exc
 
 
-def _archival_only_error(unit: MuseumRef) -> ToolError:
+def record_types(code: str) -> List[str]:
+    """
+    The search_objects record_type values that return records for a unit.
+
+    Args:
+        code: Unit code.
+
+    Returns:
+        List[str]: ["objects"], ["archives"] or both.
+    """
+    if code in ARCHIVAL_UNIT_CODES:
+        return ["archives"]
+    if code in MIXED_UNIT_CODES:
+        return ["objects", "archives"]
+    return ["objects"]
+
+
+def _archival_only_error(unit: MuseumRef, tool: str = "search_objects") -> ToolError:
     """
     Explain that a museum holds only archive records.
 
     Args:
         unit: The archival-only unit.
+        tool: The tool that was called.
 
     Returns:
         ToolError: Error with a next step.
     """
+    if tool == "explore_topic":
+        step = "explore_topic samples objects; use search_objects with "
+    else:
+        step = "Search again with "
     return ToolError(
-        f"{unit.name} ({unit.code}) publishes only archival records, which object "
-        "searches do not return. Search without museum, or pick a museum from "
-        "list_museums that is not archival_only."
+        f"{unit.name} ({unit.code}) holds only archive records, which object "
+        f"searches do not return. {step}record_type='archives'."
     )
 
 
@@ -232,56 +315,107 @@ async def _search(filters: CollectionSearchFilter) -> SearchResult:
         _raise_for_api_error(exc)
 
 
-async def _collection_stats() -> CollectionStats:
+async def _count(filters: CollectionSearchFilter) -> int:
     """
-    Collection statistics from /stats, cached for STATS_CACHE_SECONDS.
-
-    Returns:
-        CollectionStats: Statistics with per-unit counts when /stats answered.
-    """
-    cached = _stats_cache.get("stats")
-    if cached and time.monotonic() - cached[0] < STATS_CACHE_SECONDS:
-        return cached[1]
-    client = await get_api_client()
-    try:
-        stats = await client.get_collection_stats()
-    except APIError as exc:
-        _raise_for_api_error(exc)
-    if stats.units:
-        # Fallback figures without per-unit counts are not kept
-        _stats_cache["stats"] = (time.monotonic(), stats)
-    return stats
-
-
-def _museum_counts(stats: CollectionStats) -> List[MuseumCount]:
-    """
-    Per-unit record counts from /stats, under the codes searches use.
-
-    /stats still reports the legacy FSG (Freer|Sackler) unit next to NMAA; its
-    records are searched as NMAA, so its counts are added to NMAA.
+    Number of records a search would return, without fetching any.
 
     Args:
-        stats: Collection statistics.
+        filters: Search filters, built exactly as search_objects builds them.
 
     Returns:
-        List[MuseumCount]: One entry per unit code, in /stats order.
+        int: The search's total count.
     """
-    merged: Dict[str, MuseumCount] = {}
-    for unit in stats.units:
-        code = normalize_unit_code(unit.unit_code) or unit.unit_code
-        entry = merged.get(code)
-        if entry is None:
-            merged[code] = MuseumCount(
-                code=code,
-                name=_unit_name(code, unit.unit_name) or code,
-                object_count=unit.total_objects,
-                cc0=unit.cc0_objects,
-            )
-            continue
-        entry.object_count += unit.total_objects
-        if unit.cc0_objects is not None:
-            entry.cc0 = (entry.cc0 or 0) + unit.cc0_objects
-    return list(merged.values())
+    client = await get_api_client()
+    return await client.count_matches(
+        build_search_query(filters), row_group=filters.row_group
+    )
+
+
+async def _collection_counts(unit: Optional[MuseumRef]) -> CollectionOverview:
+    """
+    Searchable record counts, cached for STATS_CACHE_SECONDS.
+
+    Each figure is the total_count of the search_objects call it describes, so
+    the numbers always agree with search results.
+
+    Args:
+        unit: Museum to count, or None for the whole collection.
+
+    Returns:
+        CollectionOverview: The counts.
+    """
+    key = unit.code if unit else ""
+    cached = _stats_cache.get(key)
+    if cached and time.monotonic() - cached[0] < STATS_CACHE_SECONDS:
+        return cached[1]
+    code = unit.code if unit else None
+    try:
+        objects, archives, with_images, cc0 = await asyncio.gather(
+            _count(CollectionSearchFilter(unit_code=code)),
+            _count(CollectionSearchFilter(unit_code=code, row_group="archives")),
+            _count(CollectionSearchFilter(unit_code=code, has_images=True)),
+            _count(CollectionSearchFilter(unit_code=code, is_cc0=True)),
+        )
+    except APIError as exc:
+        _raise_for_api_error(exc)
+    overview = CollectionOverview(
+        museum=unit,
+        objects=objects,
+        archive_records=archives,
+        objects_with_images=with_images,
+        objects_with_cc0_media=cc0,
+    )
+    _stats_cache[key] = (time.monotonic(), overview)
+    return overview
+
+
+def _year_text(value: Optional[Union[int, str]]) -> Optional[str]:
+    """
+    Normalize a year argument for the client's date filter.
+
+    Args:
+        value: A year (1865), a year string ("1865") or a decade ("1860s").
+
+    Returns:
+        Optional[str]: The year as text, or None if no year was given.
+
+    Raises:
+        ToolError: If the value is not a year or decade.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, bool):
+        raise ToolError(DATE_HELP)
+    if isinstance(value, int):
+        return str(value)
+    match = _YEAR_TEXT_RE.fullmatch(value)
+    if not match:
+        raise ToolError(DATE_HELP)
+    return match.group(1)
+
+
+def _reads_like_a_sentence(query: Optional[str]) -> bool:
+    """
+    Whether a free-text query looks like a question or sentence.
+
+    Args:
+        query: The query.
+
+    Returns:
+        bool: True if it contains "?" or SENTENCE_TERMS or more terms, where a
+        quoted phrase counts once and AND, OR and NOT are not counted.
+    """
+    if not query:
+        return False
+    if "?" in query:
+        return True
+    unquoted = re.sub(r'"[^"]*"', " PHRASE ", query)
+    terms = [
+        word
+        for word in re.findall(r"[\w'-]+", unquoted)
+        if word.upper() not in _QUERY_OPERATORS
+    ]
+    return len(terms) >= SENTENCE_TERMS
 
 
 def _trim(text: Optional[str], limit: int) -> Optional[str]:
@@ -310,21 +444,27 @@ def _location_name(location: Optional[str]) -> Optional[str]:
     """
     Readable exhibition location.
 
-    Exhibition blocks name the building by unit code ("NMAH"), optionally
-    followed by a room; the code is replaced with the museum name.
+    Exhibition blocks name the building by a code ("NMAH", "HAZY", "NMAI NY"),
+    optionally followed by a room. Known codes become the building's name and
+    place, with the room in between.
 
     Args:
-        location: Location as parsed by the client ("NMAH" or "NMAH, Gallery 3").
+        location: Location as parsed by the client ("NMAH" or "Freer, Gallery 19").
 
     Returns:
-        Optional[str]: The location with a known building code spelled out.
+        Optional[str]: The location, e.g. "Steven F. Udvar-Hazy Center, National
+        Air and Space Museum, Chantilly, VA".
     """
     if not location:
         return None
-    building, _, rest = location.partition(", ")
-    if building in UNIT_INFO:
-        building = UNIT_INFO[building]["name"]
-    return f"{building}, {rest}" if rest else building
+    building, _, room = location.partition(", ")
+    if building in EXHIBITION_BUILDINGS:
+        name, place = EXHIBITION_BUILDINGS[building]
+    elif building in UNIT_INFO:
+        name, place = UNIT_INFO[building]["name"], UNIT_INFO[building]["location"]
+    else:
+        return location
+    return ", ".join(part for part in (name, room, place) if part)
 
 
 def _web_url(obj: SmithsonianObject) -> Optional[str]:
@@ -341,7 +481,12 @@ def _web_url(obj: SmithsonianObject) -> Optional[str]:
     Returns:
         Optional[str]: A validated http(s) URL, or None.
     """
-    candidates = (obj.record_link, record_page_url(obj.record_id), obj.guid, obj.url)
+    candidates = (
+        obj.record_link,
+        record_page_url(obj.record_id, obj.unit_code),
+        obj.guid,
+        obj.url,
+    )
     for candidate in candidates:
         url = validate_url(str(candidate)) if candidate else None
         if url:
@@ -388,6 +533,7 @@ def _summary_fields(obj: SmithsonianObject, max_makers: int) -> Dict[str, Any]:
         "on_view": obj.is_on_view,
         "exhibition_title": obj.exhibition_title,
         "exhibition_location": _location_name(obj.exhibition_location),
+        "collection": obj.collection,
         "thumbnail_url": _thumbnail(obj),
         "web_url": _web_url(obj),
     }
@@ -461,7 +607,13 @@ def _details(obj: SmithsonianObject) -> ObjectDetails:
         images=[
             ImageSummary(
                 url=str(image.url) if image.url else None,
-                thumbnail_url=str(image.thumbnail_url) if image.thumbnail_url else None,
+                download_url=str(image.download_url) if image.download_url else None,
+                # Often the same delivery URL as url
+                thumbnail_url=(
+                    str(image.thumbnail_url)
+                    if image.thumbnail_url and image.thumbnail_url != image.url
+                    else None
+                ),
                 iiif_url=str(image.iiif_url) if image.iiif_url else None,
                 caption=_trim(image.caption, MAX_SHORT_TEXT_CHARS),
                 is_cc0=image.is_cc0,
@@ -513,11 +665,12 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
     maker: Optional[str] = None,
     topic: Optional[str] = None,
     material: Optional[str] = None,
-    date_from: Optional[int] = None,
-    date_to: Optional[int] = None,
+    date_from: Optional[Union[int, str]] = None,
+    date_to: Optional[Union[int, str]] = None,
     has_images: bool = False,
     cc0_only: bool = False,
     on_view: Optional[bool] = None,
+    record_type: Literal["objects", "archives"] = "objects",
     limit: Annotated[int, Field(ge=1, le=SEARCH_MAX_LIMIT)] = SEARCH_DEFAULT_LIMIT,
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> ObjectSearchResults:
@@ -537,12 +690,18 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
         maker: Creator name, e.g. "Winslow Homer".
         topic: Subject term, e.g. "Civil War".
         material: Material or medium, e.g. "bronze".
-        date_from: Earliest year, matched with decade precision.
-        date_to: Latest year, matched with decade precision.
+        date_from: Earliest year, such as 1860 or "1860s", matched by decade.
+            Some records are dated by their subject, so later books about a
+            period can match.
+        date_to: Latest year, matched by decade.
         has_images: Only objects with images.
         cc0_only: Only objects with CC0 (public domain) media.
         on_view: true for objects on physical exhibit now, false for objects
-            not on exhibit.
+            not on exhibit. Natural History (NMNH) has no exhibit data, so its
+            objects never match true.
+        record_type: "objects", or "archives" for archival collections and
+            their folders and items (papers, photographs, recordings), which
+            the API searches separately from objects.
         limit: Results per page.
         offset: Start position; pass next_offset to get the next page.
 
@@ -550,8 +709,8 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
         ObjectSearchResults: Total count, pagination and object summaries.
     """
     unit = _resolve_museum(museum)
-    date_start = str(date_from) if date_from is not None else None
-    date_end = str(date_to) if date_to is not None else None
+    date_start = _year_text(date_from)
+    date_end = _year_text(date_to)
     try:
         date_clause(date_start, date_end)
     except ValueError as exc:
@@ -570,21 +729,38 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
             has_images=True if has_images else None,
             is_cc0=True if cc0_only else None,
             on_view=on_view,
+            row_group=record_type,
             limit=limit,
             offset=offset,
         )
     )
 
-    note = None
+    notes: List[str] = []
+    sentence = _reads_like_a_sentence(query)
     if result.total_count == 0:
-        if unit and unit.code in ARCHIVAL_UNIT_CODES:
+        if unit and record_type == "objects" and unit.code in ARCHIVAL_UNIT_CODES:
             raise _archival_only_error(unit)
-        if unit and unit.code.startswith(NMNH_AGGREGATE_CODE) and on_view:
-            note = NMNH_ON_VIEW_NOTE
-        else:
-            note = NO_MATCH_NOTE
+        if (
+            unit
+            and record_type == "archives"
+            and "archives" not in record_types(unit.code)
+        ):
+            notes.append(
+                f"{unit.name} has no archive records; use record_type='objects'."
+            )
+        elif unit and unit.code.startswith(NMNH_AGGREGATE_CODE) and on_view:
+            notes.append(NMNH_ON_VIEW_NOTE)
+        elif not sentence:
+            notes.append(NO_MATCH_NOTE)
     elif not result.objects and offset >= result.total_count:
-        note = f"offset is past the last of {result.total_count} results."
+        notes.append(f"offset is past the last of {result.total_count} results.")
+    if _whole_smithsonian(museum):
+        notes.append(WHOLE_SMITHSONIAN_NOTE.format(museum=museum.strip()))
+    if on_view and unit is None:
+        notes.append(ON_VIEW_WITHOUT_MUSEUM_NOTE)
+    if sentence:
+        notes.append(SENTENCE_NOTE)
+    note = " ".join(notes) or None
 
     return ObjectSearchResults(
         total_count=result.total_count,
@@ -626,38 +802,24 @@ async def get_object(object_id: str) -> ObjectDetails:
 
 async def list_museums() -> List[MuseumInfo]:
     """
-    Smithsonian units in Open Access with their codes, object counts and the
-    names the museum argument accepts. archival_only units hold archive records,
-    which object searches do not return.
+    Smithsonian units in Open Access: codes, names, the record_type values that
+    return their records, and the names the museum argument accepts. For counts
+    use get_collection_stats.
 
     Returns:
         List[MuseumInfo]: One entry per unit code, plus NMNH for all Natural
         History departments.
     """
     client = await get_api_client()
-    units = await client.get_units()
-    counts: Dict[str, int] = {}
     try:
-        stats = await _collection_stats()
-        counts = {museum.code: museum.object_count for museum in _museum_counts(stats)}
-    except (ToolError, APIError) as exc:
-        cause = exc if isinstance(exc, APIError) else exc.__cause__
-        if isinstance(cause, APIError) and cause.error == "api_key_rejected":
-            raise
-        logger.warning("Listing museums without counts: %s", exc)
-    if counts:
-        counts[NMNH_AGGREGATE_CODE] = sum(
-            count
-            for code, count in counts.items()
-            if code.startswith(NMNH_AGGREGATE_CODE)
-        )
-
+        units = await client.get_units()
+    except APIError as exc:
+        _raise_for_api_error(exc)
     return [
         MuseumInfo(
             code=unit.code,
             name=unit.name,
-            object_count=counts.get(unit.code),
-            archival_only=True if unit.archival_only else None,
+            record_types=record_types(unit.code),
             aliases=[
                 alias
                 for alias in _ALIASES.get(unit.code, [])
@@ -695,14 +857,50 @@ def _interleave_types(objects: List[SmithsonianObject]) -> Deque[SmithsonianObje
     return ordered
 
 
+def _allocate(groups: Dict[str, List[SmithsonianObject]], limit: int) -> Dict[str, int]:
+    """
+    Picks per museum, in proportion to its share of the pool, at least one each.
+
+    Museums are served largest first, so when there are more museums than
+    picks the smallest get none. Largest remainders settle the rounding.
+
+    Args:
+        groups: Pool objects by museum, largest groups first.
+        limit: Number of picks.
+
+    Returns:
+        Dict[str, int]: Picks per museum.
+    """
+    total = sum(len(group) for group in groups.values()) or 1
+    quota = {code: 0 for code in groups}
+    for code in list(groups)[:limit]:
+        quota[code] = 1
+    remaining = limit - sum(quota.values())
+    while remaining > 0:
+        open_codes = [code for code in groups if quota[code] < len(groups[code])]
+        if not open_codes:
+            break
+        code = max(
+            open_codes,
+            key=lambda c: len(groups[c]) / total * limit - quota[c],
+        )
+        quota[code] += 1
+        remaining -= 1
+    return quota
+
+
 def _diverse_sample(
     pool: List[SmithsonianObject], limit: int
 ) -> List[SmithsonianObject]:
     """
-    Pick objects round-robin across museums, and across types within a museum.
+    Pick objects across museums in proportion to their share of the pool.
+
+    Within a museum, consecutive picks differ in object type where possible,
+    and the pool order (relevance) is kept within each type. The picks are
+    then interleaved across museums.
 
     Args:
-        pool: Candidate objects, preferred ones first.
+        pool: Candidate objects, most relevant first.
         limit: Number of objects to pick.
 
     Returns:
@@ -711,13 +909,19 @@ def _diverse_sample(
     groups: Dict[str, List[SmithsonianObject]] = {}
     for obj in pool:
         groups.setdefault(obj.unit_code or "", []).append(obj)
-    queues = [_interleave_types(group) for group in groups.values()]
+    groups = dict(sorted(groups.items(), key=lambda item: -len(item[1])))
+    quota = _allocate(groups, limit)
+    queues = [
+        deque(list(_interleave_types(group))[: quota[code]])
+        for code, group in groups.items()
+        if quota[code]
+    ]
     picks: List[SmithsonianObject] = []
-    while len(picks) < limit and any(queues):
+    while any(queues):
         for queue in queues:
-            if queue and len(picks) < limit:
+            if queue:
                 picks.append(queue.popleft())
-    return picks
+    return picks[:limit]
 
 
 def _facets(pool: List[SmithsonianObject]) -> TopicFacets:
@@ -747,16 +951,121 @@ def _facets(pool: List[SmithsonianObject]) -> TopicFacets:
     )
 
 
+def _topic_stems(topic: str) -> List[str]:
+    """
+    Lowercase stems of the words that identify a topic.
+
+    Args:
+        topic: Topic keywords, e.g. "space exploration".
+
+    Returns:
+        List[str]: Stems such as ["space", "exploration"]; plural "s" dropped.
+    """
+    stems = []
+    for word in re.findall(r"[a-z0-9]+", topic.lower()):
+        if word in _TOPIC_STOP_WORDS or len(word) < 3:
+            continue
+        stems.append(word[:-1] if len(word) > 4 and word.endswith("s") else word)
+    return stems
+
+
+def _topic_score(obj: SmithsonianObject, stems: List[str]) -> int:
+    """
+    How many topic stems name the object in its title, type or subject topics.
+
+    Free-text search also matches words in places, notes and citations (a
+    lichen collected at Dinosaur National Monument matches "dinosaurs"), so
+    objects that name the topic in these fields are preferred.
+
+    Args:
+        obj: Candidate object.
+        stems: Stems from _topic_stems.
+
+    Returns:
+        int: Number of stems found; stems of four or more letters also match
+        longer words ("space" matches "Spacecraft").
+    """
+    text = " ".join([obj.title or "", obj.object_type or "", *(obj.topics or [])])
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return sum(
+        1
+        for stem in stems
+        if any(
+            word == stem or (len(stem) >= 4 and word.startswith(stem)) for word in words
+        )
+    )
+
+
+def _rank_pool(
+    pool: List[SmithsonianObject], topic: str
+) -> Tuple[List[SmithsonianObject], List[SmithsonianObject]]:
+    """
+    Split a relevance-ordered pool into objects that name the topic and the rest.
+
+    Objects naming more topic words come first; ties are shuffled so repeated
+    calls vary. The rest keep the API's relevance order.
+
+    Args:
+        pool: Search results, most relevant first.
+        topic: The topic.
+
+    Returns:
+        Tuple: (objects naming the topic, other objects).
+    """
+    stems = _topic_stems(topic)
+    scored: Dict[int, List[SmithsonianObject]] = {}
+    for obj in pool:
+        scored.setdefault(_topic_score(obj, stems), []).append(obj)
+    named: List[SmithsonianObject] = []
+    for score in sorted((score for score in scored if score), reverse=True):
+        tier = scored[score]
+        random.shuffle(tier)
+        named += tier
+    return named, scored.get(0, [])
+
+
+def _explore_note(
+    topic: str, total_count: int, matches: str, named: int, others: int
+) -> str:
+    """
+    Describe an explore_topic sample.
+
+    Args:
+        topic: The topic.
+        total_count: Matches of the search the pool came from.
+        matches: What was matched, "matches" or "matches with images".
+        named: Pooled objects that name the topic.
+        others: Other pooled objects.
+
+    Returns:
+        str: The note.
+    """
+    if total_count == 0:
+        return f"No objects match '{topic}'. Try a broader or different keyword."
+    if named:
+        return (
+            f"{named} of the {named + others} most relevant of {total_count} "
+            f"{matches} name the topic in their title, type or subjects; the "
+            "sample and facets favor them. Call again for a different sample."
+        )
+    return (
+        f"Sample of the {others} most relevant of {total_count} {matches}; none "
+        "names the topic in its title, type or subjects, so check that the "
+        "results fit."
+    )
+
+
 async def explore_topic(
     topic: str,
     museum: Optional[str] = None,
     limit: Annotated[int, Field(ge=1, le=EXPLORE_MAX_LIMIT)] = EXPLORE_DEFAULT_LIMIT,
 ) -> TopicExploration:
     """
-    A varied random sample of objects about a topic, spread across museums and
-    object types, with counts by museum and type. Use it for open-ended
-    browsing; use search_objects to find specific things. Each call returns a
-    different sample.
+    A varied sample of objects about a topic, spread across museums in
+    proportion to their matches and across object types, with counts by museum
+    and type. Prefers objects with images whose title, type or subject names the
+    topic. Use it for open-ended browsing; use search_objects to find specific
+    things. Calls can return different samples.
 
     Args:
         topic: Topic keywords, e.g. "dinosaurs" or "jazz". Every word must match.
@@ -770,45 +1079,39 @@ async def explore_topic(
     if not topic:
         raise ToolError("topic is required, e.g. 'dinosaurs' or 'jazz'.")
     unit = _resolve_museum(museum)
-    unit_code = unit.code if unit else None
 
-    # Objects with images first; the topic is always part of the query
-    with_images = await _search(
-        CollectionSearchFilter(
+    def filters(has_images: bool) -> CollectionSearchFilter:
+        # The topic is always part of the query
+        return CollectionSearchFilter(
             query=topic,
-            unit_code=unit_code,
-            has_images=True,
-            sort="random",
+            unit_code=unit.code if unit else None,
+            has_images=has_images or None,
             limit=EXPLORE_POOL_SIZE,
         )
-    )
-    pool = list(with_images.objects)
-    total_count = with_images.total_count
+
+    result = await _search(filters(True))
+    total_count = result.total_count
     matches = "matches with images"
-    picks = _diverse_sample(pool, limit)
-    if len(picks) < limit:
-        # Too few with images: fill up with objects without images
-        everything = await _search(
-            CollectionSearchFilter(
-                query=topic, unit_code=unit_code, sort="random", limit=EXPLORE_POOL_SIZE
-            )
+    named, others = _rank_pool(result.objects, topic)
+    if len(named) + len(others) < limit:
+        # Too few with images: add the most relevant without images
+        everything = await _search(filters(False))
+        seen = {obj.id for obj in named + others}
+        extra = _rank_pool(
+            [obj for obj in everything.objects if obj.id not in seen], topic
         )
-        seen = {obj.id for obj in pool}
-        rest = [obj for obj in everything.objects if obj.id not in seen]
-        picks += _diverse_sample(rest, limit - len(picks))
-        pool += rest
+        named += extra[0]
+        others += extra[1]
         total_count = everything.total_count
         matches = "matches"
 
-    if total_count == 0:
-        if unit and unit.code in ARCHIVAL_UNIT_CODES:
-            raise _archival_only_error(unit)
-        note = f"No objects match '{topic}'. Try a broader or different keyword."
-    else:
-        note = (
-            f"Random sample; facets count a pool of {len(pool)} of the "
-            f"{total_count} {matches}. Call again for a different sample."
-        )
+    picks = _diverse_sample(named, limit)
+    picks += _diverse_sample(others, limit - len(picks))
+    if total_count == 0 and unit and unit.code in ARCHIVAL_UNIT_CODES:
+        raise _archival_only_error(unit, "explore_topic")
+    note = _explore_note(topic, total_count, matches, len(named), len(others))
+    if _whole_smithsonian(museum):
+        note = WHOLE_SMITHSONIAN_NOTE.format(museum=museum.strip()) + " " + note
 
     return TopicExploration(
         total_count=total_count,
@@ -818,39 +1121,23 @@ async def explore_topic(
         museum=unit,
         objects=[_summarize(obj) for obj in picks],
         note=note,
-        facets=_facets(pool),
+        facets=_facets(named or others),
     )
 
 
-async def get_collection_stats() -> CollectionOverview:
+async def get_collection_stats(museum: Optional[str] = None) -> CollectionOverview:
     """
-    Collection totals (all records, CC0 records, objects with images) and
-    record counts per museum.
+    Counts of searchable objects, archive records, objects with images and
+    objects with CC0 media, for the whole collection or one museum. Each count
+    equals the total_count of the matching search_objects call.
+
+    Args:
+        museum: Optional museum name or unit code.
 
     Returns:
-        CollectionOverview: Totals and per-museum counts, largest first.
+        CollectionOverview: The counts.
     """
-    stats = await _collection_stats()
-    museums = sorted(
-        _museum_counts(stats), key=lambda museum: museum.object_count, reverse=True
-    )
-    if stats.units:
-        as_of = stats.last_updated.strftime("%Y-%m")
-        note = (
-            "Counts are from the API /stats endpoint and include archival records; "
-            "with_images counts searchable objects that have images."
-        )
-    else:
-        as_of = None
-        note = stats.notes
-    return CollectionOverview(
-        total_objects=stats.total_objects,
-        cc0=stats.total_cc0,
-        with_images=stats.total_with_images,
-        as_of=as_of,
-        museums=museums,
-        note=note,
-    )
+    return await _collection_counts(_resolve_museum(museum))
 
 
 TOOLS = (
@@ -888,9 +1175,14 @@ def register_tools(server: FastMCP) -> None:
         server: The FastMCP server.
     """
     for function, title in TOOLS:
-        server.tool(
+        tool = FunctionTool.from_function(
             function,
             title=title,
             description=summary_of(function),
             annotations=READ_ONLY,
         )
+        # Argument descriptions come from wrapped docstring lines
+        for schema in tool.parameters.get("properties", {}).values():
+            if isinstance(schema.get("description"), str):
+                schema["description"] = " ".join(schema["description"].split())
+        server.add_tool(tool)

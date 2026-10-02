@@ -90,7 +90,9 @@ async def test_get_object_for_elmo():
         "https://americanhistory.si.edu/collections/object/nmah_1444757"
     )
     assert result["exhibition_title"] == "Entertainment Nation"
-    assert result["exhibition_location"] == "National Museum of American History"
+    assert result["exhibition_location"] == (
+        "National Museum of American History, Washington, DC"
+    )
     assert tokens < 2500
 
 
@@ -102,6 +104,12 @@ async def test_explore_topic_applies_the_topic_with_a_museum():
     assert result["returned"] == 12
     assert all(obj["museum_code"].startswith("NMNH") for obj in result["objects"])
     assert sum(result["facets"]["museums"].values()) >= result["returned"]
+    on_topic = [
+        obj
+        for obj in result["objects"]
+        if "dinosaur" in (obj["title"] + obj.get("object_type", "")).lower()
+    ]
+    assert len(on_topic) >= 10
     assert tokens < 3000
 
 
@@ -114,11 +122,23 @@ async def test_natural_history_on_view_has_a_note():
     assert "NMNH" in result["note"]
 
 
-async def test_archival_only_museum_is_explained():
+async def test_archival_only_museum_is_searched_as_archives():
     text = await call_error(
         "search_objects", {"query": "letters", "museum": "Archives of American Art"}
     )
-    assert "archival" in text
+    assert "record_type='archives'" in text
+    result, _ = await call(
+        "search_objects",
+        {
+            "query": "letters",
+            "museum": "Archives of American Art",
+            "record_type": "archives",
+            "limit": 3,
+        },
+    )
+    assert result["total_count"] > 1000 and result["returned"] == 3
+    assert all(obj["museum_code"] == "AAA" for obj in result["objects"])
+    assert all(obj.get("collection") for obj in result["objects"])
 
 
 async def test_firewall_rejection_is_explained():
@@ -126,14 +146,22 @@ async def test_firewall_rejection_is_explained():
     assert "rephrase" in text
 
 
-async def test_museums_and_stats_fold_fsg_into_asian_art():
+async def test_counts_agree_with_search_totals():
     museums, museums_tokens = await call("list_museums")
-    stats, stats_tokens = await call("get_collection_stats")
     listed = {museum["code"]: museum for museum in museums["result"]}
-    counted = {museum["code"]: museum for museum in stats["museums"]}
-    assert "FSG" not in listed and "FSG" not in counted
-    assert listed["NMAA"]["object_count"] == counted["NMAA"]["object_count"] > 0
-    assert listed["AAA"]["archival_only"] is True
-    assert listed["NMNH"]["object_count"] > 1_000_000
-    assert stats["total_objects"] > stats["with_images"] > 0
-    assert json.dumps(museums) and museums_tokens < 3000 and stats_tokens < 2000
+    assert "FSG" not in listed
+    assert listed["AAA"]["record_types"] == ["archives"]
+    assert listed["NASM"]["record_types"] == ["objects"]
+    stats, stats_tokens = await call(
+        "get_collection_stats", {"museum": "Air and Space"}
+    )
+    search, _ = await call("search_objects", {"museum": "NASM", "limit": 1})
+    assert stats["objects"] == search["total_count"] > 0
+    assert stats["objects"] >= stats["objects_with_images"]
+    assert json.dumps(museums) and museums_tokens < 2500 and stats_tokens < 200
+
+
+async def test_lowercase_or_is_an_operator():
+    lower, _ = await call("search_objects", {"query": "muppet or henson", "limit": 1})
+    upper, _ = await call("search_objects", {"query": "muppet OR henson", "limit": 1})
+    assert lower["total_count"] == upper["total_count"] > 1000

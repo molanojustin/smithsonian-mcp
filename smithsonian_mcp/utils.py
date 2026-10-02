@@ -241,7 +241,10 @@ def resolve_museum_code(museum_name: str) -> Optional[str]:
     Resolve a museum name or code to the correct Smithsonian unit code.
 
     This function provides flexible matching for museum names, handling common
-    variations and partial matches. It supports:
+    variations and partial matches. Every informative word of the input (not
+    "museum", "smithsonian", "american" and the like) must appear in the
+    matched name, so "African American Museum" is not taken for African Art.
+    It supports:
     - Exact matches: "asian art" -> "NMAA"
     - Partial matches: "Smithsonian Asian Art Museum" -> "NMAA"
     - Direct codes, case-insensitive: "SAAM" -> "SAAM", "nmafa" -> "NMAfA"
@@ -293,27 +296,22 @@ def resolve_museum_code(museum_name: str) -> Optional[str]:
     if contained:
         return museum_map[max(contained, key=len)]
 
-    # Input contained in a map key, ignoring generic words such as "museum"
+    # Input contained in a map key: the whole name first ("african american"
+    # in "african american history"), as long as it has an informative word
     informative = [w for w in cleaned.split() if w not in _NAME_STOP_WORDS]
     if informative:
-        phrase = f" {' '.join(informative)} "
+        phrase = f" {cleaned} "
         containing = [key for key in museum_map if phrase in f" {key} "]
         if containing:
             return museum_map[min(containing, key=len)]
 
-    # Word overlap on informative words
-    input_words = set(informative)
-    best_code: Optional[str] = None
-    best_score = 0.0
-    for key, code in museum_map.items():
-        key_words = set(key.split()) - _NAME_STOP_WORDS
-        if not key_words or not input_words:
-            continue
-        score = len(input_words & key_words) / len(key_words)
-        if score > 0.5 and score > best_score:
-            best_code, best_score = code, score
+        # Every informative word in one map key, in any order
+        wanted = set(informative)
+        containing = [key for key in museum_map if wanted <= set(key.split())]
+        if containing:
+            return museum_map[min(containing, key=len)]
 
-    return best_code
+    return None
 
 
 def validate_url(url_str: Optional[str]) -> Optional[str]:
@@ -407,17 +405,23 @@ def _normalize_museum_code(record_id_prefix: str) -> str:
     return prefix.upper()
 
 
-def record_page_url(record_id: Optional[str]) -> Optional[str]:
+def record_page_url(
+    record_id: Optional[str], unit_code: Optional[str] = None
+) -> Optional[str]:
     """
     Build an object page URL from a record_id alone, without any request.
 
     Only museums whose URL pattern needs nothing but the record_id or accession
-    number are handled (NMAH, NMAA, NPG, NPM, SIA, several NMNH departments, ...).
-    Museums whose pages need record data (record_link, guid, EDAN URL or IDS id)
-    return None.
+    number are handled (NMAH, NMAA, NMAAHC, NPG, NPM, SIA, several NMNH
+    departments). Each was checked against live pages in October 2026. Museums
+    whose pages need record data (record_link, guid, EDAN URL or IDS id) return
+    None.
 
     Args:
         record_id: Record identifier such as ``nmah_1448973`` or ``fsg_F1900.47``.
+        unit_code: Unit of the record, if known. SIRIS archive ids
+            (``siris_arc_...``) are shared by several units, but only the
+            Smithsonian Institution Archives (SIA) has pages for them.
 
     Returns:
         Optional[str]: The page URL, or None if it cannot be built from the id.
@@ -428,6 +432,8 @@ def record_page_url(record_id: Optional[str]) -> Optional[str]:
 
     # Smithsonian Institution Archives records use SIRIS ids ("siris_arc_403511")
     if record_id_prefix.lower() == "siris" and accession.lower().startswith("arc_"):
+        if unit_code not in (None, "SIA"):
+            return None
         museum_code = "SIA"
     else:
         museum_code = _normalize_museum_code(record_id_prefix)

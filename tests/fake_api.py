@@ -168,7 +168,7 @@ class FakeAPI:
         )
         self.records: Dict[str, Dict[str, Any]] = {}
         self.stats: Union[Dict[str, Any], httpx.Response] = DEFAULT_STATS
-        self.unit_codes: List[str] = list(DEFAULT_UNIT_CODES)
+        self.unit_codes: Union[List[str], httpx.Response] = list(DEFAULT_UNIT_CODES)
 
     @property
     def searches(self) -> List[Dict[str, str]]:
@@ -208,6 +208,8 @@ class FakeAPI:
                 return self._respond(stats, request)
             return self._respond({"status": 200, "response": stats}, request)
         if path == "terms/unit_code":
+            if isinstance(self.unit_codes, httpx.Response):
+                return self._respond(self.unit_codes, request)
             body = {"status": 200, "response": {"terms": self.unit_codes}}
             return self._respond(body, request)
         if path.startswith("content/"):
@@ -245,3 +247,21 @@ def key_403() -> httpx.Response:
         403,
         json={"error": {"code": "API_KEY_INVALID", "message": "An invalid key"}},
     )
+
+
+def counting_search(counts: Dict[tuple, int]) -> Callable[[Dict[str, str]], Dict]:
+    """
+    A search handler that answers with a total count and no rows.
+
+    Args:
+        counts: Totals keyed by (q, row_group), row_group None for objects.
+
+    Returns:
+        Callable: Handler for FakeAPI.search; unknown queries count 0.
+    """
+
+    def search(params: Dict[str, str]) -> Dict:
+        key = (params["q"], params.get("row_group"))
+        return search_payload([], total=counts.get(key, 0))
+
+    return search

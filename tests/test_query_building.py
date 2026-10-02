@@ -149,6 +149,25 @@ class TestFreeText:
         )
 
 
+class TestLowercaseOperators:
+    """Lowercase or/and between terms are operators; not stays a word."""
+
+    @pytest.mark.parametrize(
+        "query, expected",
+        [
+            ("muppet or henson", "(muppet OR henson) AND *"),
+            ("muppet and henson", "muppet AND henson"),
+            ("puppet or (bert and ernie)", "(puppet OR (bert AND ernie)) AND *"),
+            ("war not peace", "war AND not AND peace"),
+            ("or", "or"),
+            ("muppet or", "muppet AND or"),
+            ('"rock or roll"', '"rock or roll"'),
+        ],
+    )
+    def test_lowercase_operators(self, query, expected):
+        assert build_search_query(CollectionSearchFilter(query=query)) == expected
+
+
 class TestFilters:
     """Each CollectionSearchFilter field maps to a fielded clause."""
 

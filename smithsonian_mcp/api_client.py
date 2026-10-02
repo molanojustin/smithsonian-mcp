@@ -141,6 +141,8 @@ _DIMENSION_LABELS = ("dimension", "measurement")
 _DECADE_RE = re.compile(r"^(\d{3,4})s$")
 # Labels that mention a creator but describe someone else's role.
 _NOT_MAKER_LABEL_PREFIXES = ("formerly", "copy after", "after", "possible owner")
+# API errors that a caller must see as they are: a rejected key or rate limiting.
+_CALLER_ERRORS = frozenset({"api_key_rejected", "rate_limit_exceeded"})
 # freetext.objectType labels that hold something other than a type: Paleobiology
 # records put the literature citation of a type specimen there.
 _NOT_OBJECT_TYPE_LABELS = frozenset({"type citation"})
@@ -157,6 +159,8 @@ _BOOLEAN_OPERATORS = {
     "NOT": "NOT",
     "!": "NOT",
 }
+# Lowercase words used as operators when they stand between two terms.
+_LOWERCASE_OPERATORS = {"or": "OR", "and": "AND"}
 _GROUP_PREFIXES = frozenset({"+", "-", "!"})
 _RANGE_RE = re.compile(r"^[\[{]\s*\S+\s+TO\s+\S+\s*[\]}]$")
 _YEAR_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
@@ -312,7 +316,32 @@ def _tokenize_query(text: str) -> List[Tuple[str, str]]:
             word = word[:-1]
         if _is_search_term(word):
             tokens.append(("ATOM", word))
-    return tokens
+    return _lowercase_operators(tokens)
+
+
+def _lowercase_operators(tokens: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    """
+    Treat lowercase "or" and "and" between two terms as operators.
+
+    People type "muppet or henson" meaning OR; as a required word "or" matches
+    almost nothing. A lowercase "not" stays a word, because "not" inside a
+    title is far more common than a lowercase NOT meant as an operator.
+
+    Args:
+        tokens: Tokens from _tokenize_query.
+
+    Returns:
+        List[Tuple[str, str]]: The tokens with those words made operators.
+    """
+    result = list(tokens)
+    for index, (kind, value) in enumerate(tokens):
+        if kind != "ATOM" or value not in _LOWERCASE_OPERATORS:
+            continue
+        before = tokens[index - 1][0] if index > 0 else None
+        after = tokens[index + 1][0] if index + 1 < len(tokens) else None
+        if before in ("ATOM", "RPAREN") and after in ("ATOM", "LPAREN"):
+            result[index] = ("OP", _LOWERCASE_OPERATORS[value])
+    return result
 
 
 def _combine(kind: str, items: List[_QueryNode]) -> Optional[_QueryNode]:
@@ -910,6 +939,23 @@ def _first_text(*candidates: Any) -> Optional[str]:
     return None
 
 
+def _collection_title(contained_in: Any) -> Optional[str]:
+    """Title of the archival collection that contains an archive record."""
+    parents = [item for item in _as_list(contained_in) if isinstance(item, dict)]
+    for parent in parents:
+        if parent.get("type") == "Collection":
+            return clean_text(_first_string(parent.get("unittitle")))
+    return clean_text(_first_string(*(p.get("unittitle") for p in parents[:1])))
+
+
+def _first_string(*values: Any) -> Optional[str]:
+    """Return the first non-empty string among the values."""
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
 def _strings(value: Any) -> List[str]:
     """Return the non-empty strings (or entry contents) of a list."""
     result = []
@@ -1070,6 +1116,8 @@ class SmithsonianAPIClient:
         }
         if filters.sort and filters.sort != "relevancy":
             params["sort"] = filters.sort
+        if filters.row_group == "archives":
+            params["row_group"] = "archives"
         return params
 
     async def _make_request(
@@ -1301,29 +1349,37 @@ class SmithsonianAPIClient:
             if not isinstance(media_item, dict) or media_item.get("type") != "Images":
                 continue
 
-            media_url = None
             width = _safe_int(media_item.get("width"))
             height = _safe_int(media_item.get("height"))
-            # Prefer high-resolution versions listed in resources
+            # The full-resolution download, a JPEG where one is offered (TIFF
+            # files cannot be displayed in a browser)
+            downloads = {}
             for resource in _as_list(media_item.get("resources")):
                 if not isinstance(resource, dict):
                     continue
                 label = str(resource.get("label") or "").lower()
-                if "high-resolution tiff" in label or "high-resolution jpeg" in label:
-                    media_url = _safe_url(resource.get("url"))
-                    if media_url is not None:
-                        dimensions = resource.get("dimensions")
-                        if isinstance(dimensions, str) and "x" in dimensions:
-                            w_text, _, h_text = dimensions.partition("x")
-                            width = _safe_int(w_text) or width
-                            height = _safe_int(h_text) or height
-                        break
+                for kind in ("high-resolution jpeg", "high-resolution tiff"):
+                    resource_url = _safe_url(resource.get("url"))
+                    if kind in label and resource_url is not None:
+                        downloads.setdefault(kind, (resource_url, resource))
+            download_url = None
+            for kind in ("high-resolution jpeg", "high-resolution tiff"):
+                if kind in downloads:
+                    download_url, resource = downloads[kind]
+                    dimensions = resource.get("dimensions")
+                    if isinstance(dimensions, str) and "x" in dimensions:
+                        w_text, _, h_text = dimensions.partition("x")
+                        width = _safe_int(w_text) or width
+                        height = _safe_int(h_text) or height
+                    break
 
-            if media_url is None:
-                for field_name in ("content", "url", "href", "src"):
-                    media_url = _safe_url(media_item.get(field_name))
-                    if media_url is not None:
-                        break
+            # The delivery URL serves a displayable, screen-sized image
+            media_url = None
+            for field_name in ("content", "url", "href", "src"):
+                media_url = _safe_url(media_item.get(field_name))
+                if media_url is not None:
+                    break
+            media_url = media_url or download_url
 
             usage = media_item.get("usage")
             if isinstance(usage, dict):
@@ -1341,6 +1397,7 @@ class SmithsonianAPIClient:
                 images.append(
                     ImageData(
                         url=media_url,
+                        download_url=download_url,
                         thumbnail_url=_safe_url(media_item.get("thumbnail")),
                         iiif_url=_safe_url(media_item.get("iiif")),
                         alt_text=alt_text or "",
@@ -1462,16 +1519,11 @@ class SmithsonianAPIClient:
 
         return SmithsonianObject(
             id=obj_id,
-            record_id=(
-                descriptive.get("record_ID")
-                if isinstance(descriptive.get("record_ID"), str)
-                else None
+            # Archive records keep these at the top of content
+            record_id=_first_string(
+                descriptive.get("record_ID"), content.get("record_id")
             ),
-            guid=(
-                descriptive.get("guid")
-                if isinstance(descriptive.get("guid"), str)
-                else None
-            ),
+            guid=_first_string(descriptive.get("guid"), content.get("guid")),
             title=title or "",
             url=_safe_url(raw_data.get("url")),
             unit_code=unit_code if isinstance(unit_code, str) else None,
@@ -1512,13 +1564,14 @@ class SmithsonianAPIClient:
             last_modified=_parse_timestamp(raw_data.get("lastTimeUpdated"))
             or _parse_timestamp(raw_data.get("modified")),
             maker=self._parse_makers(freetext),
+            # The indexed term is what the object_type filter matches
             object_type=_first_text(
+                indexed.get("object_type"),
                 [
                     item
                     for item in _as_list(freetext.get("objectType"))
                     if _label_of(item) not in _NOT_OBJECT_TYPE_LABELS
                 ],
-                indexed.get("object_type"),
             ),
             materials=materials,
             topics=_strings(indexed.get("topic")),
@@ -1530,14 +1583,16 @@ class SmithsonianAPIClient:
             is_on_view=self._parse_on_view_status(indexed),
             exhibition_title=self._parse_exhibition_title(indexed),
             exhibition_location=self._parse_exhibition_location(indexed),
+            collection=_collection_title(content.get("containedIn")),
         )
 
-    async def count_matches(self, query: str) -> int:
+    async def count_matches(self, query: str, row_group: Optional[str] = None) -> int:
         """
         Count records matching a raw ``q`` query without fetching rows.
 
         Args:
             query: Query string in API syntax.
+            row_group: "archives" to count archive records instead of objects.
 
         Returns:
             int: Number of matching records.
@@ -1545,7 +1600,10 @@ class SmithsonianAPIClient:
         Raises:
             APIError: If the request fails.
         """
-        data = await self._make_request("search", {"q": query, "start": 0, "rows": 0})
+        params: Dict[str, Any] = {"q": query, "start": 0, "rows": 0}
+        if row_group == "archives":
+            params["row_group"] = "archives"
+        data = await self._make_request("search", params)
         return int(_as_dict(data.get("response")).get("rowCount") or 0)
 
     async def search_collections(self, filters: CollectionSearchFilter) -> SearchResult:
@@ -1661,6 +1719,9 @@ class SmithsonianAPIClient:
 
         Returns:
             List[str]: Unit codes such as ``NMAH`` and ``NMNHPALEO``.
+
+        Raises:
+            APIError: If the API key is rejected; other failures use the list.
         """
         cached = SmithsonianAPIClient._unit_codes_cache
         if cached is not None and not refresh:
@@ -1668,6 +1729,8 @@ class SmithsonianAPIClient:
         try:
             data = await self._make_request("terms/unit_code")
         except APIError as exc:
+            if exc.error == "api_key_rejected":
+                raise
             logger.warning("Could not fetch unit codes, using built-in list: %s", exc)
             return list(KNOWN_UNIT_CODES)
         terms = [
@@ -1746,7 +1809,8 @@ class SmithsonianAPIClient:
             CollectionStats: Collection statistics.
 
         Raises:
-            APIError: If neither /stats nor the fallback count query succeeds.
+            APIError: If neither /stats nor the fallback count query succeeds,
+                or as is if the key is rejected or the rate limit is reached.
         """
         stats_result, images_result = await asyncio.gather(
             self._make_request("stats"),
@@ -1755,6 +1819,9 @@ class SmithsonianAPIClient:
         )
         for result in (stats_result, images_result):
             if isinstance(result, BaseException) and not isinstance(result, APIError):
+                raise result
+            # The caller must act on these; a fallback would only hide them
+            if isinstance(result, APIError) and result.error in _CALLER_ERRORS:
                 raise result
 
         total_with_images: Optional[int] = None
@@ -1836,6 +1903,8 @@ class SmithsonianAPIClient:
         try:
             total_objects = await self.count_matches("*")
         except APIError as fallback_error:
+            if fallback_error.error in _CALLER_ERRORS:
+                raise
             logger.error("Fallback count query also failed: %s", fallback_error)
             raise APIError(
                 error="stats_failed",

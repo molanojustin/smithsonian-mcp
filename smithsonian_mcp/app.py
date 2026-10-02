@@ -17,13 +17,14 @@ from .tools import register_tools
 WEBSITE_URL = "https://github.com/molanojustin/smithsonian-mcp"
 
 INSTRUCTIONS = """\
-Search the Smithsonian Open Access collections: more than 14 million \
-searchable records from 40+ Smithsonian museums, archives and libraries, \
-covering art, history, natural history specimens, archival and library items.
+Search the Smithsonian Open Access collections: about 14.5 million object \
+records (art, history, natural history specimens, library items) and 2.8 \
+million archive records from 40+ Smithsonian museums, archives and libraries.
 
-- search_objects finds objects; get_object returns the full record and images \
-for an id from any result. explore_topic returns a varied random sample for \
-open-ended browsing. list_museums and get_collection_stats give units and counts.
+- search_objects finds objects, or archive records with record_type="archives"; \
+get_object returns the full record and images for an id from any result. \
+explore_topic returns a varied sample for open-ended browsing. list_museums \
+lists the museums; get_collection_stats counts what search can return.
 - Pass museum as a name or unit code ("American History" or "NMAH"); results \
 report the code that was used.
 - Every word of query must match. Use 1-4 distinctive keywords, OR between \

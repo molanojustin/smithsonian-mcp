@@ -9,19 +9,27 @@ Version 2.0 replaces the 28 tools of 1.x with 5. Tool names and output shapes ch
 ### Changed
 
 - The server exposes 5 tools, 2 resources and 5 prompts in place of 28 overlapping tools and 11 prompts:
-  - `search_objects`: search with filters, including what is on view now.
+  - `search_objects`: search with filters, including what is on view now, over objects or, with `record_type="archives"`, archive records.
   - `get_object`: the full record for one object, with images and its web page.
-  - `list_museums`: the contributing units with their codes and record counts.
+  - `list_museums`: the contributing units with their codes, record types and accepted names.
   - `explore_topic`: a varied sample of a topic for open-ended browsing.
-  - `get_collection_stats`: totals and per-museum counts.
+  - `get_collection_stats`: counts of what search can return, for the whole collection or one museum.
   - Resources `smithsonian://museums` and `smithsonian://objects/{object_id}`.
 - Results are compact. A search returns 10 short summaries by default instead of full records, object records are capped at 10 images with long text trimmed, and empty fields are left out. Every object carries a `web_url` for its page on the museum website.
-- Empty results carry a `note` that explains them, and a search limited to an archive-only museum returns an error that says so.
-- `museum` accepts a museum name or a unit code, and search results report the code that was used.
+- Results carry a `note` that explains empty or doubtful results, such as a query that reads like a sentence or an on-view search that cannot include Natural History, and an object search limited to an archive-only museum returns an error that points to `record_type="archives"`.
+- `museum` accepts a museum name or a unit code, and search results report the code that was used. Every distinctive word of a name must match, and "Smithsonian" means every museum.
 - The prompts `collection_research`, `object_analysis`, `exhibition_planning`, `educational_content` and `museum_on_view` drop the `_prompt` suffix from their names and use the new tools.
 - Asian Art is unit code `NMAA`. `FSG` and names such as "Freer" or "Sackler" are still accepted and map to `NMAA`.
 - `is_cc0` on an object means the object has CC0 media that can be reused. Records with CC0 text but restricted or no media are no longer reported as CC0.
-- Collection statistics are exact counts from the API's statistics endpoint instead of estimates from sampling. They take two requests instead of dozens and are cached for 6 hours.
+- Collection statistics are exact search counts instead of estimates from sampling, so they agree with search results. They take four requests and are cached for 6 hours. The API's statistics endpoint is not used, because its per-museum totals disagree with search by up to 2,000 times.
+
+### Added
+
+- Archive records: the 14 archive-only units, such as the Archives of American Art, and archive records at units such as the Smithsonian Institution Archives can be searched with `record_type="archives"`. Results name the archival collection.
+- `explore_topic` prefers objects whose title, type or subjects name the topic and spreads its sample across museums in proportion to their matches.
+- Exhibition locations name the building and place, such as the Steven F. Udvar-Hazy Center in Chantilly, VA, instead of a code.
+- Images link to a screen-sized image that browsers display, with the full-resolution file as `download_url`.
+- `date_from` and `date_to` accept decades such as `"1860s"`, and lowercase `or` and `and` between words work as operators.
 
 ### Removed
 

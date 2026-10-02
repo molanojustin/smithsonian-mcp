@@ -349,6 +349,13 @@ async def test_bert_puppet_parsing():
         ),
         ("fsg_F1900.47", "https://asia.si.edu/object/F1900.47"),
         ("siris_arc_403511", "https://siarchives.si.edu/collections/siris_arc_403511"),
+        ("npg_NPG.71.26", "https://npg.si.edu/object/npg_NPG.71.26"),
+        ("npm_1992.2037.1", "https://postalmuseum.si.edu/object/npm_1992.2037.1"),
+        ("nmaahc_2013.215.4", "https://nmaahc.si.edu/object/nmaahc_2013.215.4"),
+        (
+            "nmnhpaleobiology_3526550",
+            "https://naturalhistory.si.edu/object/nmnhpaleobiology_3526550",
+        ),
         ("saam_1983.95.90", None),  # needs record_link
         ("nmafa_2005-6-55", None),  # needs guid
         ("unknown_1", None),
@@ -361,3 +368,71 @@ def test_record_page_url_needs_no_request(record_id, expected):
     from smithsonian_mcp.utils import record_page_url
 
     assert record_page_url(record_id) == expected
+
+
+@pytest.mark.parametrize(
+    "record_id, unit_code, expected",
+    [
+        (
+            "siris_arc_367768",
+            "SIA",
+            "https://siarchives.si.edu/collections/siris_arc_367768",
+        ),
+        # Folklife records share SIRIS ids but have no Archives page (404)
+        ("siris_arc_336210", "CFCHFOLKLIFE", None),
+        (
+            "nmah_1444757",
+            "NMAH",
+            "https://americanhistory.si.edu/collections/object/nmah_1444757",
+        ),
+    ],
+)
+def test_siris_archive_pages_belong_to_sia_only(record_id, unit_code, expected):
+    """Only SIA records get siarchives.si.edu pages."""
+    from smithsonian_mcp.utils import record_page_url
+
+    assert record_page_url(record_id, unit_code) == expected
+
+
+@pytest.mark.parametrize(
+    "name, code",
+    [
+        ("American History", "NMAH"),
+        ("American History museum", "NMAH"),
+        ("Smithsonian National Museum of American History", "NMAH"),
+        ("nmah", "NMAH"),
+        ("Natural History", "NMNH"),
+        ("National Museum of Natural History", "NMNH"),
+        ("Natural History museum in DC", "NMNH"),
+        ("NMNHPALEO", "NMNHPALEO"),
+        ("Asian art museum", "NMAA"),
+        ("Freer Gallery of Art", "NMAA"),
+        ("FSG", "NMAA"),
+        ("African Art", "NMAfA"),
+        ("Museum of African Art", "NMAfA"),
+        ("nmafa", "NMAfA"),
+        ("African American Museum", "NMAAHC"),
+        ("African American History Museum", "NMAAHC"),
+        ("National Museum of African American History and Culture", "NMAAHC"),
+        ("American Art", "SAAM"),
+        ("Renwick Gallery", "SAAM"),
+        ("Air and Space", "NASM"),
+        ("Udvar-Hazy Center", "NASM"),
+        ("Portrait Gallery", "NPG"),
+        ("Hirshhorn", "HMSG"),
+        ("Cooper Hewitt", "CHNDM"),
+        ("American Indian Museum", "NMAI"),
+        ("Postal Museum", "NPM"),
+        ("National Zoo", "NZP"),
+        ("Archives of American Art", "AAA"),
+        ("Smithsonian Institution Archives", "SIA"),
+        ("Anacostia", "ACM"),
+        ("Louvre", None),
+        ("Museum of Modern Art", None),
+        ("Metropolitan Museum of Art", None),
+        ("American Museum", None),  # ambiguous: only generic words
+    ],
+)
+def test_museum_resolution_matrix(name, code):
+    """Every informative word must match; generic-only names do not resolve."""
+    assert resolve_museum_code(name) == code

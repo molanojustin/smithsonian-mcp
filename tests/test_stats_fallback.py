@@ -95,45 +95,6 @@ async def test_stats_tolerate_failed_image_count(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_stats_tool_handles_stats_endpoint_failure(monkeypatch):
-    """When /stats fails, a count query supplies the total and the tool still answers."""
-    from smithsonian_mcp import context
-    from smithsonian_mcp.tools import get_collection_stats
-
-    client = SmithsonianAPIClient(api_key="test-key")
-    fake, calls = _fake_requests(stats_ok=False)
-    monkeypatch.setattr(client, "_make_request", fake)
-    context.set_api_client(client)
-
-    result = await get_collection_stats()
-
-    assert result.total_objects == 120
-    assert result.with_images == 45
-    assert result.cc0 is None
-    assert result.museums == []
-    assert result.as_of is None
-    assert "unavailable" in result.note
-    assert len(calls) == 3
-
-
-@pytest.mark.asyncio
-async def test_stats_tool_reports_unavailable_api(monkeypatch):
-    """If every stats request fails, the tool raises a ToolError to retry later."""
-    from fastmcp.exceptions import ToolError
-
-    from smithsonian_mcp import context
-    from smithsonian_mcp.tools import get_collection_stats
-
-    client = SmithsonianAPIClient(api_key="test-key")
-    fake, _ = _fake_requests(stats_ok=False, search_ok=False)
-    monkeypatch.setattr(client, "_make_request", fake)
-    context.set_api_client(client)
-
-    with pytest.raises(ToolError, match="not responding"):
-        await get_collection_stats()
-
-
-@pytest.mark.asyncio
 async def test_stats_raise_when_everything_fails(monkeypatch):
     """If /stats and the count queries all fail, an APIError is raised."""
     client = SmithsonianAPIClient(api_key="test-key")
@@ -143,3 +104,22 @@ async def test_stats_raise_when_everything_fails(monkeypatch):
     with pytest.raises(APIError) as excinfo:
         await client.get_collection_stats()
     assert excinfo.value.error == "stats_failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", ["api_key_rejected", "rate_limit_exceeded"])
+@pytest.mark.parametrize("failing", ["stats", "search"])
+async def test_key_and_rate_limit_errors_are_not_hidden(monkeypatch, error, failing):
+    """A rejected key or rate limiting is raised as is, not as stats_failed."""
+    client = SmithsonianAPIClient(api_key="test-key")
+    fake, _ = _fake_requests()
+
+    async def failing_request(endpoint, params=None):
+        if endpoint == failing:
+            raise APIError(error=error, message="no", status_code=403)
+        return await fake(endpoint, params)
+
+    monkeypatch.setattr(client, "_make_request", failing_request)
+    with pytest.raises(APIError) as excinfo:
+        await client.get_collection_stats()
+    assert excinfo.value.error == error
