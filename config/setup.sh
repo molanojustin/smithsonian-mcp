@@ -23,6 +23,10 @@ SERVICE_NAME="smithsonian-mcp"
 SERVICE_PORT=8000
 SERVICE_ARGS="--transport http --host 127.0.0.1 --port $SERVICE_PORT"
 SERVICE_URL="http://127.0.0.1:$SERVICE_PORT/mcp"
+# The launchd job writes its log (the server logs to stderr) to this file
+LAUNCHD_LOG="$HOME/Library/Logs/com.smithsonian.mcp.log"
+# How to manage the service installed by this run, for the closing summary
+SERVICE_MANAGE=""
 
 # --- Functions ---
 
@@ -83,16 +87,46 @@ setup_mcpo_config() {
     fi
 
     local python_path="$PROJECT_DIR/$VENV_DIR/bin/python"
-    # Create the file with owner-only permissions before the key is written to it
-    if ! (umask 077 && sed -e "s|/path/to/your/project/.venv/bin/python|$python_path|g" \
-        -e "s|/path/to/your/project|$PROJECT_DIR|g" \
-        -e "s|your_api_key_here|$api_key|g" \
-        "$MCPO_EXAMPLE" > "$MCPO_CONFIG"); then
+    # The key goes through the environment, never a command line, and the file
+    # is created with owner-only permissions before the key is written to it.
+    if ! MCPO_EXAMPLE="$MCPO_EXAMPLE" MCPO_CONFIG="$MCPO_CONFIG" \
+        PROJECT_DIR="$PROJECT_DIR" PYTHON_PATH="$python_path" \
+        SMITHSONIAN_API_KEY="$api_key" "$PYTHON_EXEC" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+replacements = [
+    ("/path/to/your/project/.venv/bin/python", os.environ["PYTHON_PATH"]),
+    ("/path/to/your/project", os.environ["PROJECT_DIR"]),
+    ("your_api_key_here", os.environ["SMITHSONIAN_API_KEY"]),
+]
+
+
+def fill(value):
+    if isinstance(value, str):
+        for old, new in replacements:
+            value = value.replace(old, new)
+        return value
+    if isinstance(value, list):
+        return [fill(item) for item in value]
+    if isinstance(value, dict):
+        return {key: fill(item) for key, item in value.items()}
+    return value
+
+
+config = fill(json.loads(Path(os.environ["MCPO_EXAMPLE"]).read_text(encoding="utf-8")))
+path = Path(os.environ["MCPO_CONFIG"])
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    handle.write(json.dumps(config, indent=2) + "\n")
+os.chmod(path, 0o600)
+PY
+    then
         error "Could not write $MCPO_CONFIG."
         rm -f "$MCPO_CONFIG"
         return 1
     fi
-    chmod 600 "$MCPO_CONFIG" || return 1
 
     info "mcpo configuration written to: $PROJECT_DIR/$MCPO_CONFIG"
     info "It contains your API key. Do not commit it."
@@ -151,6 +185,36 @@ PY
     else
         return 1
     fi
+}
+
+# Function to store the API key in .env, keeping its other settings.
+# The key goes through the environment, never a command line, and .env is
+# left readable by its owner only.
+write_env_key() {
+    local api_key="$1"
+    SMITHSONIAN_API_KEY="$api_key" "$PYTHON_EXEC" - <<'PY'
+import os
+from pathlib import Path
+
+path = Path(".env")
+key = os.environ["SMITHSONIAN_API_KEY"]
+lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+updated = []
+found = False
+for line in lines:
+    if line.startswith("SMITHSONIAN_API_KEY="):
+        if not found:
+            updated.append(f"SMITHSONIAN_API_KEY={key}")
+        found = True
+    else:
+        updated.append(line)
+if not found:
+    updated.append(f"SMITHSONIAN_API_KEY={key}")
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(updated) + "\n")
+os.chmod(path, 0o600)
+PY
 }
 
 # Function to get API key from user.
@@ -224,7 +288,7 @@ After=network.target
 [Service]
 Type=simple
 ${user_line}WorkingDirectory=$PROJECT_DIR
-Environment=PATH=$PROJECT_DIR/$VENV_DIR/bin
+Environment=\"PATH=$PROJECT_DIR/$VENV_DIR/bin\"
 ExecStart=\"$SERVER_EXEC\" $SERVICE_ARGS
 Restart=always
 RestartSec=10
@@ -239,7 +303,11 @@ WantedBy=$wanted_by"
             || { error "systemctl --user daemon-reload failed."; return 1; }
         systemctl --user enable "$SERVICE_NAME" \
             || { error "systemctl --user enable $SERVICE_NAME failed."; return 1; }
+        # A service that is already running keeps its old arguments until restarted
+        systemctl --user try-restart "$SERVICE_NAME" \
+            || warning "Could not restart $SERVICE_NAME; restart it to apply the new settings."
         info "User service installed. Start with: systemctl --user start $SERVICE_NAME"
+        SERVICE_MANAGE="systemctl --user start/stop/status $SERVICE_NAME"
         info "It serves MCP over streamable HTTP at $SERVICE_URL"
     else
         echo "$service_content" | sudo tee "$service_file" > /dev/null \
@@ -248,7 +316,10 @@ WantedBy=$wanted_by"
             || { error "systemctl daemon-reload failed."; return 1; }
         sudo systemctl enable "$SERVICE_NAME" \
             || { error "systemctl enable $SERVICE_NAME failed."; return 1; }
+        sudo systemctl try-restart "$SERVICE_NAME" \
+            || warning "Could not restart $SERVICE_NAME; restart it to apply the new settings."
         info "System service installed. Start with: sudo systemctl start $SERVICE_NAME"
+        SERVICE_MANAGE="sudo systemctl start/stop/status $SERVICE_NAME"
         info "It serves MCP over streamable HTTP at $SERVICE_URL"
     fi
 }
@@ -279,20 +350,26 @@ setup_launchd_service() {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>$HOME/Library/Logs/com.smithsonian.mcp.log</string>
+    <string>$LAUNCHD_LOG</string>
     <key>StandardErrorPath</key>
-    <string>$HOME/Library/Logs/com.smithsonian.mcp.error.log</string>
+    <string>$LAUNCHD_LOG</string>
 </dict>
 </plist>"
 
     mkdir -p "$(dirname "$plist_file")" \
         || { error "Could not create $(dirname "$plist_file")."; return 1; }
+    # A job loaded by an earlier run keeps its old arguments until it is unloaded
+    if [ -f "$plist_file" ]; then
+        launchctl unload "$plist_file" >/dev/null 2>&1 || true
+    fi
     echo "$plist_content" > "$plist_file" \
         || { error "Could not write $plist_file."; return 1; }
     launchctl load "$plist_file" \
         || { error "launchctl load $plist_file failed."; return 1; }
     info "Launchd service installed and started."
+    SERVICE_MANAGE="launchctl unload/load $plist_file"
     info "It serves MCP over streamable HTTP at $SERVICE_URL"
+    info "Its log is $LAUNCHD_LOG"
 }
 
 # Function to add this server to the Claude Desktop config.
@@ -360,7 +437,8 @@ if not isinstance(servers, dict):
 
 servers["smithsonian_open_access"] = {
     "command": os.environ["SERVER_EXEC"],
-    "args": [],
+    # Explicit, so MCP_TRANSPORT in .env cannot switch the client's server to HTTP
+    "args": ["--transport", "stdio"],
     "env": {
         "SMITHSONIAN_API_KEY": os.environ["SMITHSONIAN_API_KEY"],
         "LOG_LEVEL": "INFO",
@@ -390,7 +468,7 @@ run_health_check() {
 
     # Start the server with no client attached: it should start, read EOF on
     # stdin, and exit cleanly. A missing API key or import error exits non-zero.
-    if "$SERVER_EXEC" < /dev/null > /dev/null 2>&1; then
+    if "$SERVER_EXEC" --transport stdio < /dev/null > /dev/null 2>&1; then
         info "MCP server startup test passed"
     else
         error "MCP server failed to start. Run $SERVER_EXEC to see the error."
@@ -442,12 +520,14 @@ api_key=""
 if [ ! -f ".env" ]; then
     if [ -f ".env.example" ]; then
         info "Creating .env from .env.example..."
-        cp .env.example .env
+        (umask 077 && cp .env.example .env)
     else
         warning "No .env.example found. Creating basic .env file."
-        echo "SMITHSONIAN_API_KEY=your_api_key_here" > .env
+        (umask 077 && echo "SMITHSONIAN_API_KEY=your_api_key_here" > .env)
     fi
 fi
+# .env holds the API key, so only its owner may read it
+chmod 600 .env
 
 # Extract existing API key or get new one
 if [ -f ".env" ]; then
@@ -465,14 +545,11 @@ fi
 if [ -z "$api_key" ]; then
     api_key=$(get_api_key) || api_key=""
     if [ -n "$api_key" ]; then
-        # Update .env with the new API key without leaving a backup copy behind
-        if grep -q "^SMITHSONIAN_API_KEY=" .env; then
-            sed -i.bak "s/^SMITHSONIAN_API_KEY=.*/SMITHSONIAN_API_KEY=$api_key/" .env
-            rm -f .env.bak
+        if write_env_key "$api_key"; then
+            info "API key saved to .env file."
         else
-            echo "SMITHSONIAN_API_KEY=$api_key" >> .env
+            error "Could not save the API key to .env."
         fi
-        info "API key saved to .env file."
     fi
 fi
 
@@ -533,8 +610,14 @@ info "  Activate environment: source $VENV_DIR/bin/activate"
 info "  Test connection: python examples/test-api-connection.py"
 info "  Run server (stdio): $SERVER_EXEC"
 info "  Run server (HTTP): $SERVER_EXEC --transport http"
-if { command_exists systemctl && [ -f "/etc/systemd/system/$SERVICE_NAME.service" ]; } || [ -f "$HOME/.config/systemd/user/$SERVICE_NAME.service" ]; then
+if [ -n "$SERVICE_MANAGE" ]; then
+    info "  Manage service: $SERVICE_MANAGE"
+elif [ -f "$HOME/.config/systemd/user/$SERVICE_NAME.service" ]; then
     info "  Manage service: systemctl --user start/stop/status $SERVICE_NAME"
+elif command_exists systemctl && [ -f "/etc/systemd/system/$SERVICE_NAME.service" ]; then
+    info "  Manage service: sudo systemctl start/stop/status $SERVICE_NAME"
+elif [ -f "$HOME/Library/LaunchAgents/com.smithsonian.mcp.plist" ]; then
+    info "  Manage service: launchctl unload/load ~/Library/LaunchAgents/com.smithsonian.mcp.plist"
 fi
 info ""
 info "For troubleshooting, see TROUBLESHOOTING.md or run: python scripts/verify-setup.py"

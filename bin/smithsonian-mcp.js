@@ -237,6 +237,8 @@ Options:
   --transport {stdio,http}   Serve MCP over stdio (default) or streamable HTTP
   --host HOST                Address to listen on in HTTP mode (default: 127.0.0.1)
   --port PORT                Port to listen on in HTTP mode (default: 8000)
+  --allowed-hosts NAMES      Host header names accepted in HTTP mode, comma-separated
+                             (default: localhost, 127.0.0.1, ::1 and the --host address)
 
 Requirements:
   uv             Fast Python package manager (https://docs.astral.sh/uv/)
@@ -248,6 +250,7 @@ Environment Variables:
                          Get it from: https://api.data.gov/signup/
   MCP_TRANSPORT          Default for --transport
   MCP_HOST, MCP_PORT     Defaults for --host and --port
+  MCP_ALLOWED_HOSTS      Default for --allowed-hosts
 
 Examples:
   # Start the MCP server (stdio transport)

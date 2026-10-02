@@ -40,6 +40,18 @@ function Write-Utf8File {
     [System.IO.File]::WriteAllText($fullPath, $Content, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+# Limit a file that holds the API key to the current user, plus SYSTEM so that a
+# service can read it: the Windows counterpart of chmod 600.
+function Protect-SecretFile {
+    param([string]$Path)
+    $fullPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    & icacls.exe $fullPath /inheritance:r /grant:r "${user}:(F)" "*S-1-5-18:(R)" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Could not restrict access to $Path, which holds your API key."
+    }
+}
+
 # Read a file as UTF-8. Get-Content in Windows PowerShell 5.1 reads files
 # without a BOM using the ANSI code page, which corrupts non-ASCII text on a
 # round trip. A leading BOM, if present, is detected and removed.
@@ -196,6 +208,7 @@ function Set-EnvApiKey {
     }
 
     Write-Utf8File -Path ".env" -Content (($updated -join "`n") + "`n")
+    Protect-SecretFile -Path ".env"
 }
 
 # Get API key from the parameter or the user, with validation
@@ -260,9 +273,14 @@ function Set-WindowsService {
         $serviceExists = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 
         if ($serviceExists) {
+            # Recreated, so a rerun replaces the old command line
             Write-Warning "Service $serviceName already exists. Updating..."
-            Stop-Service -Name $serviceName -Force
+            Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
             & sc.exe delete $serviceName | Out-Null
+            # The service is removed once nothing holds it open
+            for ($i = 0; $i -lt 20 -and (Get-Service -Name $serviceName -ErrorAction SilentlyContinue); $i++) {
+                Start-Sleep -Milliseconds 500
+            }
         }
 
         New-Service -Name $serviceName -DisplayName "Smithsonian MCP Server" -BinaryPathName "`"$serverExe`" $serviceArgs" -StartupType Manual | Out-Null
@@ -322,7 +340,8 @@ function Set-ClaudeDesktop {
     # Use the absolute path to the console script installed in the virtual environment
     $entry = [PSCustomObject]@{
         command = $serverExe
-        args    = @()
+        # Explicit, so MCP_TRANSPORT in .env cannot switch the client's server to HTTP
+        args    = @("--transport", "stdio")
         env     = [PSCustomObject]@{
             SMITHSONIAN_API_KEY = $ApiKey
             LOG_LEVEL           = "INFO"
@@ -391,6 +410,7 @@ function Set-McpoConfig {
     $configContent = $configContent.Replace("your_api_key_here", $ApiKey)
 
     Write-Utf8File -Path $configFile -Content $configContent
+    Protect-SecretFile -Path $configFile
     Write-Success "mcpo configuration written to: $projectDir\$configFile"
     Write-Warning "It contains your API key. Do not commit it."
     Write-Info "Python path set to: $venvPython"
@@ -418,7 +438,8 @@ function Invoke-HealthCheck {
     $stdoutFile = New-TemporaryFile
     $stderrFile = New-TemporaryFile
     try {
-        $process = Start-Process -FilePath $serverExe -NoNewWindow -PassThru `
+        $process = Start-Process -FilePath $serverExe -ArgumentList "--transport", "stdio" `
+            -NoNewWindow -PassThru `
             -RedirectStandardInput $emptyInput.FullName `
             -RedirectStandardOutput $stdoutFile.FullName `
             -RedirectStandardError $stderrFile.FullName
@@ -468,6 +489,8 @@ function Start-Installation {
                 Write-Utf8File -Path ".env" -Content "SMITHSONIAN_API_KEY=your_api_key_here`n"
             }
         }
+        # .env holds the API key, so only its owner (and SYSTEM) may read it
+        Protect-SecretFile -Path ".env"
 
         # Check for existing API key
         $existingKey = $null

@@ -26,7 +26,7 @@ from .models import (
 )
 from .parsing import as_dict, as_list, parse_object_data, safe_int
 from .query import build_search_query
-from .utils import mask_api_key
+from .utils import SingleFlight, mask_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,10 @@ class SmithsonianAPIClient:
     for the Smithsonian collections available through api.data.gov.
     """
 
-    # Unit codes from /terms/unit_code, shared by all clients in the process.
+    # Unit codes from /terms/unit_code, shared by all clients in the process,
+    # and the request that fetches them, shared by concurrent callers.
     _unit_codes_cache: ClassVar[Optional[List[str]]] = None
+    _unit_codes_flight: ClassVar[SingleFlight[List[str]]] = SingleFlight()
 
     def __init__(
         self,
@@ -433,7 +435,8 @@ class SmithsonianAPIClient:
         Get the unit codes used by the search index.
 
         Codes come from ``GET /terms/unit_code`` and are cached for the life of the
-        process. The built-in list is used if the endpoint fails.
+        process; concurrent callers share one request. The built-in list is used
+        if the endpoint fails.
 
         Args:
             refresh: Fetch again even if cached.
@@ -447,6 +450,21 @@ class SmithsonianAPIClient:
         cached = SmithsonianAPIClient._unit_codes_cache
         if cached is not None and not refresh:
             return list(cached)
+        codes = await SmithsonianAPIClient._unit_codes_flight.run(
+            "unit_codes", self._fetch_unit_codes
+        )
+        return list(codes)
+
+    async def _fetch_unit_codes(self) -> List[str]:
+        """
+        Request the unit codes and cache them.
+
+        Returns:
+            List[str]: The codes, or the built-in list if the endpoint fails.
+
+        Raises:
+            APIError: If the API key is rejected.
+        """
         try:
             data = await self._make_request("terms/unit_code")
         except APIError as exc:
@@ -468,6 +486,7 @@ class SmithsonianAPIClient:
     def clear_unit_code_cache(cls) -> None:
         """Forget cached unit codes so the next call fetches them again."""
         cls._unit_codes_cache = None
+        cls._unit_codes_flight.clear()
 
     @staticmethod
     def _unit_from_code(code: str) -> SmithsonianUnit:

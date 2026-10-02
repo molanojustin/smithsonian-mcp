@@ -22,7 +22,9 @@ Version 2.0 replaces the 28 tools of 1.x with 5. Tool names and output shapes ch
 - Asian Art is unit code `NMAA`. `FSG` and names such as "Freer" or "Sackler" are still accepted and map to `NMAA`.
 - `is_cc0` on an object means the object has CC0 media that can be reused. Records with CC0 text but restricted or no media are no longer reported as CC0.
 - Collection statistics are exact search counts instead of estimates from sampling, so they agree with search results. They take four requests and are cached for 6 hours. The API's statistics endpoint is not used, because its per-museum totals disagree with search by up to 2,000 times.
-- The background services that the setup scripts install run the server in HTTP mode at `http://127.0.0.1:8000/mcp`. As stdio servers with no client attached they exited at once and restarted in a loop. User systemd services start with the user's default target.
+- The background services that the setup scripts install run the server in HTTP mode at `http://127.0.0.1:8000/mcp`. As stdio servers with no client attached they exited at once and restarted in a loop. User systemd services start with the user's default target, a rerun of the setup script reloads or restarts the service so the new settings apply, and the launchd job writes one log, `~/Library/Logs/com.smithsonian.mcp.log`.
+- The setup scripts keep the API key off command lines and make `.env` and `mcpo-config.json` readable by your user only. The Claude Desktop entry they write and their health check pass `--transport stdio`.
+- Concurrent calls that need the same collection counts or unit list share one set of API requests.
 - Internal structure: the API client is split into query building (`query.py`), record parsing (`parsing.py`) and the HTTP client (`api_client.py`), and the tool layer into `tools.py`, `formatting.py`, `notes.py` and `sampling.py`. The server lifespan moves to `context.py`. Tool behaviour is unchanged. The code is black- and pylint-clean, and CI fails on lint errors.
 
 ### Added
@@ -32,7 +34,7 @@ Version 2.0 replaces the 28 tools of 1.x with 5. Tool names and output shapes ch
 - Exhibition locations name the building and place, such as the Steven F. Udvar-Hazy Center in Chantilly, VA, instead of a code.
 - Images link to a screen-sized image that browsers display, with the full-resolution file as `download_url`.
 - `date_from` and `date_to` accept decades such as `"1860s"`, and lowercase `or` and `and` between words work as operators.
-- An optional streamable HTTP transport. `smithsonian-mcp --transport http` serves MCP at `http://127.0.0.1:8000/mcp`; `--host` and `--port`, or `MCP_TRANSPORT`, `MCP_HOST` and `MCP_PORT`, configure it. stdio stays the default. Logs still go to stderr, requests whose `Host` or `Origin` names another site are refused on loopback addresses, and Ctrl+C or SIGTERM stop the server cleanly. In Docker, `-e MCP_TRANSPORT=http -p 8000:8000` serves HTTP from the container.
+- An optional streamable HTTP transport. `smithsonian-mcp --transport http` serves MCP at `http://127.0.0.1:8000/mcp`; `--host` and `--port`, or `MCP_TRANSPORT`, `MCP_HOST` and `MCP_PORT`, configure it. stdio stays the default. Logs still go to stderr, requests whose `Host` or `Origin` names another site are refused on loopback addresses, and Ctrl+C or SIGTERM stop the server cleanly. `--allowed-hosts` or `MCP_ALLOWED_HOSTS` lists the `Host` header names accepted, by default `localhost`, `127.0.0.1`, `::1` and the listening address; other names get HTTP 421 on every listening address, which blocks DNS rebinding. The server is stateless, so it keeps no sessions. In Docker, `-e MCP_TRANSPORT=http -p 127.0.0.1:8000:8000` serves HTTP from the container to this machine. The endpoint has no authentication: anyone who can reach the port spends your API key's quota.
 
 ### Removed
 
