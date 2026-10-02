@@ -36,13 +36,20 @@ RUN groupadd --system --gid 10001 smithsonian \
 
 COPY --from=builder /app/.venv /app/.venv
 
+# MCP_HOST only applies in HTTP mode. Inside the container the server must
+# listen on all interfaces for a published port to reach it.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    MCP_HOST=0.0.0.0
 
 WORKDIR /app
 USER smithsonian
 
-# The server speaks MCP over stdio, so run the container with -i:
+# By default the server speaks MCP over stdio, so run the container with -i:
 #   docker run -i --rm -e SMITHSONIAN_API_KEY justinmol/smithsonian-mcp
+# For streamable HTTP at http://127.0.0.1:8000/mcp on the host:
+#   docker run --rm -e SMITHSONIAN_API_KEY -e MCP_TRANSPORT=http \
+#       -p 127.0.0.1:8000:8000 justinmol/smithsonian-mcp
+EXPOSE 8000
 CMD ["smithsonian-mcp"]

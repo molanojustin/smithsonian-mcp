@@ -3,13 +3,15 @@ Smithsonian Open Access MCP Main Entry Point
 
 ``main()`` is the canonical entry function, used by ``python -m smithsonian_mcp``,
 ``python -m smithsonian_mcp.main``, ``python -m smithsonian_mcp.server`` and the
-console script. Logging is configured only here, and always to stderr, because
-stdout carries the MCP stdio protocol.
+console script. It serves MCP over stdio by default, or over streamable HTTP
+with ``--transport http``. Logging is configured only here, and always to stderr,
+because stdout carries the MCP stdio protocol.
 """
 
 import argparse
 import asyncio
 import logging
+import signal
 import sys
 from typing import List, Optional, Sequence
 
@@ -23,6 +25,12 @@ LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 # Third-party loggers that log every request URL at INFO
 QUIET_LOGGERS = ("httpx", "httpcore")
+
+TRANSPORTS = ("stdio", "http")
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
+# Path of the MCP endpoint in HTTP mode
+HTTP_PATH = "/mcp"
 
 
 def configure_logging(level: Optional[str] = None) -> None:
@@ -42,19 +50,63 @@ def configure_logging(level: Optional[str] = None) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def _port(value: str) -> int:
+    """
+    Parse a TCP port number.
+
+    Args:
+        value: Port as text.
+
+    Returns:
+        int: The port, from 1 to 65535.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is not a valid port.
+    """
+    try:
+        port = int(str(value).strip())
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid port {value!r}") from exc
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"port {port} is not in 1-65535")
+    return port
+
+
 def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     """
     Parse command line arguments, ignoring unknown ones for compatibility.
+
+    ``--transport``, ``--host`` and ``--port`` default to ``MCP_TRANSPORT``,
+    ``MCP_HOST`` and ``MCP_PORT``, then to stdio, 127.0.0.1 and 8000. Invalid
+    values exit with status 2, whether they come from a flag or the environment.
 
     Args:
         argv: Arguments without the program name, or None for ``sys.argv[1:]``.
 
     Returns:
-        argparse.Namespace: Parsed arguments.
+        argparse.Namespace: Parsed arguments with transport, host and port set.
     """
     parser = argparse.ArgumentParser(
         prog="smithsonian-mcp",
-        description="Smithsonian Open Access MCP server (stdio transport).",
+        description=(
+            "Smithsonian Open Access MCP server. Serves MCP over stdio by "
+            "default, or over streamable HTTP at http://HOST:PORT/mcp with "
+            "--transport http."
+        ),
+    )
+    parser.add_argument(
+        "--transport",
+        choices=TRANSPORTS,
+        help="stdio or http (default: $MCP_TRANSPORT, else stdio)",
+    )
+    parser.add_argument(
+        "--host",
+        help=f"address to listen on in HTTP mode (default: $MCP_HOST, else {DEFAULT_HOST})",
+    )
+    parser.add_argument(
+        "--port",
+        type=_port,
+        help=f"port to listen on in HTTP mode (default: $MCP_PORT, else {DEFAULT_PORT})",
     )
     parser.add_argument(
         "--test",
@@ -67,6 +119,23 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     args, unknown = parser.parse_known_args(argv)
     if unknown:
         args.unknown = unknown
+
+    if args.transport is None:
+        transport = (Config.MCP_TRANSPORT or "").strip().lower() or "stdio"
+        if transport not in TRANSPORTS:
+            parser.error(
+                f"MCP_TRANSPORT must be one of {', '.join(TRANSPORTS)}, "
+                f"not {transport!r}"
+            )
+        args.transport = transport
+    if args.host is None:
+        args.host = (Config.MCP_HOST or "").strip() or DEFAULT_HOST
+    if args.port is None:
+        port = (Config.MCP_PORT or "").strip()
+        try:
+            args.port = _port(port) if port else DEFAULT_PORT
+        except argparse.ArgumentTypeError as exc:
+            parser.error(f"MCP_PORT: {exc}")
     return args
 
 
@@ -99,9 +168,42 @@ async def _self_test() -> int:
     return 0
 
 
+def _serve_http(host: str, port: int) -> None:
+    """
+    Serve MCP over streamable HTTP until interrupted.
+
+    Uvicorn's own log configuration is not applied, so its server and access
+    logs go through the stderr handler set up by ``configure_logging``. Host and
+    Origin headers are checked when listening on a loopback address, which
+    blocks DNS rebinding from web pages.
+
+    Uvicorn shuts down gracefully on SIGINT and SIGTERM and then raises the
+    signal again. Both end here as KeyboardInterrupt, or on Python 3.10 as the
+    cancellation of the event loop's main task, so the lifespan closes the API
+    client and the process exits with status 0.
+
+    Args:
+        host: Address to listen on.
+        port: Port to listen on.
+    """
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+    try:
+        mcp.run(
+            transport="http",
+            host=host,
+            port=port,
+            path=HTTP_PATH,
+            show_banner=False,
+            host_origin_protection="auto",
+            uvicorn_config={"log_config": None},
+        )
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("HTTP server stopped")
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     """
-    Run the MCP server over stdio.
+    Run the MCP server over stdio or streamable HTTP.
 
     Args:
         argv: Command line arguments, defaulting to ``sys.argv[1:]``.
@@ -123,8 +225,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.test:
         sys.exit(asyncio.run(_self_test()))
 
-    # The banner is noise on stderr for a stdio server
-    mcp.run(show_banner=False)
+    if args.transport == "http":
+        _serve_http(args.host, args.port)
+    else:
+        # The banner is noise on stderr for a stdio server
+        mcp.run(transport="stdio", show_banner=False)
 
 
 if __name__ == "__main__":

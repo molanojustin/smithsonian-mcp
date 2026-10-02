@@ -5,8 +5,8 @@ Tests for API client error handling paths.
 import pytest
 from unittest.mock import AsyncMock, call
 
-from smithsonian_mcp.api_client import SmithsonianAPIClient, CollectionSearchFilter
-from smithsonian_mcp.models import APIError, SmithsonianObject
+from smithsonian_mcp.api_client import SmithsonianAPIClient
+from smithsonian_mcp.models import APIError, CollectionSearchFilter, SmithsonianObject
 
 pytest.importorskip("pytest_asyncio")
 

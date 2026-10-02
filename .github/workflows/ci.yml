@@ -67,15 +67,17 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/wheel-venv/bin/python" dist/*.whl
           python3 .github/scripts/stdio_smoke.py "$RUNNER_TEMP/wheel-venv/bin/smithsonian-mcp"
 
+      - name: Smoke test HTTP mode from the built wheel
+        run: |
+          python3 .github/scripts/http_smoke.py \
+            "$RUNNER_TEMP/wheel-venv/bin/smithsonian-mcp" --transport http --port {port}
+
       - name: Smoke test the npm wrapper
         run: python3 .github/scripts/stdio_smoke.py node bin/smithsonian-mcp.js
 
   lint:
-    name: Lint (advisory)
+    name: Lint
     runs-on: ubuntu-latest
-    # The package source is not black-clean or pylint-clean yet. A later stage
-    # enforces both; until then this job reports problems without failing CI.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
 
@@ -87,7 +89,7 @@ jobs:
         run: uv sync --locked --group dev
 
       - name: black
-        run: uv run --no-sync black --check smithsonian_mcp/ tests/ examples/
+        run: uv run --no-sync black --check smithsonian_mcp/ tests/ examples/ scripts/ .github/scripts/
 
       - name: pylint
         if: ${{ !cancelled() }}

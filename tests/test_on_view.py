@@ -10,6 +10,7 @@ from smithsonian_mcp.models import (
     SearchResult,
 )
 from smithsonian_mcp.api_client import SmithsonianAPIClient
+from smithsonian_mcp.parsing import parse_object_data
 
 pytest.importorskip("pytest_asyncio")
 
@@ -256,8 +257,6 @@ class TestOnViewAPIClient:
 
     def test_parse_object_data_on_view_yes(self):
         """Test parsing object data with onPhysicalExhibit=Yes."""
-        client = SmithsonianAPIClient(api_key="test_key")
-
         raw_data = {
             "id": "test-123",
             "title": "Test Object on View",
@@ -269,7 +268,7 @@ class TestOnViewAPIClient:
             },
         }
 
-        obj = client._parse_object_data(raw_data)
+        obj = parse_object_data(raw_data)
 
         assert obj.is_on_view is True
         assert obj.id == "test-123"
@@ -277,8 +276,6 @@ class TestOnViewAPIClient:
 
     def test_parse_object_data_on_view_no(self):
         """Test parsing object data with onPhysicalExhibit=No."""
-        client = SmithsonianAPIClient(api_key="test_key")
-
         raw_data = {
             "id": "test-456",
             "title": "Test Object in Storage",
@@ -290,14 +287,12 @@ class TestOnViewAPIClient:
             },
         }
 
-        obj = client._parse_object_data(raw_data)
+        obj = parse_object_data(raw_data)
 
         assert obj.is_on_view is False
 
     def test_parse_object_data_on_view_missing(self):
         """Test parsing object data without onPhysicalExhibit field."""
-        client = SmithsonianAPIClient(api_key="test_key")
-
         raw_data = {
             "id": "test-789",
             "title": "Test Object No Status",
@@ -309,7 +304,7 @@ class TestOnViewAPIClient:
             },
         }
 
-        obj = client._parse_object_data(raw_data)
+        obj = parse_object_data(raw_data)
 
         assert obj.is_on_view is False
 

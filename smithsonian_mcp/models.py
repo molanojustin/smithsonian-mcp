@@ -72,16 +72,6 @@ class SmithsonianUnit(BaseModel):
 
     code: str = Field(..., description="Unit code (e.g., NMNH, NPG)")
     name: str = Field(..., description="Full unit name")
-    description: Optional[str] = Field(None, description="Unit description")
-    website: Optional[HttpUrl] = Field(None, description="Unit website URL")
-    location: Optional[str] = Field(None, description="Physical location")
-    archival_only: bool = Field(
-        default=False,
-        description=(
-            "True if the unit only publishes archival records, which object "
-            "searches do not return"
-        ),
-    )
 
 
 class CollectionSearchFilter(BaseModel):
@@ -191,9 +181,6 @@ class SmithsonianObject(BaseModel):
     unit_code: Optional[str] = Field(None, description="Owning Smithsonian unit code")
     unit_name: Optional[str] = Field(None, description="Owning Smithsonian unit name")
     object_type: Optional[str] = Field(None, description="Type classification")
-    classification: Optional[List[str]] = Field(
-        default_factory=list, description="Classification terms"
-    )
 
     # Creation info
     date: Optional[str] = Field(None, description="Creation date or date range")
@@ -263,12 +250,6 @@ class SmithsonianObject(BaseModel):
         None, description="Last modification date"
     )
 
-    # Raw metadata (removed to prevent context bloat - not used in codebase)
-    raw_metadata: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Original API response (not populated to reduce context size)",
-    )
-
 
 class SearchResult(BaseModel):
     """Represents search results with pagination info."""
@@ -279,50 +260,6 @@ class SearchResult(BaseModel):
     offset: int = Field(default=0, description="Result offset")
     has_more: bool = Field(..., description="Whether more results are available")
     next_offset: Optional[int] = Field(None, description="Offset for next page")
-
-
-class UnitStats(BaseModel):
-    """Statistics for a Smithsonian unit."""
-
-    unit_code: str = Field(..., description="Unit identifier")
-    unit_name: str = Field(..., description="Unit name")
-    total_objects: int = Field(..., description="Total objects in collection")
-    digitized_objects: Optional[int] = Field(
-        None, description="Digitized objects count"
-    )
-    cc0_objects: Optional[int] = Field(None, description="CC0 licensed objects count")
-    objects_with_images: Optional[int] = Field(
-        None, description="Objects with images count"
-    )
-    cc0_objects_with_cc0_media: Optional[int] = Field(
-        None, description="CC0 records that also have CC0 media (from /stats)"
-    )
-    object_types: Optional[List[str]] = Field(
-        None,
-        description="Available object types in this museum's Open Access collection",
-    )
-
-
-class CollectionStats(BaseModel):
-    """Overall collection statistics."""
-
-    total_objects: int = Field(..., description="Total objects across all units")
-    total_digitized: Optional[int] = Field(None, description="Total digitized objects")
-    total_cc0: Optional[int] = Field(None, description="Total CC0 licensed objects")
-    total_with_images: Optional[int] = Field(None, description="Objects with images")
-    total_cc0_objects_with_cc0_media: Optional[int] = Field(
-        None, description="CC0 records that also have CC0 media"
-    )
-
-    object_type_breakdown: Optional[Dict[str, int]] = Field(
-        None, description="Count of objects by type across all collections"
-    )
-
-    units: List[UnitStats] = Field(..., description="Per-unit statistics")
-    last_updated: datetime = Field(..., description="Statistics last updated")
-    notes: Optional[str] = Field(
-        None, description="How the figures were obtained and their limitations"
-    )
 
 
 # ---------------------------------------------------------------------------

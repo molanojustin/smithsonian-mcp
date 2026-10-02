@@ -8,8 +8,8 @@ import re
 
 import pytest
 
-from smithsonian_mcp.api_client import (
-    SmithsonianAPIClient,
+from smithsonian_mcp.api_client import SmithsonianAPIClient
+from smithsonian_mcp.query import (
     build_search_query,
     date_clause,
     maker_clause,
@@ -316,14 +316,14 @@ class TestFilters:
         assert date_clause("", "  ") is None
 
     def test_open_date_ranges_are_clamped(self, monkeypatch):
-        import smithsonian_mcp.api_client as api_client
+        import smithsonian_mcp.query as query
 
-        class FixedDatetime(api_client.datetime):
+        class FixedDatetime(query.datetime):
             @classmethod
             def now(cls, tz=None):
                 return cls(2026, 10, 1, tzinfo=tz)
 
-        monkeypatch.setattr(api_client, "datetime", FixedDatetime)
+        monkeypatch.setattr(query, "datetime", FixedDatetime)
         assert (
             date_clause("1990", None)
             == 'date:("1990s" OR "2000s" OR "2010s" OR "2020s")'

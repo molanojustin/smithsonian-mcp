@@ -16,7 +16,7 @@ from fastmcp import Client
 
 from smithsonian_mcp import __version__
 from smithsonian_mcp.app import mcp
-from smithsonian_mcp.tools import MAX_IMAGES, MAX_NOTES_CHARS
+from smithsonian_mcp.formatting import MAX_IMAGES, MAX_NOTES_CHARS
 from tests.fake_api import (
     counting_search,
     html_403,
@@ -747,19 +747,19 @@ class TestExploreTopic:
         assert "search_objects" in text and "record_type='archives'" in text
 
     def test_allocation_is_proportional_with_one_each(self):
-        from smithsonian_mcp.tools import _allocate
+        from smithsonian_mcp.sampling import allocate
 
         groups = {"A": [None] * 6, "B": [None] * 3, "C": [None] * 1}
-        assert _allocate(groups, 5) == {"A": 3, "B": 1, "C": 1}
-        assert _allocate(groups, 2) == {"A": 1, "B": 1, "C": 0}
-        assert _allocate(groups, 20) == {"A": 6, "B": 3, "C": 1}
+        assert allocate(groups, 5) == {"A": 3, "B": 1, "C": 1}
+        assert allocate(groups, 2) == {"A": 1, "B": 1, "C": 0}
+        assert allocate(groups, 20) == {"A": 6, "B": 3, "C": 1}
 
     def test_topic_stems(self):
-        from smithsonian_mcp.tools import _topic_stems
+        from smithsonian_mcp.sampling import topic_stems
 
-        assert _topic_stems("Space exploration") == ["space", "exploration"]
-        assert _topic_stems("dinosaurs OR fossils") == ["dinosaur", "fossil"]
-        assert _topic_stems("the art of jazz") == ["art", "jazz"]
+        assert topic_stems("Space exploration") == ["space", "exploration"]
+        assert topic_stems("dinosaurs OR fossils") == ["dinosaur", "fossil"]
+        assert topic_stems("the art of jazz") == ["art", "jazz"]
 
 
 class TestCollectionStats:

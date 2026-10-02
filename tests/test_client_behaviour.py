@@ -15,9 +15,10 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from smithsonian_mcp import context
+from smithsonian_mcp import api_client, context
 from smithsonian_mcp.api_client import SmithsonianAPIClient
 from smithsonian_mcp.models import APIError, CollectionSearchFilter
+from smithsonian_mcp.parsing import parse_exhibition_location, parse_object_data
 
 pytest.importorskip("pytest_asyncio")
 
@@ -94,8 +95,7 @@ class TestParsing:
 
     def test_real_row_fields(self, caplog):
         caplog.set_level(logging.DEBUG, logger="smithsonian_mcp")
-        client = SmithsonianAPIClient(api_key="test")
-        obj = client._parse_object_data(REAL_ROW)
+        obj = parse_object_data(REAL_ROW)
 
         assert obj.title == "Small Landscape & Trees"
         assert obj.unit_code == "SAAM"
@@ -216,7 +216,6 @@ class TestParsing:
         ],
     )
     def test_makers_are_creators_only(self, unit, names, indexed, expected):
-        client = SmithsonianAPIClient(api_key="test")
         entries = [
             (
                 {"content": content}
@@ -234,12 +233,11 @@ class TestParsing:
                 "indexedStructured": {"name": indexed},
             },
         }
-        assert client._parse_object_data(row).maker == expected
+        assert parse_object_data(row).maker == expected
 
     @staticmethod
     def _parse(content, **extra):
-        client = SmithsonianAPIClient(api_key="test")
-        return client._parse_object_data(
+        return parse_object_data(
             {"id": "ld1-x", "title": "t", "content": content, **extra}
         )
 
@@ -312,24 +310,20 @@ class TestParsing:
         assert with_media.is_cc0 is True and with_media.metadata_is_cc0 is True
 
     def test_maker_block_entries_count_without_label(self):
-        client = SmithsonianAPIClient(api_key="test")
         row = {
             "id": "ld1-x",
             "title": "t",
             "content": {"freetext": {"maker": [{"content": "Unlabeled Maker"}]}},
         }
-        assert client._parse_object_data(row).maker == ["Unlabeled Maker"]
+        assert parse_object_data(row).maker == ["Unlabeled Maker"]
 
     def test_exhibition_room_is_optional(self):
-        client = SmithsonianAPIClient(api_key="test")
         indexed = {"exhibition": [{"building": "NMAH", "room": "East 1"}]}
-        assert client._parse_exhibition_location(indexed) == "NMAH, East 1"
-        assert client._parse_exhibition_location({"exhibition": [{}]}) is None
-        assert client._parse_exhibition_location({}) is None
+        assert parse_exhibition_location(indexed) == "NMAH, East 1"
+        assert parse_exhibition_location({"exhibition": [{}]}) is None
+        assert parse_exhibition_location({}) is None
 
     def test_type_citations_are_not_object_types(self):
-        client = SmithsonianAPIClient(api_key="test")
-
         def row(object_types, indexed=None):
             return {
                 "id": "ld1-x",
@@ -344,13 +338,12 @@ class TestParsing:
             "label": "Type Citation",
             "content": "Gilmore. 1914. U.S.Natl.Mus.Bull. (n.89): 1-114.",
         }
-        assert client._parse_object_data(row([citation])).object_type is None
+        assert parse_object_data(row([citation])).object_type is None
         assert (
-            client._parse_object_data(row([citation], ["Holotypes"])).object_type
-            == "Holotypes"
+            parse_object_data(row([citation], ["Holotypes"])).object_type == "Holotypes"
         )
         name = {"label": "Object Name", "content": "puppet"}
-        assert client._parse_object_data(row([citation, name])).object_type == "puppet"
+        assert parse_object_data(row([citation, name])).object_type == "puppet"
 
 
 class TestSearch:
@@ -365,14 +358,13 @@ class TestSearch:
             {"id": "bad-1", "title": "Bad", "content": []},
             {"id": "good-2", "title": "Also good"},
         ]
-        original = client._parse_object_data
 
         def parse(row):
             if isinstance(row, dict) and row.get("id") == "bad-1":
                 raise ValueError("broken record")
-            return original(row)
+            return parse_object_data(row)
 
-        monkeypatch.setattr(client, "_parse_object_data", parse)
+        monkeypatch.setattr(api_client, "parse_object_data", parse)
         monkeypatch.setattr(
             client, "_make_request", AsyncMock(return_value=_search_response(rows, 10))
         )
@@ -527,8 +519,7 @@ class TestUnits:
         assert "FSG" not in codes and "NMAA" in codes and "NMNH" in codes
         assert codes.count("SAAM") == 1
         aaa = next(u for u in units if u.code == "AAA")
-        assert aaa.archival_only is True
-        assert "archival" in aaa.description
+        assert aaa.name == "Archives of American Art"
 
 
 class TestSharedClient:
@@ -536,15 +527,18 @@ class TestSharedClient:
 
     @pytest.mark.asyncio
     async def test_lifespan_client_is_used_and_closed(self, monkeypatch):
-        from smithsonian_mcp.server import server_lifespan
+        created = []
 
-        create = AsyncMock(
-            side_effect=AssertionError("must not create a second client")
-        )
-        monkeypatch.setattr(context, "create_client", create)
+        async def fake_create():
+            client = SmithsonianAPIClient(api_key="test")
+            await client.connect()
+            created.append(client)
+            return client
+
+        monkeypatch.setattr(context, "create_client", fake_create)
         context.set_api_client(None)
 
-        async with server_lifespan(None) as server_context:
+        async with context.server_lifespan(None) as server_context:
             client = server_context.api_client
             assert client.session is not None
             assert await context.get_api_client() is client
@@ -552,7 +546,7 @@ class TestSharedClient:
 
         assert client.session is None  # closed on shutdown
         assert context.peek_api_client() is None
-        create.assert_not_awaited()
+        assert created == [client]  # the tools did not create a second client
 
     @pytest.mark.asyncio
     async def test_lazy_client_outside_lifespan(self, monkeypatch):
