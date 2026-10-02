@@ -980,12 +980,53 @@ class TestPrompts:
                 )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "minutes, count",
+        [
+            ("10", "1 object"),
+            ("30", "1 object"),
+            ("45", "1-2 objects"),
+            ("50", "2 objects"),
+            ("60", "2-3 objects"),
+            ("90", "4-5 objects"),
+            ("120", "5-7 objects"),
+        ],
+    )
+    async def test_lesson_object_count_follows_session_length(self, minutes, count):
+        async with Client(mcp) as client:
+            result = await client.get_prompt(
+                "educational_content", {"subject": "flight", "session_minutes": minutes}
+            )
+        text = result.messages[0].content.text
+        assert f"lasts {minutes} minutes, so feature about {count}," in text
+        assert f"timed agenda for the {minutes} minutes" in text
+
+    @pytest.mark.asyncio
+    async def test_lesson_without_session_length_has_no_count(self):
+        async with Client(mcp) as client:
+            result = await client.get_prompt(
+                "educational_content", {"subject": "flight"}
+            )
+        text = result.messages[0].content.text
+        assert "feature about" not in text and "agenda" not in text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("minutes", ["5", "481", "an hour", "60.5"])
+    async def test_lesson_session_length_is_validated(self, minutes):
+        async with Client(mcp) as client:
+            with pytest.raises(Exception, match="session_minutes"):
+                await client.get_prompt(
+                    "educational_content",
+                    {"subject": "flight", "session_minutes": minutes},
+                )
+
+    @pytest.mark.asyncio
     async def test_prompts_only_name_existing_tools(self):
         args = {
             "collection_research": {"research_topic": "jazz"},
             "object_analysis": {"object_id": "ld1-1"},
             "exhibition_planning": {"exhibition_theme": "flight"},
-            "educational_content": {"subject": "Space"},
+            "educational_content": {"subject": "Space", "session_minutes": "60"},
             "museum_on_view": {"museum": "NMAH"},
         }
         async with Client(mcp) as client:

@@ -5,12 +5,19 @@ Each prompt describes a task and names the tools to use for it; the tools
 themselves are documented in the server instructions and tool descriptions.
 """
 
-from typing import List, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
+from pydantic import Field
 
-from .constants import SIZE_GUIDELINES
+from .constants import (
+    MINUTES_PER_OBJECT,
+    SESSION_MAX_MINUTES,
+    SESSION_MIN_MINUTES,
+    SESSION_OVERHEAD_MINUTES,
+    SIZE_GUIDELINES,
+)
 from .tools import summary_of
 
 
@@ -109,10 +116,34 @@ def exhibition_planning(
     ]
 
 
+def _lesson_object_count(session_minutes: int) -> str:
+    """
+    How many objects a teaching session has time for, such as "2-3 objects".
+
+    Args:
+        session_minutes: Length of the session in minutes.
+
+    Returns:
+        str: The object count, as text.
+    """
+    teaching = max(session_minutes - SESSION_OVERHEAD_MINUTES, 0)
+    quickest, slowest = MINUTES_PER_OBJECT
+    fewest = max(1, teaching // slowest)
+    most = max(1, teaching // quickest)
+    if most == 1:
+        return "1 object"
+    if fewest == most:
+        return f"{most} objects"
+    return f"{fewest}-{most} objects"
+
+
 def educational_content(
     subject: str,
     grade_level: str = "middle school",
     learning_goals: Optional[str] = None,
+    session_minutes: Optional[
+        Annotated[int, Field(ge=SESSION_MIN_MINUTES, le=SESSION_MAX_MINUTES)]
+    ] = None,
 ) -> List[Message]:
     """
     Create a lesson built around Smithsonian objects.
@@ -121,23 +152,35 @@ def educational_content(
         subject: Subject area, e.g. "American History", "Art" or "Science".
         grade_level: Target grade level or age group.
         learning_goals: Optional learning objectives.
+        session_minutes: Optional session length in minutes; sets the object count.
 
     Returns:
         List[Message]: The prompt messages.
     """
     goals = f"\nLearning goals: {learning_goals}" if learning_goals else ""
+    timing = ""
+    agenda = ""
+    if session_minutes is not None:
+        timing = (
+            f"\nThe session lasts {session_minutes} minutes, so feature about "
+            f"{_lesson_object_count(session_minutes)}, the ones that best "
+            "illustrate the key concepts, and leave time for an introduction and "
+            "wrap-up."
+        )
+        agenda = f" and a timed agenda for the {session_minutes} minutes"
     return [
         Message(
             f"Help me create educational content about '{subject}' for "
-            f"{grade_level} students using Smithsonian collections.{goals}\n\n"
+            f"{grade_level} students using Smithsonian collections.{goals}"
+            f"{timing}\n\n"
             "1. Use explore_topic and search_objects (has_images=true) to find "
             "age-appropriate objects that illustrate key concepts.\n"
             "2. Use get_object for the context of the objects you choose.\n"
             "3. Suggest activities and open-ended discussion questions.\n"
             "4. Add cross-curricular connections and creative projects.\n"
             "5. Prefer objects with CC0 images for classroom handouts.\n\n"
-            "Structure it as a lesson plan with clear learning outcomes, and link "
-            "each object with its web_url."
+            f"Structure it as a lesson plan with clear learning outcomes{agenda}, "
+            "and link each object with its web_url."
         )
     ]
 
