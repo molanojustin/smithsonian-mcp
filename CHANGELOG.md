@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-10-02
 
 Version 2.0 replaces the 28 tools of 1.x with 5. Tool names and output shapes change, so prompts, scripts and saved workflows that call 1.x tools need updating. See [Migrating from 1.x](README.md#migrating-from-1x).
 
@@ -67,5 +67,5 @@ Version 2.0 replaces the 28 tools of 1.x with 5. Tool names and output shapes ch
 
 The last 1.x release, with 28 tools. Earlier changes are not recorded in this file; see the git history.
 
-[2.0.0]: https://github.com/molanojustin/smithsonian-mcp/compare/v1.2.9...HEAD
+[2.0.0]: https://github.com/molanojustin/smithsonian-mcp/compare/v1.2.9...v2.0.0
 [1.2.9]: https://github.com/molanojustin/smithsonian-mcp/releases/tag/v1.2.9
