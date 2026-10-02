@@ -52,7 +52,7 @@
       "label": "Format Code",
       "type": "shell",
       "command": ".venv/bin/black",
-      "args": ["smithsonian_mcp/", "tests/", "examples/"],
+      "args": ["smithsonian_mcp/", "tests/", "examples/", "scripts/", ".github/scripts/"],
       "group": "build"
     },
     {

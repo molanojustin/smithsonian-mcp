@@ -16,7 +16,7 @@ from .tools import summary_of
 
 async def museums_resource() -> str:
     """
-    Smithsonian units with codes, object counts and accepted name aliases.
+    Smithsonian units with codes, record types and accepted name aliases.
 
     Returns:
         str: JSON array, the same data as the list_museums tool.
