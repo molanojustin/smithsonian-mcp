@@ -1555,13 +1555,14 @@ class SmithsonianAPIClient:
             last_modified=_parse_timestamp(raw_data.get("lastTimeUpdated"))
             or _parse_timestamp(raw_data.get("modified")),
             maker=self._parse_makers(freetext),
+            # The indexed term is what the object_type filter matches
             object_type=_first_text(
+                indexed.get("object_type"),
                 [
                     item
                     for item in _as_list(freetext.get("objectType"))
                     if _label_of(item) not in _NOT_OBJECT_TYPE_LABELS
                 ],
-                indexed.get("object_type"),
             ),
             materials=materials,
             topics=_strings(indexed.get("topic")),

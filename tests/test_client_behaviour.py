@@ -107,7 +107,7 @@ class TestParsing:
         assert obj.maker == ["J. Francis Murphy, born 1853"]
         assert obj.date == "ca. 1880-1890"
         assert obj.date_standardized == "1880s"
-        assert obj.object_type == "Painting"
+        assert obj.object_type == "Paintings"  # the indexed term, as filtered
         assert obj.materials == ["oil on canvas"]
         assert obj.dimensions == "10 x 12 in."
         assert obj.credit_line == "Bequest of M. L."
