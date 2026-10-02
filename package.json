@@ -58,7 +58,7 @@
     "node": ">=16.0.0"
   },
   "files": [
-    "bin/",
+    "bin/smithsonian-mcp.js",
     "README.md",
     "TROUBLESHOOTING.md",
     "CHANGELOG.md",
