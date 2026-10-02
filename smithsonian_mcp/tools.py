@@ -375,7 +375,12 @@ def _web_url(obj: SmithsonianObject) -> Optional[str]:
     Returns:
         Optional[str]: A validated http(s) URL, or None.
     """
-    candidates = (obj.record_link, record_page_url(obj.record_id), obj.guid, obj.url)
+    candidates = (
+        obj.record_link,
+        record_page_url(obj.record_id, obj.unit_code),
+        obj.guid,
+        obj.url,
+    )
     for candidate in candidates:
         url = validate_url(str(candidate)) if candidate else None
         if url:

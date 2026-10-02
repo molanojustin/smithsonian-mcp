@@ -418,6 +418,46 @@ class TestGetObject:
         assert len(response) / 4 < 2500
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "unit, record_id, guid, url, expected",
+        [
+            # SIRIS id of a non-SIA unit: no pattern page, so the guid is used
+            (
+                "CFCHFOLKLIFE",
+                "siris_arc_336210",
+                "https://n2t.net/ark:/65665/x1",
+                None,
+                "https://n2t.net/ark:/65665/x1",
+            ),
+            # Neither link nor pattern nor guid: the url field
+            (
+                "SILNMAHTL",
+                "SILNMAHTL_45848",
+                None,
+                "https://library.si.edu/x",
+                "https://library.si.edu/x",
+            ),
+            ("SILNMAHTL", "SILNMAHTL_45848", None, None, None),
+            (
+                "SIA",
+                "siris_arc_367768",
+                None,
+                None,
+                "https://siarchives.si.edu/collections/siris_arc_367768",
+            ),
+        ],
+    )
+    async def test_web_url_fallbacks(
+        self, fake_api, unit, record_id, guid, url, expected
+    ):
+        row = make_row("ld1-w", "W", unit, record_id=record_id, guid=guid)
+        if url:
+            row["url"] = url
+        fake_api.add_record(row)
+        result = await call("get_object", {"object_id": "ld1-w"})
+        assert result.get("web_url") == expected
+
+    @pytest.mark.asyncio
     async def test_unknown_id_is_a_tool_error(self, fake_api):
         text = await call_error("get_object", {"object_id": "ld1-missing"})
         assert "No object with id 'ld1-missing'" in text

@@ -407,17 +407,23 @@ def _normalize_museum_code(record_id_prefix: str) -> str:
     return prefix.upper()
 
 
-def record_page_url(record_id: Optional[str]) -> Optional[str]:
+def record_page_url(
+    record_id: Optional[str], unit_code: Optional[str] = None
+) -> Optional[str]:
     """
     Build an object page URL from a record_id alone, without any request.
 
     Only museums whose URL pattern needs nothing but the record_id or accession
-    number are handled (NMAH, NMAA, NPG, NPM, SIA, several NMNH departments, ...).
-    Museums whose pages need record data (record_link, guid, EDAN URL or IDS id)
-    return None.
+    number are handled (NMAH, NMAA, NMAAHC, NPG, NPM, SIA, several NMNH
+    departments). Each was checked against live pages in October 2026. Museums
+    whose pages need record data (record_link, guid, EDAN URL or IDS id) return
+    None.
 
     Args:
         record_id: Record identifier such as ``nmah_1448973`` or ``fsg_F1900.47``.
+        unit_code: Unit of the record, if known. SIRIS archive ids
+            (``siris_arc_...``) are shared by several units, but only the
+            Smithsonian Institution Archives (SIA) has pages for them.
 
     Returns:
         Optional[str]: The page URL, or None if it cannot be built from the id.
@@ -428,6 +434,8 @@ def record_page_url(record_id: Optional[str]) -> Optional[str]:
 
     # Smithsonian Institution Archives records use SIRIS ids ("siris_arc_403511")
     if record_id_prefix.lower() == "siris" and accession.lower().startswith("arc_"):
+        if unit_code not in (None, "SIA"):
+            return None
         museum_code = "SIA"
     else:
         museum_code = _normalize_museum_code(record_id_prefix)
