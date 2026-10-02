@@ -1,12 +1,22 @@
 """
-Utility functions for the Smithsonian MCP server.
+Utility functions for the Smithsonian MCP server: text cleanup, unit codes,
+museum name resolution and object page URLs.
 """
 
 import html
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import HttpUrl
+
+from .constants import (
+    ARCHIVAL_UNIT_CODES,
+    MIXED_UNIT_CODES,
+    MUSEUM_MAP,
+    MUSEUM_URL_PATTERNS,
+    UNIT_CODE_ALIASES,
+    VALID_MUSEUM_CODES,
+)
 
 _TAG_RE = re.compile(r"</?[A-Za-z][^<>]*>")
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -45,6 +55,29 @@ _NAME_PREFIXES = (
     "museum of ",
 )
 _NAME_SUFFIXES = (" museum", " gallery", " galleries")
+# Museum names that mean the whole Smithsonian rather than one unit.
+_WHOLE_SMITHSONIAN = frozenset(
+    {
+        "smithsonian",
+        "the smithsonian",
+        "smithsonian institution",
+        "the smithsonian institution",
+        "smithsonian museums",
+        "all smithsonian museums",
+        "all museums",
+        "all",
+        "any",
+    }
+)
+# Fragments of long NMNH record_id prefixes ("nmnhpaleobiology_...") and the
+# department codes they stand for.
+_NMNH_RECORD_PREFIXES = (
+    ("invertebratezoology", "NMNHINV"),
+    ("anthropology", "NMNHANTHRO"),
+    ("education", "NMNHEDUCATION"),
+    ("mineralsciences", "NMNHMINSCI"),
+    ("paleobiology", "NMNHPALEO"),
+)
 
 
 def mask_api_key(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -97,13 +130,6 @@ def normalize_unit_code(code: Optional[str]) -> Optional[str]:
     """
     if not code or not code.strip():
         return None
-
-    # Import here to avoid circular imports
-    from .constants import (  # pylint: disable=import-outside-toplevel
-        UNIT_CODE_ALIASES,
-        VALID_MUSEUM_CODES,
-    )
-
     raw = code.strip()
     upper = raw.upper()
     if upper in UNIT_CODE_ALIASES:
@@ -140,9 +166,51 @@ def _strip_name_affixes(text: str) -> str:
 
 def _normalized_museum_map() -> Dict[str, str]:
     """Return MUSEUM_MAP with keys normalized like user input."""
-    from .constants import MUSEUM_MAP  # pylint: disable=import-outside-toplevel
-
     return {_normalize_museum_name(key): code for key, code in MUSEUM_MAP.items()}
+
+
+def _is_unit_code(text: str) -> bool:
+    """Whether text is a unit code or legacy code, in any case."""
+    upper = text.upper()
+    return upper in UNIT_CODE_ALIASES or any(
+        upper == code.upper() for code in VALID_MUSEUM_CODES
+    )
+
+
+def _match_museum_name(normalized: str, museum_map: Dict[str, str]) -> Optional[str]:
+    """
+    Find the unit code for a normalized museum name.
+
+    Args:
+        normalized: Name as returned by _normalize_museum_name.
+        museum_map: MUSEUM_MAP with normalized keys.
+
+    Returns:
+        Optional[str]: The unit code, or None if no name matches.
+    """
+    if normalized in museum_map:
+        return museum_map[normalized]
+    cleaned = _strip_name_affixes(normalized)
+    if cleaned in museum_map:
+        return museum_map[cleaned]
+
+    # Longest map key contained in the input as whole words
+    padded = f" {normalized} "
+    contained = [key for key in museum_map if f" {key} " in padded]
+    if contained:
+        return museum_map[max(contained, key=len)]
+
+    # Input contained in a map key: the whole name first ("african american"
+    # in "african american history"), as long as it has an informative word,
+    # then every informative word in one map key, in any order
+    informative = [w for w in cleaned.split() if w not in _NAME_STOP_WORDS]
+    if not informative:
+        return None
+    phrase = f" {cleaned} "
+    containing = [key for key in museum_map if phrase in f" {key} "] or [
+        key for key in museum_map if set(informative) <= set(key.split())
+    ]
+    return museum_map[min(containing, key=len)] if containing else None
 
 
 def resolve_museum_code(museum_name: str) -> Optional[str]:
@@ -175,52 +243,45 @@ def resolve_museum_code(museum_name: str) -> Optional[str]:
     """
     if not museum_name or not museum_name.strip():
         return None
-
-    from .constants import (  # pylint: disable=import-outside-toplevel
-        UNIT_CODE_ALIASES,
-        VALID_MUSEUM_CODES,
-    )
-
     raw = museum_name.strip()
-    upper = raw.upper()
-    if upper in UNIT_CODE_ALIASES or any(
-        upper == c.upper() for c in VALID_MUSEUM_CODES
-    ):
+    if _is_unit_code(raw):
         return normalize_unit_code(raw)
-
-    museum_map = _normalized_museum_map()
     normalized = _normalize_museum_name(raw)
     if not normalized:
         return None
-    if normalized in museum_map:
-        return museum_map[normalized]
+    return _match_museum_name(normalized, _normalized_museum_map())
 
-    cleaned = _strip_name_affixes(normalized)
-    if cleaned in museum_map:
-        return museum_map[cleaned]
 
-    # Longest map key contained in the input as whole words
-    padded = f" {normalized} "
-    contained = [key for key in museum_map if f" {key} " in padded]
-    if contained:
-        return museum_map[max(contained, key=len)]
+def is_whole_smithsonian(museum: Optional[str]) -> bool:
+    """
+    Whether a museum argument names the whole Smithsonian, such as "Smithsonian".
 
-    # Input contained in a map key: the whole name first ("african american"
-    # in "african american history"), as long as it has an informative word
-    informative = [w for w in cleaned.split() if w not in _NAME_STOP_WORDS]
-    if informative:
-        phrase = f" {cleaned} "
-        containing = [key for key in museum_map if phrase in f" {key} "]
-        if containing:
-            return museum_map[min(containing, key=len)]
+    Args:
+        museum: The museum argument.
 
-        # Every informative word in one map key, in any order
-        wanted = set(informative)
-        containing = [key for key in museum_map if wanted <= set(key.split())]
-        if containing:
-            return museum_map[min(containing, key=len)]
+    Returns:
+        bool: True for names of the whole institution.
+    """
+    if not museum:
+        return False
+    return " ".join(re.findall(r"[a-z]+", museum.lower())) in _WHOLE_SMITHSONIAN
 
-    return None
+
+def record_types(code: str) -> List[str]:
+    """
+    The search_objects record_type values that return records for a unit.
+
+    Args:
+        code: Unit code.
+
+    Returns:
+        List[str]: ["objects"], ["archives"] or both.
+    """
+    if code in ARCHIVAL_UNIT_CODES:
+        return ["archives"]
+    if code in MIXED_UNIT_CODES:
+        return ["objects", "archives"]
+    return ["objects"]
 
 
 def validate_url(url_str: Optional[str]) -> Optional[str]:
@@ -257,23 +318,12 @@ def validate_url(url_str: Optional[str]) -> Optional[str]:
 
 
 def _normalize_museum_code(record_id_prefix: str) -> str:
-    """Normalize record_id prefix to museum code key used in MUSEUM_URL_PATTERNS."""
+    """Map a record_id prefix to its key in MUSEUM_URL_PATTERNS."""
     prefix = record_id_prefix.lower()
-
-    # Handle NMNH sub-museums with long prefixes
     if prefix.startswith("nmnh"):
-        if "invertebratezoology" in prefix:
-            return "NMNHINV"
-        if "anthropology" in prefix:
-            return "NMNHANTHRO"
-        if "education" in prefix:
-            return "NMNHEDUCATION"
-        if "mineralsciences" in prefix:
-            return "NMNHMINSCI"
-        if "paleobiology" in prefix:
-            return "NMNHPALEO"
-        return prefix.upper()  # fallback
-
+        for fragment, code in _NMNH_RECORD_PREFIXES:
+            if fragment in prefix:
+                return code
     return prefix.upper()
 
 
@@ -310,18 +360,11 @@ def record_page_url(
     else:
         museum_code = _normalize_museum_code(record_id_prefix)
 
-    from .constants import (  # pylint: disable=import-outside-toplevel
-        MUSEUM_URL_PATTERNS,
-    )
-
     pattern = MUSEUM_URL_PATTERNS.get(museum_code)
-    if not pattern or pattern["identifier"] not in ("record_ID", "accession"):
-        return None
-    base_url = pattern["base_url"]
-    if "{" in base_url:
+    if not pattern:
         return None
     try:
         path = pattern["path_template"].format(record_ID=record_id, accession=accession)
     except (KeyError, ValueError):
         return None
-    return base_url.rstrip("/") + path
+    return pattern["base_url"].rstrip("/") + path
