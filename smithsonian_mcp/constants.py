@@ -99,6 +99,16 @@ MIXED_UNIT_CODES: FrozenSet[str] = frozenset(
     {"CFCHFOLKLIFE", "NMAAHC", "NPG", "SAAM", "SIA", "SIL"}
 )
 
+# Units whose indexed name field leaves out creators, so name: cannot find their
+# works by maker. NMAA indexes provenance only ("Freer, Charles Lang", dealers)
+# and NMAfA indexes no names; their creators appear only in freetext.name. In
+# October 2026 random samples, no NMAA or NMAfA creator was in the name field,
+# against 83-100% at SAAM, NPG, HMSG, CHNDM, NMAH, NASM and other art and
+# history units (the misses there were "Unidentified" makers). Keyword matching
+# finds these creators instead: 159 of the 167 NMAA records matching "Hokusai"
+# list him as artist.
+UNITS_WITHOUT_INDEXED_MAKERS: FrozenSet[str] = frozenset({"NMAA", "NMAfA"})
+
 # Legacy or informal codes that users pass but the index does not use.
 # "FSG" (Freer|Sackler) records are indexed under NMAA today.
 UNIT_CODE_ALIASES: Dict[str, str] = {

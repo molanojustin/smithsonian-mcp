@@ -350,16 +350,19 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
     Search Smithsonian collection objects by keyword and filters.
 
     Returns compact summaries; pass an id to get_object for the full record.
-    For "how many" questions use limit=1 and read total_count.
+    For "how many" questions use limit=1 and read total_count. For works by a
+    person use maker, since query also matches records that only mention them.
 
     Args:
-        query: Keywords. Every word must match, so use 1-4 distinctive words, OR
+        query: Keywords, matched anywhere in a record, descriptions and notes
+            included. Every word must match, so use 1-4 distinctive words, OR
             between alternatives ("muppet OR henson") and quotes for phrases.
             Leave out stop-words and questions. Empty matches everything.
         museum: Museum name or unit code, e.g. "American History", "NMAH",
             "Asian Art", "Natural History".
         object_type: Object type, e.g. "Paintings", "Puppets".
-        maker: Creator name, e.g. "Winslow Homer".
+        maker: Creator name, full or surname, e.g. "Winslow Homer", "Homer",
+            "Katsushika Hokusai". Results then carry maker_match.
         topic: Subject term, e.g. "Civil War".
         material: Material or medium, e.g. "bronze".
         date_from: Earliest year, such as 1860 or "1860s", matched by decade.
@@ -420,7 +423,7 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
         offset=result.offset,
         next_offset=result.next_offset,
         museum=unit,
-        objects=[summarize(obj) for obj in result.objects],
+        objects=[summarize(obj, maker) for obj in result.objects],
         note=search_note(filters, result, museum, unit),
     )
 

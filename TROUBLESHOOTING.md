@@ -60,6 +60,7 @@ A firewall in front of the API blocks query text that looks like SQL, HTML or sc
 An empty result carries a `note` that explains it. Common causes:
 
 - Every word in `query` must match, so a full question or sentence usually finds nothing, or a few objects that miss the point. Results for a query with a question mark or five or more terms carry a `note` that says so. Use 1 to 4 distinctive keywords, `OR` for alternatives, `maker` for names, and filters such as `museum` and `on_view`. See [Search tips](README.md#search-tips).
+- The filters match nothing together. With no `query`, the note lists the filters that were applied, with their values as the server read them, so drop one or broaden it. `maker` matches a full name or a surname; a given name on its own, such as "Winslow", does not match "Homer, Winslow".
 - The `offset` is past the last result. The note gives the number of results; start again from `offset=0` or follow `next_offset`.
 
 Some searches return an error instead:

@@ -13,6 +13,7 @@ from smithsonian_mcp.query import (
     build_search_query,
     date_clause,
     maker_clause,
+    maker_matches,
     normalize_free_text_query,
     vocabulary_clause,
     vocabulary_variants,
@@ -228,7 +229,7 @@ class TestFilters:
 
     def test_maker(self):
         assert maker_clause("Winslow Homer") == (
-            '(name:"Winslow Homer" OR name:"Homer, Winslow"'
+            '(name:"Winslow Homer" OR name:"Homer, Winslow" OR name:"Winslow, Homer"'
             r" OR name:Winslow\ Homer\ * OR name:Winslow\ Homer\,*"
             r" OR name:Winslow\ Homer\-* OR name:Winslow\ Homer\/*"
             r" OR name:Winslow\ Homer's* OR name:Homer\,\ Winslow\ *"
@@ -281,6 +282,70 @@ class TestFilters:
         for suffix in ("Jr.", "Jr", "Sr.", "II", "III", "IV", ", Jr."):
             clause = maker_clause(f"Martin Luther King {suffix}")
             assert 'name:"King, Martin Luther"' in clause, suffix
+
+    def test_two_word_makers_also_match_family_name_first(self):
+        # East Asian names are filed "Family, Given"
+        clause = maker_clause("katsushika hokusai")
+        assert _clause_matches(clause, "Katsushika, Hokusai")
+        assert _clause_matches(clause, "Hokusai, Katsushika")
+        assert 'name:"Luther, King"' not in maker_clause("Martin Luther King")
+
+    @pytest.mark.parametrize("museum", ["NMAA", "FSG", "NMAfA", "nmafa"])
+    def test_maker_is_a_keyword_at_units_without_indexed_makers(self, museum):
+        unit = "NMAfA" if museum.lower() == "nmafa" else "NMAA"
+        assert q(unit_code=museum, maker="Hokusai", on_view=True) == (
+            f'* AND unit_code:{unit} AND "Hokusai" AND onPhysicalExhibit:"Yes"'
+        )
+        assert q(unit_code=museum, maker="Katsushika Hokusai") == (
+            f'* AND unit_code:{unit} AND ("Katsushika" AND "Hokusai")'
+        )
+
+    @pytest.mark.parametrize(
+        "maker, keywords",
+        [
+            ("Hokusai, Katsushika", '("Hokusai" AND "Katsushika")'),
+            ("J. M. W. Turner", '"Turner"'),
+            ("Martin Luther King Jr.", '("Martin" AND "Luther" AND "King")'),
+            ("R. T.", '("R" AND "T")'),
+            ("葛飾北斎", '"葛飾北斎"'),
+        ],
+    )
+    def test_maker_keywords_drop_initials_and_suffixes(self, maker, keywords):
+        assert (
+            q(unit_code="NMAA", maker=maker) == f"* AND unit_code:NMAA AND {keywords}"
+        )
+
+    def test_maker_without_museum_adds_keywords_for_those_units(self):
+        assert q(maker="Hokusai") == (
+            f'* AND ({maker_clause("Hokusai")} OR '
+            '(unit_code:(NMAA OR NMAfA) AND "Hokusai"))'
+        )
+
+    def test_maker_at_other_units_uses_the_name_field_only(self):
+        assert q(unit_code="SAAM", maker="Hokusai") == (
+            f'* AND unit_code:SAAM AND {maker_clause("Hokusai")}'
+        )
+
+    @pytest.mark.parametrize(
+        "maker, makers, expected",
+        [
+            ("Hokusai", ["Katsushika Hokusai 葛飾北斎 (1760-1849)"], True),
+            ("hokusai katsushika", ["Katsushika Hokusai 葛飾北斎 (1760-1849)"], True),
+            ("Hokusai, Katsushika", ["Katsushika Hokusai"], True),
+            ("葛飾北斎", ["Katsushika Hokusai 葛飾北斎 (1760-1849)"], True),
+            ("Hokusai", ["James McNeill Whistler (1834-1903)"], False),
+            ("Hokusai", [], False),
+            ("Gerome", ["Jean-Léon Gérôme"], True),
+            ("Winslow Homer", ["Homer, Winslow"], True),
+            ("J. M. W. Turner", ["Joseph Mallord William Turner"], True),
+            ("Martin Luther King Jr.", ["King, Martin Luther, Jr."], True),
+            ("Smith", ["Smithson, James"], False),
+            ("Lockheed", ["Lockheed Aircraft Corporation"], True),
+            ("Jim Henson", ["Henson, Jane"], False),
+        ],
+    )
+    def test_maker_matches_creators(self, maker, makers, expected):
+        assert maker_matches(maker, makers) is expected
 
     def test_topic(self):
         clause = vocabulary_clause("topic", "civil war", narrower=True)
@@ -401,6 +466,12 @@ class TestEscaping:
         # Every unescaped quote is paired, so the value cannot end a phrase early
         assert re.sub(r"\\.", "", clause).count('"') % 2 == 0
         assert q(material="a\\b") == r'* AND physicalDescription:"a\\b"'
+
+    def test_maker_keywords_stay_inside_phrases(self):
+        query = q(unit_code="NMAA", maker='Homer" OR unit_code:"SAAM')
+        assert query == (
+            r'* AND unit_code:NMAA AND ("Homer\"" AND "OR" AND "unit_code:\"SAAM")'
+        )
 
     def test_injection_attempt_stays_inside_phrase(self):
         clause = maker_clause('Homer" OR unit_code:"SAAM')

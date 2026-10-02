@@ -204,9 +204,13 @@ class TestOnViewAPIClient:
 
         assert "fq" not in params
         assert params["q"].startswith(
-            '* AND (name:"Alma Thomas" OR name:"Thomas, Alma" '
+            '* AND ((name:"Alma Thomas" OR name:"Thomas, Alma" '
         )
         assert r"OR name:Thomas\,\ Alma\ *" in params["q"]
+        # Units that do not index creators are searched by keyword
+        assert params["q"].endswith(
+            ' OR (unit_code:(NMAA OR NMAfA) AND ("Alma" AND "Thomas")))'
+        )
 
     def test_build_search_params_on_view_with_unit(self):
         """Test building search params with on_view and unit_code."""

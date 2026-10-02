@@ -306,9 +306,30 @@ def _first_exhibition(indexed: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_exhibition_title(indexed: Dict[str, Any]) -> Optional[str]:
-    """Parse the exhibition title from the exhibition field."""
-    title = _first_exhibition(indexed).get("exhibitionTitle")
-    return clean_text(title) if isinstance(title, str) and title.strip() else None
+    """
+    Parse the exhibition title from the exhibition field.
+
+    A location that repeats the room before the title is dropped, as in NMAA's
+    "West Building (Freer Gallery of Art), Gallery 06: Japanese Art from the
+    Collection", since the location is reported separately.
+
+    Args:
+        indexed: The indexedStructured block of a record.
+
+    Returns:
+        Optional[str]: The title, e.g. "Japanese Art from the Collection".
+    """
+    exhibition = _first_exhibition(indexed)
+    title = exhibition.get("exhibitionTitle")
+    if not isinstance(title, str) or not title.strip():
+        return None
+    title = clean_text(title)
+    room = exhibition.get("room")
+    if isinstance(room, str) and room.strip():
+        location, separator, name = title.partition(f"{room.strip()}: ")
+        if separator and name and (not location or location.endswith(", ")):
+            return name
+    return title
 
 
 def parse_exhibition_location(indexed: Dict[str, Any]) -> Optional[str]:

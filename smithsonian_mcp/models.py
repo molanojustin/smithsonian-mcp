@@ -283,6 +283,11 @@ class ObjectSummary(BaseModel):
     id: str = Field(..., description="Pass to get_object for the full record")
     title: str
     maker: List[str] = _list_omit_if_empty()
+    maker_match: Optional[bool] = _omit_if_empty(
+        "Given with a maker filter: whether a listed creator matches it. False "
+        "when the name matched something else, such as a sitter, owner or "
+        "description"
+    )
     date: Optional[str] = _omit_if_empty()
     museum_code: Optional[str] = _omit_if_empty()
     museum_name: Optional[str] = _omit_if_empty()

@@ -317,6 +317,50 @@ class TestParsing:
         }
         assert parse_object_data(row).maker == ["Unlabeled Maker"]
 
+    @pytest.mark.parametrize(
+        "block, title",
+        [
+            (
+                {
+                    "building": "Freer",
+                    "room": "Gallery 06",
+                    "exhibitionTitle": "West Building (Freer Gallery of Art), "
+                    "Gallery 06: Japanese Art from the Collection",
+                },
+                "Japanese Art from the Collection",
+            ),
+            (
+                {
+                    "room": "Gallery 20",
+                    "exhibitionTitle": "Gallery 20: A Collector’s Eye: Freer in Egypt",
+                },
+                "A Collector’s Eye: Freer in Egypt",
+            ),
+            (
+                {
+                    "room": "South Gallery 240",
+                    "exhibitionTitle": "America's Presidents",
+                },
+                "America's Presidents",
+            ),
+            (
+                {"room": "Gallery 1", "exhibitionTitle": "Gallery 11: Peacock Room"},
+                "Gallery 11: Peacock Room",
+            ),
+            (
+                {"room": "Hall 2", "exhibitionTitle": "Treasures of Hall 2: Gems"},
+                "Treasures of Hall 2: Gems",
+            ),
+            (
+                {"exhibitionTitle": "Gallery 06: Japanese Art"},
+                "Gallery 06: Japanese Art",
+            ),
+        ],
+    )
+    def test_exhibition_title_leaves_out_a_repeated_location(self, block, title):
+        row = {"id": "x", "content": {"indexedStructured": {"exhibition": [block]}}}
+        assert parse_object_data(row).exhibition_title == title
+
     def test_exhibition_room_is_optional(self):
         indexed = {"exhibition": [{"building": "NMAH", "room": "East 1"}]}
         assert parse_exhibition_location(indexed) == "NMAH, East 1"

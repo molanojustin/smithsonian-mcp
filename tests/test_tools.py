@@ -492,6 +492,77 @@ class TestSearchObjects:
         result = await call("search_objects", {"query": "which muppets are shown"})
         assert "Every word" in result["note"]
 
+    @pytest.mark.asyncio
+    async def test_no_matches_without_query_names_the_filters(self, fake_api):
+        result = await call(
+            "search_objects",
+            {"museum": "SAAM", "maker": " Hokusai ", "on_view": True},
+        )
+        assert result["note"] == (
+            "No objects match museum=SAAM, maker='Hokusai', on_view=true together. "
+            "Drop a filter or use a broader value. maker matches a full name or "
+            "surname, such as 'Winslow Homer' or 'Homer'."
+        )
+        result = await call(
+            "search_objects",
+            {"object_type": "Puppets", "date_from": "1860s", "cc0_only": True},
+        )
+        assert result["note"].startswith(
+            "No objects match object_type='Puppets', date_from='1860', "
+            "cc0_only=true together."
+        )
+
+    @pytest.mark.asyncio
+    async def test_maker_at_asian_art_is_a_keyword_and_flags_mentions(self, fake_api):
+        hokusai = make_row(
+            "ld1-1643390182193-1643390184776-1",
+            "Kabuki actors",
+            "NMAA",
+            record_id="fsg_F1904.270",
+            makers=["Katsushika Hokusai 葛飾北斎 (1760-1849)"],
+            on_view=True,
+            exhibition="West Building (Freer Gallery of Art), Gallery 06: "
+            "Japanese Art from the Collection",
+            building="Freer",
+        )
+        hokusai["content"]["indexedStructured"]["exhibition"][0]["room"] = "Gallery 06"
+        whistler = make_row(
+            "ld1-1643390182193-1643390182330-0",
+            "Variations in Flesh Colour and Green - The Balcony",
+            "NMAA",
+            makers=["James McNeill Whistler (1834-1903)"],
+            on_view=True,
+        )
+        fake_api.search = lambda params: search_payload([hokusai, whistler])
+        result = await call(
+            "search_objects",
+            {"museum": "NMAA", "on_view": True, "maker": "Hokusai"},
+        )
+        assert fake_api.searches[0]["q"] == (
+            '* AND unit_code:NMAA AND "Hokusai" AND onPhysicalExhibit:"Yes"'
+        )
+        kabuki, balcony = result["objects"]
+        assert kabuki["maker_match"] is True
+        assert kabuki["exhibition_title"] == "Japanese Art from the Collection"
+        assert kabuki["exhibition_location"] == (
+            "Freer Gallery of Art, National Museum of Asian Art, Gallery 06, "
+            "Washington, DC"
+        )
+        assert balcony["maker_match"] is False
+        assert result["note"] == (
+            "National Museum of Asian Art (NMAA) does not index creator names, so "
+            "maker was matched as keywords and total_count can include works that "
+            "only mention the name; their maker_match is false."
+        )
+
+    @pytest.mark.asyncio
+    async def test_maker_match_flags_sitters_at_other_museums(self, fake_api):
+        portrait = make_row("ld1-npg-1", "Abraham Lincoln", "NPG", makers=["Brady"])
+        fake_api.search = lambda params: search_payload([portrait])
+        result = await call("search_objects", {"museum": "NPG", "maker": "Lincoln"})
+        assert result["objects"][0]["maker_match"] is False
+        assert "note" not in result
+
 
 class TestGetObject:
     """get_object returns a bounded full record."""

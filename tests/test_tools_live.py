@@ -44,9 +44,9 @@ async def call_error(name: str, args: Dict[str, Any]) -> str:
     return "".join(getattr(block, "text", "") for block in result.content)
 
 
-async def direct_on_view_ids(terms: str) -> Dict[str, str]:
-    """Ids and exhibition titles of matching NMAH objects on view, queried directly."""
-    query = f'({terms}) AND unit_code:NMAH AND onPhysicalExhibit:"Yes"'
+async def direct_on_view_ids(terms: str, unit: str = "NMAH") -> Dict[str, str]:
+    """Ids and exhibition titles of matching objects on view, queried directly."""
+    query = f'({terms}) AND unit_code:{unit} AND onPhysicalExhibit:"Yes"'
     async with httpx.AsyncClient(
         timeout=60, headers={"X-Api-Key": Config.API_KEY}
     ) as http:
@@ -73,6 +73,26 @@ async def test_muppets_on_view_match_the_live_set():
     assert got == expected
     assert result["total_count"] == len(expected)
     assert all(obj["on_view"] for obj in result["objects"])
+
+
+async def test_maker_finds_asian_art_creators():
+    # NMAA indexes provenance names only, so its creators are found by keyword
+    result, _ = await call("search_objects", {"museum": "NMAA", "maker": "Hokusai"})
+    assert result["total_count"] >= 100
+    assert all(obj["maker_match"] for obj in result["objects"])
+    assert "does not index creator names" in result["note"]
+    on_view, _ = await call(
+        "search_objects",
+        {"museum": "NMAA", "maker": "Hokusai", "on_view": True, "limit": 50},
+    )
+    expected = await direct_on_view_ids('"Hokusai"', unit="NMAA")
+    assert {obj["id"] for obj in on_view["objects"]} == set(expected)
+    # Without a museum: names filed family name first, and NMAA by keyword
+    everywhere, _ = await call(
+        "search_objects", {"maker": "Katsushika Hokusai", "limit": 50}
+    )
+    assert everywhere["total_count"] >= 400
+    assert "NMAA" in {obj["museum_code"] for obj in everywhere["objects"]}
 
 
 async def test_default_search_is_compact():

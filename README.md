@@ -248,10 +248,10 @@ Search the collections, with optional filters.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `query` | string | `""` | Keywords. Every word must match. `AND`, `OR` and quoted phrases are allowed, and lowercase `or` and `and` between two words work as operators too. Empty matches everything. |
+| `query` | string | `""` | Keywords, matched anywhere in a record, descriptions and notes included. Every word must match. `AND`, `OR` and quoted phrases are allowed, and lowercase `or` and `and` between two words work as operators too. Empty matches everything. |
 | `museum` | string | none | Museum name or unit code, such as `"American History"`, `"NMAH"`, `"Asian Art"`, `"NMAA"` or `"Natural History"`. `"Smithsonian"` means every museum. |
 | `object_type` | string | none | Object type, such as `"Paintings"` or `"Puppets"`. Case and singular or plural forms are matched. |
-| `maker` | string | none | Creator, such as `"Winslow Homer"`, `"Homer, Winslow"` or an organization name. |
+| `maker` | string | none | Creator, such as `"Winslow Homer"`, `"Homer, Winslow"`, `"Homer"`, `"Katsushika Hokusai"` or an organization name: the full name or the surname. Results then carry `maker_match`. |
 | `topic` | string | none | Subject, such as `"Civil War"`. |
 | `material` | string | none | Material or medium, such as `"bronze"`. |
 | `date_from` | integer or string | none | Earliest year, such as `1860` or `"1860s"`, with decade precision. Some records are dated by their subject, so later books about a period can match. |
@@ -272,7 +272,7 @@ Output:
 | `offset` | Offset of this page. |
 | `next_offset` | Offset of the next page. Always present; `null` when there are no more results. |
 | `museum` | `{code, name}` of the museum filter, when one was given. |
-| `note` | Explains empty or doubtful results: every word in `query` must match, `query` reads like a sentence, the offset is past the end, Natural History has no exhibit data (for `on_view=true` without a museum or at Natural History), a museum has no archive records, or `museum="Smithsonian"` applied no filter. |
+| `note` | Explains empty or doubtful results: every word in `query` must match, the filters (named with their values) match nothing together, `query` reads like a sentence, `maker` was matched as keywords at a museum that does not index creators, the offset is past the end, Natural History has no exhibit data (for `on_view=true` without a museum or at Natural History), a museum has no archive records, or `museum="Smithsonian"` applied no filter. |
 | `objects` | Object summaries, described below. |
 
 Each object summary has:
@@ -282,11 +282,12 @@ Each object summary has:
 | `id` | Object id, for `get_object`. |
 | `title` | Title, without HTML markup. |
 | `maker` | Up to 3 makers. Makers are the creator roles a record names, such as artist, manufacturer, photographer or performer. |
+| `maker_match` | With a `maker` filter: whether one of the object's makers matches it, ignoring word order, case, accents and life dates. `false` when the name matched something else, such as a sitter, owner or a description that mentions the person. |
 | `date` | Date as the museum records it, such as `"1984"` or `"ca 1995 - 1999"`. |
 | `museum_code`, `museum_name` | The museum that holds the object. |
 | `object_type` | Object type: the indexed term that the `object_type` filter matches, else the museum's own label. |
 | `on_view` | Whether the object is on physical exhibit now. Always present. |
-| `exhibition_title`, `exhibition_location` | The exhibition, and its building, room and place, such as `"Steven F. Udvar-Hazy Center, National Air and Space Museum, Chantilly, VA"`, when the object is on view. |
+| `exhibition_title`, `exhibition_location` | The exhibition, such as `"Japanese Art from the Collection"`, and its building, room and place, such as `"Steven F. Udvar-Hazy Center, National Air and Space Museum, Chantilly, VA"`, when the object is on view. |
 | `collection` | For archive records, the archival collection that holds the record. |
 | `thumbnail_url` | Small image, when the record has one. |
 | `web_url` | The object's page on the museum website: the record's own link, else the museum's URL pattern for the record id, else the record's persistent ark link, else its `url` field. Use it as given. |
@@ -545,6 +546,8 @@ Clients that support resources can attach these to a conversation without a tool
 - Every word in `query` must match, so use 1 to 4 distinctive keywords and leave out questions and stop words. "Which Muppets are on display at the American History museum?" finds one puppet that is not on view, and the result's `note` says that the query reads like a sentence; `query="muppet"` with `museum="American History"` and `on_view=true` finds the 12 objects above. Dropping stop words does not help: "Muppets display American History museum" finds 3 objects, none on view.
 - Use `OR` for alternatives, as in `query="quilt OR coverlet"`. Lowercase `or` between two words works too.
 - Put names in `maker`, not `query`. `maker="Winslow Homer"` also matches the indexed form "Homer, Winslow", and `search_objects(maker="Winslow Homer", object_type="Paintings")` returns works such as "Girl Shelling Peas" and "White Mountain Wagon" from Cooper Hewitt, each with `object_type` "Paintings". Art is well covered: `object_type="Paintings"` alone matches thousands of records.
+- `query` matches every part of a record, so a name in `query` also finds works that only mention the person: `query="Hokusai"` with `museum="Asian Art"` and `on_view=true` returns a Whistler painting whose notes mention Hokusai. `maker="Hokusai"` finds works by him, and `maker_match` is `false` on any result where the name is not one of the makers.
+- The National Museum of Asian Art and the National Museum of African Art do not index creator names; the indexed names at Asian Art are collectors and dealers such as Charles Lang Freer. At those two museums `maker` is matched as keywords anywhere in the record, in any order, so a single name such as "Hokusai" works. The match is precise for artists (159 of the 167 Asian Art records that mention Hokusai are by him), but `total_count` includes the rest, and the result's `note` says so.
 - `museum` accepts names or codes. "Asian Art", "Freer", `NMAA` and the retired code `FSG` all search the National Museum of Asian Art, "African American Museum" searches the National Museum of African American History and Culture, and "Natural History" or `NMNH` searches every Natural History department. Every distinctive word of a name must match, so an unknown name returns an error rather than a guess. "Smithsonian" and "Smithsonian Institution" mean every museum, so no filter is applied and the `note` says so.
 - Dates have decade precision, so `date_from=1863` starts at 1860, and decades such as `"1860s"` are accepted. `search_objects(query="Lincoln", museum="American History", date_from=1860, date_to=1869)` returns items such as a Lincoln campaign flag from 1864 and a parade axe from 1860. Some records, notably library books, are dated by their subject, so `date_from="1860s"` alone also finds books published in 2008 about the period. Years must be from 1000 to 2999.
 - `on_view=true` returns objects on physical exhibit now, with exhibition titles and locations. Natural History publishes no exhibit data, so `on_view=true` with Natural History always returns nothing, and without a museum it never includes Natural History objects; the result's `note` says so in both cases.

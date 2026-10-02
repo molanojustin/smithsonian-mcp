@@ -27,9 +27,10 @@ explore_topic returns a varied sample for open-ended browsing. list_museums \
 lists the museums; get_collection_stats counts what search can return.
 - Pass museum as a name or unit code ("American History" or "NMAH"); results \
 report the code that was used.
-- Every word of query must match. Use 1-4 distinctive keywords, OR between \
-alternatives ("muppet OR henson"), quotes for phrases, and maker for people. \
-Leave out stop-words and questions.
+- Every word of query must match, anywhere in a record. Use 1-4 distinctive \
+keywords, OR between alternatives ("muppet OR henson") and quotes for phrases. \
+Leave out stop-words and questions. For works by a person use maker: query \
+also matches records that only mention them.
 - on_view=true returns objects on physical exhibit now, with exhibition titles \
 and locations. Natural History (NMNH) records have no exhibit data.
 - Year filters match by decade.

@@ -9,11 +9,12 @@ the API treats whitespace inside parentheses as OR.
 
 import re
 import string
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Tuple
 
-from .constants import NMNH_AGGREGATE_CODE
+from .constants import NMNH_AGGREGATE_CODE, UNITS_WITHOUT_INDEXED_MAKERS
 from .models import CollectionSearchFilter
 from .utils import normalize_unit_code
 
@@ -58,6 +59,7 @@ _NARROWER_SEPARATORS = (" ", ",", ";", "/", ":")
 # Corporation", "Homer, Winslow", "Lockheed-Georgia Company", "Gorham/Textron",
 # "Colt's Patent Firearms Manufacturing Company".
 _NAME_BOUNDARIES = (" ", ",", "-", "/", "'s")
+_NAME_TOKEN_RE = re.compile(r"[^\W_]+")
 
 
 def escape_query_phrase(value: str) -> str:
@@ -582,7 +584,9 @@ def maker_clause(maker: str) -> Optional[str]:
     The clause matches the name as given, with capitalized words, and inverted to
     "Last, First" (after dropping Jr./Sr./II/III/IV), each exactly or followed by
     further words. Prefixes only extend at a word boundary, so "Smith" does not
-    match "Smithsonian" and "Colt" does not match "Coltrane".
+    match "Smithsonian" and "Colt" does not match "Coltrane". Two-word names
+    also match family name first, as East Asian names are filed ("Katsushika,
+    Hokusai" for "Katsushika Hokusai").
 
     Args:
         maker: Maker name, e.g. "Winslow Homer", "Thomas, Alma" or "Lockheed".
@@ -613,6 +617,8 @@ def maker_clause(maker: str) -> Optional[str]:
             add(variants, inverted)
             # "King, Martin Luther" -> "King, Martin Luther, Jr."
             add(prefixes, _capitalize_words(inverted))
+            if len(words) == 2:
+                add(variants, _capitalize_words(f"{words[0]}, {words[1]}"))
         elif "," in stem:
             add(prefixes, _capitalize_words(stem))
 
@@ -624,6 +630,104 @@ def maker_clause(maker: str) -> Optional[str]:
     if len(terms) == 1:
         return terms[0]
     return f"({' OR '.join(terms)})"
+
+
+def _maker_words(maker: str) -> List[str]:
+    """
+    Words of a maker name, without a generational suffix or initials.
+
+    Initials are dropped because single letters match nothing as search terms,
+    unless the name has nothing else.
+
+    Args:
+        maker: Maker name, e.g. "J. M. W. Turner" or "Hokusai, Katsushika".
+
+    Returns:
+        List[str]: The words, e.g. ["Turner"].
+    """
+    stem = _strip_name_suffix(_collapse_whitespace(maker))
+    words = [word.strip(".") for word in re.split(r"[\s,]+", stem)]
+    words = [word for word in words if any(char.isalnum() for char in word)]
+    return [word for word in words if len(word) > 1] or words
+
+
+def maker_keyword_clause(maker: str) -> Optional[str]:
+    """
+    Build a keyword clause for a maker at units that do not index creators.
+
+    Every word of the name must appear somewhere in the record, in any order,
+    so "Hokusai" and "Hokusai Katsushika" both find "Katsushika Hokusai 葛飾北斎
+    (1760-1849)". Records that only mention the name also match.
+
+    Args:
+        maker: Maker name.
+
+    Returns:
+        Optional[str]: Clause such as ``("Katsushika" AND "Hokusai")``, or None
+        when the name has no words.
+    """
+    terms = [escape_query_phrase(word) for word in _maker_words(maker)]
+    if not terms:
+        return None
+    if len(terms) == 1:
+        return terms[0]
+    return f"({' AND '.join(terms)})"
+
+
+def maker_filter_clause(maker: str, unit_code: Optional[str]) -> Optional[str]:
+    """
+    Build the maker filter for a search, given its museum filter.
+
+    The indexed name field leaves out the creators of some units
+    (UNITS_WITHOUT_INDEXED_MAKERS), so their works are found by keyword. Without
+    a museum filter, both clauses are combined, the keyword one limited to
+    those units.
+
+    Args:
+        maker: Maker name.
+        unit_code: The search's unit code filter, if any.
+
+    Returns:
+        Optional[str]: Query clause, or None for an empty name.
+    """
+    by_name = maker_clause(maker)
+    by_keyword = maker_keyword_clause(maker)
+    unit = normalize_unit_code(unit_code)
+    if unit in UNITS_WITHOUT_INDEXED_MAKERS:
+        return by_keyword or by_name
+    if unit or by_name is None or by_keyword is None:
+        return by_name
+    units = " OR ".join(sorted(UNITS_WITHOUT_INDEXED_MAKERS))
+    return f"({by_name} OR (unit_code:({units}) AND {by_keyword}))"
+
+
+def _name_tokens(name: str) -> List[str]:
+    """Lowercase words of a name with accents removed: "Gérôme" -> ["gerome"]."""
+    text = unicodedata.normalize("NFKD", name)
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return _NAME_TOKEN_RE.findall(text.casefold())
+
+
+def maker_matches(maker: str, makers: List[str]) -> bool:
+    """
+    Whether a maker filter value names one of an object's creators.
+
+    Every word of the value must be a word of one creator name, in any order and
+    ignoring case, accents, punctuation and life dates, so "Hokusai" and
+    "Hokusai, Katsushika" both match "Katsushika Hokusai 葛飾北斎 (1760-1849)".
+
+    Args:
+        maker: The maker filter value.
+        makers: Creator names of the object.
+
+    Returns:
+        bool: True if a creator matches.
+    """
+    wanted = {token for word in _maker_words(maker) for token in _name_tokens(word)}
+    wanted = {token for token in wanted if len(token) > 1} or wanted
+    if not wanted:
+        return False
+    return any(wanted <= set(_name_tokens(name)) for name in makers)
 
 
 def _parse_year(name: str, value: Optional[str]) -> Optional[int]:
@@ -705,7 +809,7 @@ def build_filter_clauses(filters: CollectionSearchFilter) -> List[str]:
     if object_type:
         clauses.append(object_type)
     if filters.maker and filters.maker.strip():
-        clause = maker_clause(filters.maker)
+        clause = maker_filter_clause(filters.maker, filters.unit_code)
         if clause:
             clauses.append(clause)
     topic = vocabulary_clause("topic", filters.topic or "", narrower=True)

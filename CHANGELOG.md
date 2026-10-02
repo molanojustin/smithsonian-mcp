@@ -7,6 +7,18 @@ All notable changes to this project are documented in this file. The format is b
 ### Added
 
 - The `educational_content` prompt takes an optional `session_minutes`, the length of the teaching session from 10 to 480 minutes. The lesson then features only as many objects as fit, allowing 15 to 20 minutes for each object after 10 minutes for the introduction and wrap-up (2 or 3 objects for 60 minutes), and includes a timed agenda.
+- With a `maker` filter, each `search_objects` result carries `maker_match`: whether one of the object's makers matches the name. It is `false` when the name matched something else, such as a sitter, an owner or a description that mentions the person.
+
+### Fixed
+
+- `maker` finds works at the National Museum of Asian Art and the National Museum of African Art. Neither indexes creator names (the names indexed at Asian Art are collectors and dealers), so `maker="Hokusai"` with `museum="Asian Art"` returned nothing. At those museums `maker` is now matched as keywords, and without a museum filter those museums are searched that way alongside the name index.
+- Two-word names also match family name first, as East Asian names are indexed: `maker="Katsushika Hokusai"` matches "Katsushika, Hokusai".
+- A search with no `query` that matches nothing has a note that names the filters and their values, instead of saying that every word in `query` must match.
+- Exhibition titles at the National Museum of Asian Art no longer repeat the building and gallery, which `exhibition_location` gives: "Japanese Art from the Collection" instead of "West Building (Freer Gallery of Art), Gallery 06: Japanese Art from the Collection".
+
+### Changed
+
+- The `search_objects` description and the server instructions say that `query` matches anywhere in a record, including text that only mentions a person, and to use `maker` for works by a person.
 
 ## [2.0.0] - 2026-10-02
 

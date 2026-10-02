@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 from .constants import EXHIBITION_BUILDINGS, UNIT_INFO
 from .models import ImageSummary, ObjectDetails, ObjectSummary, SmithsonianObject
+from .query import maker_matches
 from .utils import record_page_url, validate_url
 
 MAX_IMAGES = 10
@@ -160,17 +161,20 @@ def _summary_fields(obj: SmithsonianObject, max_makers: int) -> Dict[str, Any]:
     }
 
 
-def summarize(obj: SmithsonianObject) -> ObjectSummary:
+def summarize(obj: SmithsonianObject, maker: Optional[str] = None) -> ObjectSummary:
     """
     Compact summary of an object for result lists.
 
     Args:
         obj: Parsed object.
+        maker: The search's maker filter, if any; the summary then says whether
+            one of the object's creators matches it.
 
     Returns:
         ObjectSummary: The summary.
     """
-    return ObjectSummary(**_summary_fields(obj, MAX_SUMMARY_MAKERS))
+    match = maker_matches(maker, obj.maker or []) if maker and maker.strip() else None
+    return ObjectSummary(**_summary_fields(obj, MAX_SUMMARY_MAKERS), maker_match=match)
 
 
 def _notes_without(notes: Optional[str], description: Optional[str]) -> Optional[str]:
