@@ -910,6 +910,23 @@ def _first_text(*candidates: Any) -> Optional[str]:
     return None
 
 
+def _collection_title(contained_in: Any) -> Optional[str]:
+    """Title of the archival collection that contains an archive record."""
+    parents = [item for item in _as_list(contained_in) if isinstance(item, dict)]
+    for parent in parents:
+        if parent.get("type") == "Collection":
+            return clean_text(_first_string(parent.get("unittitle")))
+    return clean_text(_first_string(*(p.get("unittitle") for p in parents[:1])))
+
+
+def _first_string(*values: Any) -> Optional[str]:
+    """Return the first non-empty string among the values."""
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
 def _strings(value: Any) -> List[str]:
     """Return the non-empty strings (or entry contents) of a list."""
     result = []
@@ -1070,6 +1087,8 @@ class SmithsonianAPIClient:
         }
         if filters.sort and filters.sort != "relevancy":
             params["sort"] = filters.sort
+        if filters.row_group == "archives":
+            params["row_group"] = "archives"
         return params
 
     async def _make_request(
@@ -1462,16 +1481,11 @@ class SmithsonianAPIClient:
 
         return SmithsonianObject(
             id=obj_id,
-            record_id=(
-                descriptive.get("record_ID")
-                if isinstance(descriptive.get("record_ID"), str)
-                else None
+            # Archive records keep these at the top of content
+            record_id=_first_string(
+                descriptive.get("record_ID"), content.get("record_id")
             ),
-            guid=(
-                descriptive.get("guid")
-                if isinstance(descriptive.get("guid"), str)
-                else None
-            ),
+            guid=_first_string(descriptive.get("guid"), content.get("guid")),
             title=title or "",
             url=_safe_url(raw_data.get("url")),
             unit_code=unit_code if isinstance(unit_code, str) else None,
@@ -1530,14 +1544,16 @@ class SmithsonianAPIClient:
             is_on_view=self._parse_on_view_status(indexed),
             exhibition_title=self._parse_exhibition_title(indexed),
             exhibition_location=self._parse_exhibition_location(indexed),
+            collection=_collection_title(content.get("containedIn")),
         )
 
-    async def count_matches(self, query: str) -> int:
+    async def count_matches(self, query: str, row_group: Optional[str] = None) -> int:
         """
         Count records matching a raw ``q`` query without fetching rows.
 
         Args:
             query: Query string in API syntax.
+            row_group: "archives" to count archive records instead of objects.
 
         Returns:
             int: Number of matching records.
@@ -1545,7 +1561,10 @@ class SmithsonianAPIClient:
         Raises:
             APIError: If the request fails.
         """
-        data = await self._make_request("search", {"q": query, "start": 0, "rows": 0})
+        params: Dict[str, Any] = {"q": query, "start": 0, "rows": 0}
+        if row_group == "archives":
+            params["row_group"] = "archives"
+        data = await self._make_request("search", params)
         return int(_as_dict(data.get("response")).get("rowCount") or 0)
 
     async def search_collections(self, filters: CollectionSearchFilter) -> SearchResult:
@@ -1661,6 +1680,9 @@ class SmithsonianAPIClient:
 
         Returns:
             List[str]: Unit codes such as ``NMAH`` and ``NMNHPALEO``.
+
+        Raises:
+            APIError: If the API key is rejected; other failures use the list.
         """
         cached = SmithsonianAPIClient._unit_codes_cache
         if cached is not None and not refresh:
@@ -1668,6 +1690,8 @@ class SmithsonianAPIClient:
         try:
             data = await self._make_request("terms/unit_code")
         except APIError as exc:
+            if exc.error == "api_key_rejected":
+                raise
             logger.warning("Could not fetch unit codes, using built-in list: %s", exc)
             return list(KNOWN_UNIT_CODES)
         terms = [

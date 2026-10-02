@@ -73,7 +73,7 @@ KNOWN_UNIT_CODES: List[str] = [
 ]
 
 # Units that only publish archival records (row_group "archives"), so object
-# searches return nothing for them.
+# searches return nothing for them; archive searches do.
 ARCHIVAL_UNIT_CODES: FrozenSet[str] = frozenset(
     {
         "AAA",
@@ -91,6 +91,13 @@ ARCHIVAL_UNIT_CODES: FrozenSet[str] = frozenset(
         "SAAMPAIK",
         "SI",
     }
+)
+
+# Units that publish archive records as well as objects (row_group "archives"
+# counts checked in October 2026: SIA 863,592, CFCHFOLKLIFE 73,400, NMAAHC
+# 16,427, SAAM 2,788, NPG 701, SIL 554).
+MIXED_UNIT_CODES: FrozenSet[str] = frozenset(
+    {"CFCHFOLKLIFE", "NMAAHC", "NPG", "SAAM", "SIA", "SIL"}
 )
 
 # Legacy or informal codes that users pass but the index does not use.

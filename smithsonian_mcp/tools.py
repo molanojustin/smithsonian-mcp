@@ -11,6 +11,7 @@ by the API firewall, an unknown object id, a rejected API key) raise ToolError
 with a next step. Any other exception is masked by the server.
 """
 
+import asyncio
 import inspect
 import logging
 import re
@@ -23,6 +24,7 @@ from typing import (
     Deque,
     Dict,
     List,
+    Literal,
     NoReturn,
     Optional,
     Tuple,
@@ -33,9 +35,15 @@ from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from .api_client import MAX_DATE_YEAR, MIN_DATE_YEAR, date_clause
+from .api_client import (
+    MAX_DATE_YEAR,
+    MIN_DATE_YEAR,
+    build_search_query,
+    date_clause,
+)
 from .constants import (
     ARCHIVAL_UNIT_CODES,
+    MIXED_UNIT_CODES,
     MUSEUM_MAP,
     NMNH_AGGREGATE_CODE,
     UNIT_INFO,
@@ -45,9 +53,7 @@ from .models import (
     APIError,
     CollectionOverview,
     CollectionSearchFilter,
-    CollectionStats,
     ImageSummary,
-    MuseumCount,
     MuseumInfo,
     MuseumRef,
     ObjectDetails,
@@ -59,7 +65,6 @@ from .models import (
     TopicFacets,
 )
 from .utils import (
-    normalize_unit_code,
     record_page_url,
     resolve_museum_code,
     validate_url,
@@ -114,7 +119,7 @@ NO_MATCH_NOTE = (
 # abbreviation that resolve_museum_code accepts but should not be advertised.
 _HIDDEN_ALIASES = frozenset({"ahm", "botony", "sculture garden"})
 
-_stats_cache: Dict[str, Tuple[float, CollectionStats]] = {}
+_stats_cache: Dict[str, Tuple[float, CollectionOverview]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +128,7 @@ _stats_cache: Dict[str, Tuple[float, CollectionStats]] = {}
 
 
 def clear_caches() -> None:
-    """Forget cached collection statistics so the next call fetches them."""
+    """Forget cached collection counts so the next call fetches them."""
     _stats_cache.clear()
 
 
@@ -191,27 +196,48 @@ def _raise_for_api_error(exc: APIError) -> NoReturn:
             "The Smithsonian API rate limit for this API key was reached. Try "
             "again later."
         ) from exc
-    if exc.error in ("request_error", "stats_failed") or (exc.status_code or 0) >= 500:
+    if exc.error == "request_error" or (exc.status_code or 0) >= 500:
         raise ToolError(
             "The Smithsonian API is not responding right now. Try again shortly."
         ) from exc
     raise exc
 
 
-def _archival_only_error(unit: MuseumRef) -> ToolError:
+def record_types(code: str) -> List[str]:
+    """
+    The search_objects record_type values that return records for a unit.
+
+    Args:
+        code: Unit code.
+
+    Returns:
+        List[str]: ["objects"], ["archives"] or both.
+    """
+    if code in ARCHIVAL_UNIT_CODES:
+        return ["archives"]
+    if code in MIXED_UNIT_CODES:
+        return ["objects", "archives"]
+    return ["objects"]
+
+
+def _archival_only_error(unit: MuseumRef, tool: str = "search_objects") -> ToolError:
     """
     Explain that a museum holds only archive records.
 
     Args:
         unit: The archival-only unit.
+        tool: The tool that was called.
 
     Returns:
         ToolError: Error with a next step.
     """
+    if tool == "explore_topic":
+        step = "explore_topic samples objects; use search_objects with "
+    else:
+        step = "Search again with "
     return ToolError(
-        f"{unit.name} ({unit.code}) publishes only archival records, which object "
-        "searches do not return. Search without museum, or pick a museum from "
-        "list_museums that is not archival_only."
+        f"{unit.name} ({unit.code}) holds only archive records, which object "
+        f"searches do not return. {step}record_type='archives'."
     )
 
 
@@ -232,56 +258,58 @@ async def _search(filters: CollectionSearchFilter) -> SearchResult:
         _raise_for_api_error(exc)
 
 
-async def _collection_stats() -> CollectionStats:
+async def _count(filters: CollectionSearchFilter) -> int:
     """
-    Collection statistics from /stats, cached for STATS_CACHE_SECONDS.
-
-    Returns:
-        CollectionStats: Statistics with per-unit counts when /stats answered.
-    """
-    cached = _stats_cache.get("stats")
-    if cached and time.monotonic() - cached[0] < STATS_CACHE_SECONDS:
-        return cached[1]
-    client = await get_api_client()
-    try:
-        stats = await client.get_collection_stats()
-    except APIError as exc:
-        _raise_for_api_error(exc)
-    if stats.units:
-        # Fallback figures without per-unit counts are not kept
-        _stats_cache["stats"] = (time.monotonic(), stats)
-    return stats
-
-
-def _museum_counts(stats: CollectionStats) -> List[MuseumCount]:
-    """
-    Per-unit record counts from /stats, under the codes searches use.
-
-    /stats still reports the legacy FSG (Freer|Sackler) unit next to NMAA; its
-    records are searched as NMAA, so its counts are added to NMAA.
+    Number of records a search would return, without fetching any.
 
     Args:
-        stats: Collection statistics.
+        filters: Search filters, built exactly as search_objects builds them.
 
     Returns:
-        List[MuseumCount]: One entry per unit code, in /stats order.
+        int: The search's total count.
     """
-    merged: Dict[str, MuseumCount] = {}
-    for unit in stats.units:
-        code = normalize_unit_code(unit.unit_code) or unit.unit_code
-        entry = merged.get(code)
-        if entry is None:
-            merged[code] = MuseumCount(
-                code=code,
-                name=_unit_name(code, unit.unit_name) or code,
-                object_count=unit.total_objects,
-                cc0=unit.cc0_objects,
-            )
-            continue
-        entry.object_count += unit.total_objects
-        if unit.cc0_objects is not None:
-            entry.cc0 = (entry.cc0 or 0) + unit.cc0_objects
-    return list(merged.values())
+    client = await get_api_client()
+    return await client.count_matches(
+        build_search_query(filters), row_group=filters.row_group
+    )
+
+
+async def _collection_counts(unit: Optional[MuseumRef]) -> CollectionOverview:
+    """
+    Searchable record counts, cached for STATS_CACHE_SECONDS.
+
+    Each figure is the total_count of the search_objects call it describes, so
+    the numbers always agree with search results.
+
+    Args:
+        unit: Museum to count, or None for the whole collection.
+
+    Returns:
+        CollectionOverview: The counts.
+    """
+    key = unit.code if unit else ""
+    cached = _stats_cache.get(key)
+    if cached and time.monotonic() - cached[0] < STATS_CACHE_SECONDS:
+        return cached[1]
+    code = unit.code if unit else None
+    try:
+        objects, archives, with_images, cc0 = await asyncio.gather(
+            _count(CollectionSearchFilter(unit_code=code)),
+            _count(CollectionSearchFilter(unit_code=code, row_group="archives")),
+            _count(CollectionSearchFilter(unit_code=code, has_images=True)),
+            _count(CollectionSearchFilter(unit_code=code, is_cc0=True)),
+        )
+    except APIError as exc:
+        _raise_for_api_error(exc)
+    overview = CollectionOverview(
+        museum=unit,
+        objects=objects,
+        archive_records=archives,
+        objects_with_images=with_images,
+        objects_with_cc0_media=cc0,
+    )
+    _stats_cache[key] = (time.monotonic(), overview)
+    return overview
 
 
 def _trim(text: Optional[str], limit: int) -> Optional[str]:
@@ -388,6 +416,7 @@ def _summary_fields(obj: SmithsonianObject, max_makers: int) -> Dict[str, Any]:
         "on_view": obj.is_on_view,
         "exhibition_title": obj.exhibition_title,
         "exhibition_location": _location_name(obj.exhibition_location),
+        "collection": obj.collection,
         "thumbnail_url": _thumbnail(obj),
         "web_url": _web_url(obj),
     }
@@ -518,6 +547,7 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
     has_images: bool = False,
     cc0_only: bool = False,
     on_view: Optional[bool] = None,
+    record_type: Literal["objects", "archives"] = "objects",
     limit: Annotated[int, Field(ge=1, le=SEARCH_MAX_LIMIT)] = SEARCH_DEFAULT_LIMIT,
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> ObjectSearchResults:
@@ -543,6 +573,9 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
         cc0_only: Only objects with CC0 (public domain) media.
         on_view: true for objects on physical exhibit now, false for objects
             not on exhibit.
+        record_type: "objects", or "archives" for archival collections and
+            their folders and items (papers, photographs, recordings), which
+            the API searches separately from objects.
         limit: Results per page.
         offset: Start position; pass next_offset to get the next page.
 
@@ -570,6 +603,7 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
             has_images=True if has_images else None,
             is_cc0=True if cc0_only else None,
             on_view=on_view,
+            row_group=record_type,
             limit=limit,
             offset=offset,
         )
@@ -577,9 +611,15 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
 
     note = None
     if result.total_count == 0:
-        if unit and unit.code in ARCHIVAL_UNIT_CODES:
+        if unit and record_type == "objects" and unit.code in ARCHIVAL_UNIT_CODES:
             raise _archival_only_error(unit)
-        if unit and unit.code.startswith(NMNH_AGGREGATE_CODE) and on_view:
+        if (
+            unit
+            and record_type == "archives"
+            and "archives" not in record_types(unit.code)
+        ):
+            note = f"{unit.name} has no archive records; use record_type='objects'."
+        elif unit and unit.code.startswith(NMNH_AGGREGATE_CODE) and on_view:
             note = NMNH_ON_VIEW_NOTE
         else:
             note = NO_MATCH_NOTE
@@ -626,38 +666,24 @@ async def get_object(object_id: str) -> ObjectDetails:
 
 async def list_museums() -> List[MuseumInfo]:
     """
-    Smithsonian units in Open Access with their codes, object counts and the
-    names the museum argument accepts. archival_only units hold archive records,
-    which object searches do not return.
+    Smithsonian units in Open Access: codes, names, the record_type values that
+    return their records, and the names the museum argument accepts. For counts
+    use get_collection_stats.
 
     Returns:
         List[MuseumInfo]: One entry per unit code, plus NMNH for all Natural
         History departments.
     """
     client = await get_api_client()
-    units = await client.get_units()
-    counts: Dict[str, int] = {}
     try:
-        stats = await _collection_stats()
-        counts = {museum.code: museum.object_count for museum in _museum_counts(stats)}
-    except (ToolError, APIError) as exc:
-        cause = exc if isinstance(exc, APIError) else exc.__cause__
-        if isinstance(cause, APIError) and cause.error == "api_key_rejected":
-            raise
-        logger.warning("Listing museums without counts: %s", exc)
-    if counts:
-        counts[NMNH_AGGREGATE_CODE] = sum(
-            count
-            for code, count in counts.items()
-            if code.startswith(NMNH_AGGREGATE_CODE)
-        )
-
+        units = await client.get_units()
+    except APIError as exc:
+        _raise_for_api_error(exc)
     return [
         MuseumInfo(
             code=unit.code,
             name=unit.name,
-            object_count=counts.get(unit.code),
-            archival_only=True if unit.archival_only else None,
+            record_types=record_types(unit.code),
             aliases=[
                 alias
                 for alias in _ALIASES.get(unit.code, [])
@@ -802,7 +828,7 @@ async def explore_topic(
 
     if total_count == 0:
         if unit and unit.code in ARCHIVAL_UNIT_CODES:
-            raise _archival_only_error(unit)
+            raise _archival_only_error(unit, "explore_topic")
         note = f"No objects match '{topic}'. Try a broader or different keyword."
     else:
         note = (
@@ -822,35 +848,19 @@ async def explore_topic(
     )
 
 
-async def get_collection_stats() -> CollectionOverview:
+async def get_collection_stats(museum: Optional[str] = None) -> CollectionOverview:
     """
-    Collection totals (all records, CC0 records, objects with images) and
-    record counts per museum.
+    Counts of searchable objects, archive records, objects with images and
+    objects with CC0 media, for the whole collection or one museum. Each count
+    equals the total_count of the matching search_objects call.
+
+    Args:
+        museum: Optional museum name or unit code.
 
     Returns:
-        CollectionOverview: Totals and per-museum counts, largest first.
+        CollectionOverview: The counts.
     """
-    stats = await _collection_stats()
-    museums = sorted(
-        _museum_counts(stats), key=lambda museum: museum.object_count, reverse=True
-    )
-    if stats.units:
-        as_of = stats.last_updated.strftime("%Y-%m")
-        note = (
-            "Counts are from the API /stats endpoint and include archival records; "
-            "with_images counts searchable objects that have images."
-        )
-    else:
-        as_of = None
-        note = stats.notes
-    return CollectionOverview(
-        total_objects=stats.total_objects,
-        cc0=stats.total_cc0,
-        with_images=stats.total_with_images,
-        as_of=as_of,
-        museums=museums,
-        note=note,
-    )
+    return await _collection_counts(_resolve_museum(museum))
 
 
 TOOLS = (

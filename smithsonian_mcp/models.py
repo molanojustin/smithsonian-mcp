@@ -159,6 +159,13 @@ class CollectionSearchFilter(BaseModel):
             "random selection of the matches"
         ),
     )
+    row_group: Optional[Literal["objects", "archives"]] = Field(
+        None,
+        description=(
+            "Records to search: objects (the API default) or archives, the "
+            "archival collection and item records. The API searches one at a time"
+        ),
+    )
 
 
 class SmithsonianObject(BaseModel):
@@ -240,6 +247,9 @@ class SmithsonianObject(BaseModel):
     )
     exhibition_location: Optional[str] = Field(
         None, description="Exhibition location/room"
+    )
+    collection: Optional[str] = Field(
+        None, description="Archival collection that holds an archive record"
     )
 
     # Administrative
@@ -338,6 +348,9 @@ class ObjectSummary(BaseModel):
     on_view: bool = Field(False, description="On physical exhibit now")
     exhibition_title: Optional[str] = _omit_if_empty()
     exhibition_location: Optional[str] = _omit_if_empty()
+    collection: Optional[str] = _omit_if_empty(
+        "Archival collection of an archive record"
+    )
     thumbnail_url: Optional[str] = _omit_if_empty()
     web_url: Optional[str] = _omit_if_empty("Object page; use as given")
 
@@ -404,31 +417,21 @@ class MuseumInfo(BaseModel):
 
     code: str
     name: str
-    object_count: Optional[int] = _omit_if_empty()
-    archival_only: Optional[bool] = _omit_if_empty(
-        "Only archive records, which object searches do not return"
+    record_types: List[str] = Field(
+        default_factory=list,
+        description="search_objects record_type values that return its records",
     )
     aliases: List[str] = _list_omit_if_empty("Names the museum argument accepts")
 
 
-class MuseumCount(BaseModel):
-    """Record counts for one unit."""
-
-    code: str
-    name: str
-    object_count: int
-    cc0: Optional[int] = _omit_if_empty()
-
-
 class CollectionOverview(BaseModel):
-    """Collection totals and per-museum counts."""
+    """Searchable record counts for the whole collection or one museum."""
 
-    total_objects: int
-    cc0: Optional[int] = _omit_if_empty()
-    with_images: Optional[int] = _omit_if_empty()
-    as_of: Optional[str] = _omit_if_empty()
-    museums: List[MuseumCount] = Field(default_factory=list)
-    note: Optional[str] = _omit_if_empty()
+    museum: Optional[MuseumRef] = _omit_if_empty()
+    objects: int = Field(..., description="search_objects total_count with no filters")
+    archive_records: int = Field(..., description="Same, with record_type='archives'")
+    objects_with_images: int = Field(..., description="Same, with has_images=true")
+    objects_with_cc0_media: int = Field(..., description="Same, with cc0_only=true")
 
 
 class APIError(Exception):

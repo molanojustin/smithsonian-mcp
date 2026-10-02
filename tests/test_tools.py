@@ -17,7 +17,13 @@ from fastmcp import Client
 from smithsonian_mcp import __version__
 from smithsonian_mcp.app import mcp
 from smithsonian_mcp.tools import MAX_IMAGES, MAX_NOTES_CHARS
-from tests.fake_api import html_403, key_403, make_row, search_payload
+from tests.fake_api import (
+    counting_search,
+    html_403,
+    key_403,
+    make_row,
+    search_payload,
+)
 
 FIXTURES = Path(__file__).parent
 TOOL_NAMES = {
@@ -308,8 +314,34 @@ class TestSearchObjects:
         text = await call_error(
             "search_objects", {"query": "letters", "museum": "Archives of American Art"}
         )
-        assert "AAA" in text and "archival" in text
+        assert "AAA" in text and "record_type='archives'" in text
         assert len(fake_api.searches) == 1  # the search still ran
+
+    @pytest.mark.asyncio
+    async def test_archive_records_are_searched_separately(self, fake_api):
+        record = load_record("archive_record_response.json")
+        fake_api.search = lambda params: search_payload([record], total=1)
+        result = await call(
+            "search_objects",
+            {"query": "warren", "museum": "ACAH", "record_type": "archives"},
+        )
+        params = fake_api.searches[0]
+        assert params["row_group"] == "archives"
+        assert params["q"] == "(warren) AND unit_code:ACAH"
+        (archive,) = result["objects"]
+        assert archive["title"] == "Spring Isn't Everything"
+        assert archive["object_type"] == "Archival materials"
+        assert archive["collection"] == "Harry Warren Papers"
+        assert archive["web_url"].startswith("https://n2t.net/ark:/65665/")
+
+    @pytest.mark.asyncio
+    async def test_archive_search_of_a_museum_without_archives_has_a_note(
+        self, fake_api
+    ):
+        result = await call(
+            "search_objects", {"museum": "NMAH", "record_type": "archives"}
+        )
+        assert "record_type='objects'" in result["note"]
 
     @pytest.mark.asyncio
     async def test_no_matches_explains_all_and_matching(self, fake_api):
@@ -398,41 +430,35 @@ class TestGetObject:
 
 
 class TestListMuseums:
-    """list_museums combines unit codes, cached /stats counts and aliases."""
+    """list_museums lists units, their record types and aliases, without counts."""
 
     @pytest.mark.asyncio
-    async def test_units_counts_flags_and_aliases(self, fake_api):
+    async def test_units_record_types_and_aliases(self, fake_api):
         result = (await call("list_museums"))["result"]
+        assert fake_api.paths() == ["terms/unit_code"]
         by_code = {museum["code"]: museum for museum in result}
-        assert by_code["NMAH"]["object_count"] == 400
+        assert by_code["NMAH"]["record_types"] == ["objects"]
+        assert by_code["AAA"]["record_types"] == ["archives"]
+        assert by_code["NPG"]["record_types"] == ["objects", "archives"]
+        assert by_code["NMNH"]["record_types"] == ["objects"]
         assert "american history" in by_code["NMAH"]["aliases"]
         assert "ahm" not in by_code["NMAH"]["aliases"]
-        assert by_code["NMNH"]["object_count"] == 300  # sum of NMNH departments
         assert "natural history" in by_code["NMNH"]["aliases"]
-        assert by_code["AAA"]["archival_only"] is True
-        assert "archival_only" not in by_code["NMAH"]
-        assert "object_count" not in by_code["NPG"]  # not in /stats
         assert set(by_code["NMAA"]["aliases"]) >= {"asian art", "freer", "sackler"}
-
-    @pytest.mark.asyncio
-    async def test_counts_are_cached(self, fake_api):
-        await call("list_museums")
-        first = len(fake_api.requests)
-        await call("list_museums")
-        await call("get_collection_stats")
-        assert len(fake_api.requests) == first
-
-    @pytest.mark.asyncio
-    async def test_listing_survives_a_stats_outage(self, fake_api):
-        fake_api.stats = httpx.Response(503, json={})
-        fake_api.search = lambda params: httpx.Response(503, json={})
-        result = (await call("list_museums"))["result"]
-        assert {"code": "NMAH", "name": "National Museum of American History"} == {
-            key: value
-            for key, value in next(m for m in result if m["code"] == "NMAH").items()
-            if key in ("code", "name")
-        }
         assert all("object_count" not in museum for museum in result)
+
+    @pytest.mark.asyncio
+    async def test_terms_outage_falls_back_to_the_built_in_list(self, fake_api):
+        fake_api.unit_codes = httpx.Response(503, json={})
+        result = (await call("list_museums"))["result"]
+        assert len(result) == 49
+        assert {"FSG"}.isdisjoint(museum["code"] for museum in result)
+
+    @pytest.mark.asyncio
+    async def test_rejected_key_is_reported(self, fake_api):
+        fake_api.unit_codes = key_403()
+        text = await call_error("list_museums")
+        assert "SMITHSONIAN_API_KEY" in text
 
 
 class TestExploreTopic:
@@ -520,35 +546,89 @@ class TestExploreTopic:
 
 
 class TestCollectionStats:
-    """get_collection_stats reports /stats totals compactly."""
+    """get_collection_stats counts exactly what search_objects returns."""
+
+    COUNTS = {
+        ("*", None): 1000,
+        ("*", "archives"): 300,
+        ('* AND online_media_type:"Images"', None): 400,
+        ('* AND media_usage:"CC0"', None): 250,
+        ("* AND unit_code:NASM", None): 1012,
+        ('* AND unit_code:NASM AND online_media_type:"Images"', None): 900,
+        ('* AND unit_code:NASM AND media_usage:"CC0"', None): 5,
+        ("* AND unit_code:AAA", "archives"): 492052,
+    }
 
     @pytest.mark.asyncio
-    async def test_totals_and_museums(self, fake_api):
-        fake_api.search = lambda params: search_payload([], total=777)
+    async def test_whole_collection(self, fake_api):
+        fake_api.search = counting_search(self.COUNTS)
         result = await call("get_collection_stats")
-        assert result["total_objects"] == 1050
-        assert result["cc0"] == 600
-        assert result["with_images"] == 777
-        assert result["as_of"] == "2026-09"
-        assert [m["code"] for m in result["museums"]][:2] == ["NMAH", "NMNHBOTANY"]
-        assert result["museums"][0] == {
-            "code": "NMAH",
-            "name": "National Museum of American History",
-            "object_count": 400,
-            "cc0": 300,
+        assert result == {
+            "objects": 1000,
+            "archive_records": 300,
+            "objects_with_images": 400,
+            "objects_with_cc0_media": 250,
         }
-        assert sorted(fake_api.paths()) == ["search", "stats"]
+        assert all(params["rows"] == "0" for params in fake_api.searches)
+        assert len(fake_api.searches) == 4
 
     @pytest.mark.asyncio
-    async def test_legacy_fsg_unit_is_counted_as_asian_art(self, fake_api):
-        stats = await call("get_collection_stats")
-        codes = [museum["code"] for museum in stats["museums"]]
-        assert "FSG" not in codes and codes.count("NMAA") == 1
-        nmaa = next(m for m in stats["museums"] if m["code"] == "NMAA")
-        assert nmaa["object_count"] == 50 and nmaa["cc0"] == 35
-        museums = (await call("list_museums"))["result"]
-        assert "FSG" not in [museum["code"] for museum in museums]
-        assert next(m for m in museums if m["code"] == "NMAA")["object_count"] == 50
+    @pytest.mark.parametrize("museum", ["Air and Space", "AAA"])
+    async def test_counts_equal_search_totals(self, fake_api, museum):
+        fake_api.search = counting_search(self.COUNTS)
+        stats = await call("get_collection_stats", {"museum": museum})
+        searches = {
+            "objects": {},
+            "archive_records": {"record_type": "archives"},
+            "objects_with_images": {"has_images": True},
+            "objects_with_cc0_media": {"cc0_only": True},
+        }
+        for field, args in searches.items():
+            text_or_result = None
+            async with Client(mcp) as client:
+                text_or_result = await client.call_tool(
+                    "search_objects",
+                    {"museum": museum, "limit": 1, **args},
+                    raise_on_error=False,
+                )
+            if text_or_result.is_error:  # archival-only museum, objects search
+                assert stats[field] == 0 and "record_type='archives'" in (
+                    text_or_result.content[0].text
+                )
+            else:
+                assert stats[field] == text_or_result.structured_content["total_count"]
+        assert stats["museum"]["code"] in ("NASM", "AAA")
+
+    @pytest.mark.asyncio
+    async def test_counts_are_cached_until_they_expire(self, fake_api, monkeypatch):
+        from smithsonian_mcp import tools
+
+        clock = [1000.0]
+        monkeypatch.setattr(tools.time, "monotonic", lambda: clock[0])
+        fake_api.search = counting_search(self.COUNTS)
+        await call("get_collection_stats")
+        await call("get_collection_stats")
+        assert len(fake_api.searches) == 4
+        clock[0] += tools.STATS_CACHE_SECONDS + 1
+        await call("get_collection_stats")
+        assert len(fake_api.searches) == 8
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "response, message",
+        [
+            (key_403, "SMITHSONIAN_API_KEY"),
+            (lambda: httpx.Response(429, json={}), "rate limit"),
+            (lambda: httpx.Response(503, json={}), "not responding"),
+        ],
+    )
+    async def test_errors_are_reported_and_not_cached(
+        self, fake_api, response, message
+    ):
+        fake_api.search = lambda params: response()
+        assert message in await call_error("get_collection_stats")
+        fake_api.search = counting_search(self.COUNTS)
+        assert (await call("get_collection_stats"))["objects"] == 1000
 
 
 class TestResources:
@@ -559,7 +639,9 @@ class TestResources:
         async with Client(mcp) as client:
             contents = await client.read_resource("smithsonian://museums")
         museums = json.loads(contents[0].text)
-        assert any(m["code"] == "NMAH" and m["object_count"] == 400 for m in museums)
+        assert {"code": "NMAH", "record_types": ["objects"]}.items() <= next(
+            m for m in museums if m["code"] == "NMAH"
+        ).items()
 
     @pytest.mark.asyncio
     async def test_object_resource(self, fake_api):
