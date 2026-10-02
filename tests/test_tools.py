@@ -146,6 +146,15 @@ class TestRegistration:
         assert total / 4 < 6000
 
     @pytest.mark.asyncio
+    async def test_on_view_argument_carries_the_natural_history_caveat(self):
+        async with Client(mcp) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+        description = tools["search_objects"].input_schema["properties"]["on_view"][
+            "description"
+        ]
+        assert "Natural History (NMNH) has no exhibit data" in description
+
+    @pytest.mark.asyncio
     async def test_descriptions_are_plain(self):
         async with Client(mcp) as client:
             tools = await client.list_tools()
@@ -342,6 +351,51 @@ class TestSearchObjects:
             "search_objects", {"museum": "NMAH", "record_type": "archives"}
         )
         assert "record_type='objects'" in result["note"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "query, sentence",
+        [
+            ("Which Muppets are on display at the American History museum?", True),
+            ("public domain images of quilts", True),
+            ("muppets?", True),
+            ('muppet OR muppets OR henson OR "sesame street"', False),
+            ("Winslow Homer paintings", False),
+            ("", False),
+        ],
+    )
+    async def test_sentence_queries_get_a_note(self, fake_api, query, sentence):
+        fake_api.search = lambda params: search_payload(MUPPETS[:1], total=1)
+        result = await call("search_objects", {"query": query})
+        assert ("reads like a sentence" in result.get("note", "")) is sentence
+
+    @pytest.mark.asyncio
+    async def test_on_view_without_museum_warns_about_natural_history(self, fake_api):
+        fake_api.search = lambda params: search_payload(MUPPETS, total=2)
+        result = await call("search_objects", {"query": "dinosaur", "on_view": True})
+        assert result["returned"] == 2
+        assert "Natural History (NMNH) publishes no exhibit data" in result["note"]
+        result = await call(
+            "search_objects", {"query": "muppet", "museum": "NMAH", "on_view": True}
+        )
+        assert "note" not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("museum", ["Natural History", "NMNHPALEO", "paleobiology"])
+    async def test_natural_history_units_on_view_explain_empty_results(
+        self, fake_api, museum
+    ):
+        result = await call(
+            "search_objects", {"query": "dinosaur", "museum": museum, "on_view": True}
+        )
+        assert result["note"].startswith("Natural History (NMNH) records carry no")
+
+    @pytest.mark.asyncio
+    async def test_offset_past_the_end_has_a_note(self, fake_api):
+        fake_api.search = lambda params: search_payload([], total=12)
+        result = await call("search_objects", {"query": "muppet", "offset": 40})
+        assert result["note"] == "offset is past the last of 12 results."
+        assert result["next_offset"] is None
 
     @pytest.mark.asyncio
     async def test_no_matches_explains_all_and_matching(self, fake_api):

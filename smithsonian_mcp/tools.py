@@ -120,6 +120,19 @@ NO_MATCH_NOTE = (
     "No matches. Every word in query must match: use fewer or broader keywords, "
     "OR between alternatives, maker for names, or drop a filter."
 )
+ON_VIEW_WITHOUT_MUSEUM_NOTE = (
+    "Natural History (NMNH) publishes no exhibit data, so its objects never "
+    "match on_view=true, even when on display."
+)
+SENTENCE_NOTE = (
+    "query reads like a sentence, but every word must match, so these results "
+    "can miss what was asked. Use 1-4 keywords and put the rest in filters "
+    "(museum, on_view, maker, object_type, date_from, cc0_only)."
+)
+# Free-text queries with this many terms (a quoted phrase counts once) are
+# treated as sentences.
+SENTENCE_TERMS = 5
+_QUERY_OPERATORS = frozenset({"AND", "OR", "NOT"})
 
 # Aliases from MUSEUM_MAP left out of list_museums: misspellings and a wrong
 # abbreviation that resolve_museum_code accepts but should not be advertised.
@@ -316,6 +329,30 @@ async def _collection_counts(unit: Optional[MuseumRef]) -> CollectionOverview:
     )
     _stats_cache[key] = (time.monotonic(), overview)
     return overview
+
+
+def _reads_like_a_sentence(query: Optional[str]) -> bool:
+    """
+    Whether a free-text query looks like a question or sentence.
+
+    Args:
+        query: The query.
+
+    Returns:
+        bool: True if it contains "?" or SENTENCE_TERMS or more terms, where a
+        quoted phrase counts once and AND, OR and NOT are not counted.
+    """
+    if not query:
+        return False
+    if "?" in query:
+        return True
+    unquoted = re.sub(r'"[^"]*"', " PHRASE ", query)
+    terms = [
+        word
+        for word in re.findall(r"[\w'-]+", unquoted)
+        if word.upper() not in _QUERY_OPERATORS
+    ]
+    return len(terms) >= SENTENCE_TERMS
 
 
 def _trim(text: Optional[str], limit: int) -> Optional[str]:
@@ -583,7 +620,8 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
         has_images: Only objects with images.
         cc0_only: Only objects with CC0 (public domain) media.
         on_view: true for objects on physical exhibit now, false for objects
-            not on exhibit.
+            not on exhibit. Natural History (NMNH) has no exhibit data, so its
+            objects never match true.
         record_type: "objects", or "archives" for archival collections and
             their folders and items (papers, photographs, recordings), which
             the API searches separately from objects.
@@ -620,7 +658,8 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
         )
     )
 
-    note = None
+    notes: List[str] = []
+    sentence = _reads_like_a_sentence(query)
     if result.total_count == 0:
         if unit and record_type == "objects" and unit.code in ARCHIVAL_UNIT_CODES:
             raise _archival_only_error(unit)
@@ -629,13 +668,20 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
             and record_type == "archives"
             and "archives" not in record_types(unit.code)
         ):
-            note = f"{unit.name} has no archive records; use record_type='objects'."
+            notes.append(
+                f"{unit.name} has no archive records; use record_type='objects'."
+            )
         elif unit and unit.code.startswith(NMNH_AGGREGATE_CODE) and on_view:
-            note = NMNH_ON_VIEW_NOTE
-        else:
-            note = NO_MATCH_NOTE
+            notes.append(NMNH_ON_VIEW_NOTE)
+        elif not sentence:
+            notes.append(NO_MATCH_NOTE)
     elif not result.objects and offset >= result.total_count:
-        note = f"offset is past the last of {result.total_count} results."
+        notes.append(f"offset is past the last of {result.total_count} results.")
+    if on_view and unit is None:
+        notes.append(ON_VIEW_WITHOUT_MUSEUM_NOTE)
+    if sentence:
+        notes.append(SENTENCE_NOTE)
+    note = " ".join(notes) or None
 
     return ObjectSearchResults(
         total_count=result.total_count,
