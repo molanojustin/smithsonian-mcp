@@ -258,6 +258,10 @@ def _serve_http(host: str, port: int, allowed_hosts: List[str]) -> None:
     connection arrived on) get 421, and requests from another site's Origin get
     403, on any listening address. This blocks DNS rebinding from web pages.
 
+    The server is stateless: every request is handled on its own and no MCP
+    session is kept, so memory does not grow with the number of clients that
+    connect. The tools only answer requests; none sends notifications, progress
+    or sampling requests that would need a session.
 
     Uvicorn shuts down gracefully on SIGINT and SIGTERM and then raises the
     signal again. Both end here as KeyboardInterrupt, or on Python 3.10 as the
@@ -278,6 +282,7 @@ def _serve_http(host: str, port: int, allowed_hosts: List[str]) -> None:
             port=port,
             path=HTTP_PATH,
             show_banner=False,
+            stateless_http=True,
             host_origin_protection=True,
             allowed_hosts=allowed_hosts,
             uvicorn_config={"log_config": None},

@@ -215,6 +215,8 @@ class TestMainWiring:
         # Host headers are checked on every listening address, from an allowlist
         assert kwargs["host_origin_protection"] is True
         assert kwargs["allowed_hosts"] == ["localhost", "127.0.0.1", "::1"]
+        # No sessions are kept between requests
+        assert kwargs["stateless_http"] is True
         # Uvicorn logs through the stderr handler instead of its own config
         assert kwargs["uvicorn_config"] == {"log_config": None}
 
@@ -364,6 +366,8 @@ async def test_http_server_lists_tools(configure, tmp_path):
 
     assert {tool.name for tool in tools} == TOOL_NAMES
     assert initialized.status_code == 200
+    # Stateless: no session is created, so none is left to free
+    assert "mcp-session-id" not in initialized.headers
     assert foreign.status_code == 421
     if os.name != "nt":
         assert proc.returncode == 0
