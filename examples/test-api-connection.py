@@ -3,7 +3,7 @@ Test API Connection and Basic Functionality
 
 This script checks the Smithsonian API key and connection by calling the MCP
 server's tools in process, without an MCP client application. It makes about
-six API requests.
+eight API requests.
 """
 
 import asyncio
@@ -112,13 +112,18 @@ async def test_api_connection() -> bool:
                 print(f"   Page: {details.get('web_url', 'none')}")
                 print()
 
-            # Test 4: Collection statistics (3 random museums)
-            print("Test 4: get_collection_stats...")
-            stats = await call(client, "get_collection_stats")
-            print(f"OK: {stats['total_objects']:,} records in total")
-            sample = random.sample(stats["museums"], min(3, len(stats["museums"])))
-            for museum in sample:
-                print(f"   {museum['name']}: {museum['object_count']:,} records")
+            # Test 4: Collection statistics for one random museum
+            museum = random.choice(
+                [m for m in museums if "objects" in m.get("record_types", [])]
+            )
+            print(f"Test 4: get_collection_stats(museum={museum['code']!r})...")
+            stats = await call(
+                client, "get_collection_stats", {"museum": museum["code"]}
+            )
+            print(f"OK: {museum['name']}")
+            print(f"   {stats['objects']:,} searchable objects")
+            print(f"   {stats['objects_with_images']:,} with images")
+            print(f"   {stats['archive_records']:,} archive records")
             print()
 
         print("All tests passed! API connection is working.")
