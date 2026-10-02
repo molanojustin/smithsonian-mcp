@@ -141,6 +141,8 @@ _DIMENSION_LABELS = ("dimension", "measurement")
 _DECADE_RE = re.compile(r"^(\d{3,4})s$")
 # Labels that mention a creator but describe someone else's role.
 _NOT_MAKER_LABEL_PREFIXES = ("formerly", "copy after", "after", "possible owner")
+# API errors that a caller must see as they are: a rejected key or rate limiting.
+_CALLER_ERRORS = frozenset({"api_key_rejected", "rate_limit_exceeded"})
 # freetext.objectType labels that hold something other than a type: Paleobiology
 # records put the literature citation of a type specimen there.
 _NOT_OBJECT_TYPE_LABELS = frozenset({"type citation"})
@@ -1770,7 +1772,8 @@ class SmithsonianAPIClient:
             CollectionStats: Collection statistics.
 
         Raises:
-            APIError: If neither /stats nor the fallback count query succeeds.
+            APIError: If neither /stats nor the fallback count query succeeds,
+                or as is if the key is rejected or the rate limit is reached.
         """
         stats_result, images_result = await asyncio.gather(
             self._make_request("stats"),
@@ -1779,6 +1782,9 @@ class SmithsonianAPIClient:
         )
         for result in (stats_result, images_result):
             if isinstance(result, BaseException) and not isinstance(result, APIError):
+                raise result
+            # The caller must act on these; a fallback would only hide them
+            if isinstance(result, APIError) and result.error in _CALLER_ERRORS:
                 raise result
 
         total_with_images: Optional[int] = None
@@ -1860,6 +1866,8 @@ class SmithsonianAPIClient:
         try:
             total_objects = await self.count_matches("*")
         except APIError as fallback_error:
+            if fallback_error.error in _CALLER_ERRORS:
+                raise
             logger.error("Fallback count query also failed: %s", fallback_error)
             raise APIError(
                 error="stats_failed",
