@@ -392,3 +392,47 @@ def test_siris_archive_pages_belong_to_sia_only(record_id, unit_code, expected):
     from smithsonian_mcp.utils import record_page_url
 
     assert record_page_url(record_id, unit_code) == expected
+
+
+@pytest.mark.parametrize(
+    "name, code",
+    [
+        ("American History", "NMAH"),
+        ("American History museum", "NMAH"),
+        ("Smithsonian National Museum of American History", "NMAH"),
+        ("nmah", "NMAH"),
+        ("Natural History", "NMNH"),
+        ("National Museum of Natural History", "NMNH"),
+        ("Natural History museum in DC", "NMNH"),
+        ("NMNHPALEO", "NMNHPALEO"),
+        ("Asian art museum", "NMAA"),
+        ("Freer Gallery of Art", "NMAA"),
+        ("FSG", "NMAA"),
+        ("African Art", "NMAfA"),
+        ("Museum of African Art", "NMAfA"),
+        ("nmafa", "NMAfA"),
+        ("African American Museum", "NMAAHC"),
+        ("African American History Museum", "NMAAHC"),
+        ("National Museum of African American History and Culture", "NMAAHC"),
+        ("American Art", "SAAM"),
+        ("Renwick Gallery", "SAAM"),
+        ("Air and Space", "NASM"),
+        ("Udvar-Hazy Center", "NASM"),
+        ("Portrait Gallery", "NPG"),
+        ("Hirshhorn", "HMSG"),
+        ("Cooper Hewitt", "CHNDM"),
+        ("American Indian Museum", "NMAI"),
+        ("Postal Museum", "NPM"),
+        ("National Zoo", "NZP"),
+        ("Archives of American Art", "AAA"),
+        ("Smithsonian Institution Archives", "SIA"),
+        ("Anacostia", "ACM"),
+        ("Louvre", None),
+        ("Museum of Modern Art", None),
+        ("Metropolitan Museum of Art", None),
+        ("American Museum", None),  # ambiguous: only generic words
+    ],
+)
+def test_museum_resolution_matrix(name, code):
+    """Every informative word must match; generic-only names do not resolve."""
+    assert resolve_museum_code(name) == code

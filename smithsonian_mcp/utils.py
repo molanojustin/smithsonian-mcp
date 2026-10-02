@@ -241,7 +241,10 @@ def resolve_museum_code(museum_name: str) -> Optional[str]:
     Resolve a museum name or code to the correct Smithsonian unit code.
 
     This function provides flexible matching for museum names, handling common
-    variations and partial matches. It supports:
+    variations and partial matches. Every informative word of the input (not
+    "museum", "smithsonian", "american" and the like) must appear in the
+    matched name, so "African American Museum" is not taken for African Art.
+    It supports:
     - Exact matches: "asian art" -> "NMAA"
     - Partial matches: "Smithsonian Asian Art Museum" -> "NMAA"
     - Direct codes, case-insensitive: "SAAM" -> "SAAM", "nmafa" -> "NMAfA"
@@ -293,27 +296,22 @@ def resolve_museum_code(museum_name: str) -> Optional[str]:
     if contained:
         return museum_map[max(contained, key=len)]
 
-    # Input contained in a map key, ignoring generic words such as "museum"
+    # Input contained in a map key: the whole name first ("african american"
+    # in "african american history"), as long as it has an informative word
     informative = [w for w in cleaned.split() if w not in _NAME_STOP_WORDS]
     if informative:
-        phrase = f" {' '.join(informative)} "
+        phrase = f" {cleaned} "
         containing = [key for key in museum_map if phrase in f" {key} "]
         if containing:
             return museum_map[min(containing, key=len)]
 
-    # Word overlap on informative words
-    input_words = set(informative)
-    best_code: Optional[str] = None
-    best_score = 0.0
-    for key, code in museum_map.items():
-        key_words = set(key.split()) - _NAME_STOP_WORDS
-        if not key_words or not input_words:
-            continue
-        score = len(input_words & key_words) / len(key_words)
-        if score > 0.5 and score > best_score:
-            best_code, best_score = code, score
+        # Every informative word in one map key, in any order
+        wanted = set(informative)
+        containing = [key for key in museum_map if wanted <= set(key.split())]
+        if containing:
+            return museum_map[min(containing, key=len)]
 
-    return best_code
+    return None
 
 
 def validate_url(url_str: Optional[str]) -> Optional[str]:

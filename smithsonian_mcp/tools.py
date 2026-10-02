@@ -110,7 +110,25 @@ UNKNOWN_MUSEUM_HELP = (
     "Use a museum name or unit code such as 'American History' (NMAH), "
     "'Natural History' (NMNH), 'American Art' (SAAM), 'Asian Art' (NMAA), "
     "'Air and Space' (NASM) or 'Portrait Gallery' (NPG); list_museums shows "
-    "every unit."
+    "every unit. Omit museum to search every museum."
+)
+# museum values that mean the whole Smithsonian rather than one unit
+_WHOLE_SMITHSONIAN = frozenset(
+    {
+        "smithsonian",
+        "the smithsonian",
+        "smithsonian institution",
+        "the smithsonian institution",
+        "smithsonian museums",
+        "all smithsonian museums",
+        "all museums",
+        "all",
+        "any",
+    }
+)
+WHOLE_SMITHSONIAN_NOTE = (
+    "museum='{museum}' means every Smithsonian museum, so no museum filter was "
+    "applied."
 )
 NMNH_ON_VIEW_NOTE = (
     "Natural History (NMNH) records carry no on-exhibit data, so on_view=true "
@@ -167,6 +185,21 @@ def _unit_name(code: Optional[str], fallback: Optional[str] = None) -> Optional[
     return fallback or code
 
 
+def _whole_smithsonian(museum: Optional[str]) -> bool:
+    """
+    Whether a museum argument names the whole Smithsonian, such as "Smithsonian".
+
+    Args:
+        museum: The museum argument.
+
+    Returns:
+        bool: True for names of the whole institution.
+    """
+    if not museum:
+        return False
+    return " ".join(re.findall(r"[a-z]+", museum.lower())) in _WHOLE_SMITHSONIAN
+
+
 def _resolve_museum(museum: Optional[str]) -> Optional[MuseumRef]:
     """
     Resolve a museum name or code to a unit.
@@ -180,7 +213,7 @@ def _resolve_museum(museum: Optional[str]) -> Optional[MuseumRef]:
     Raises:
         ToolError: If the museum cannot be resolved.
     """
-    if museum is None or not museum.strip():
+    if museum is None or not museum.strip() or _whole_smithsonian(museum):
         return None
     code = resolve_museum_code(museum)
     if code is None:
@@ -677,6 +710,8 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
             notes.append(NO_MATCH_NOTE)
     elif not result.objects and offset >= result.total_count:
         notes.append(f"offset is past the last of {result.total_count} results.")
+    if _whole_smithsonian(museum):
+        notes.append(WHOLE_SMITHSONIAN_NOTE.format(museum=museum.strip()))
     if on_view and unit is None:
         notes.append(ON_VIEW_WITHOUT_MUSEUM_NOTE)
     if sentence:
@@ -1014,6 +1049,8 @@ async def explore_topic(
             f"{matches}; none names the topic in its title, type or subjects, so "
             "check that the results fit."
         )
+    if _whole_smithsonian(museum):
+        note = WHOLE_SMITHSONIAN_NOTE.format(museum=museum.strip()) + " " + note
 
     return TopicExploration(
         total_count=total_count,

@@ -270,7 +270,27 @@ class TestSearchObjects:
     async def test_unknown_museum_is_a_tool_error(self, fake_api):
         text = await call_error("search_objects", {"museum": "Louvre"})
         assert "Unknown museum 'Louvre'" in text and "list_museums" in text
+        assert "Omit museum to search every museum" in text
         assert fake_api.requests == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "museum", ["Smithsonian", "the Smithsonian", "Smithsonian Institution"]
+    )
+    async def test_the_whole_smithsonian_means_no_museum_filter(self, fake_api, museum):
+        fake_api.search = lambda params: search_payload(MUPPETS, total=2)
+        result = await call("search_objects", {"query": "quilt", "museum": museum})
+        assert fake_api.searches[0]["q"] == "quilt"
+        assert "museum" not in result
+        assert result["note"].startswith(f"museum='{museum}' means every")
+
+    @pytest.mark.asyncio
+    async def test_african_american_museum_is_not_african_art(self, fake_api):
+        result = await call(
+            "search_objects", {"query": "quilt", "museum": "African American Museum"}
+        )
+        assert result["museum"]["code"] == "NMAAHC"
+        assert fake_api.searches[0]["q"] == "(quilt) AND unit_code:NMAAHC"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("year", [999, 3000, 12])
