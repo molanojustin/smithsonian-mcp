@@ -102,6 +102,12 @@ async def test_explore_topic_applies_the_topic_with_a_museum():
     assert result["returned"] == 12
     assert all(obj["museum_code"].startswith("NMNH") for obj in result["objects"])
     assert sum(result["facets"]["museums"].values()) >= result["returned"]
+    on_topic = [
+        obj
+        for obj in result["objects"]
+        if "dinosaur" in (obj["title"] + obj.get("object_type", "")).lower()
+    ]
+    assert len(on_topic) >= 10
     assert tokens < 3000
 
 

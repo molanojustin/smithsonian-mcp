@@ -14,6 +14,7 @@ with a next step. Any other exception is masked by the server.
 import asyncio
 import inspect
 import logging
+import random
 import re
 import time
 from collections import Counter, deque
@@ -76,8 +77,13 @@ SEARCH_DEFAULT_LIMIT = 10
 SEARCH_MAX_LIMIT = 50
 EXPLORE_DEFAULT_LIMIT = 12
 EXPLORE_MAX_LIMIT = 30
-# Rows fetched at random for explore_topic; the sample and facets come from it.
-EXPLORE_POOL_SIZE = 60
+# Most relevant matches fetched for explore_topic; the sample and facets come
+# from them.
+EXPLORE_POOL_SIZE = 100
+# Words of a topic that do not identify it.
+_TOPIC_STOP_WORDS = frozenset(
+    {"and", "or", "not", "the", "of", "in", "on", "for", "with", "from", "a", "an"}
+)
 EXPLORE_MAX_TYPE_FACETS = 10
 
 MAX_IMAGES = 10
@@ -721,14 +727,50 @@ def _interleave_types(objects: List[SmithsonianObject]) -> Deque[SmithsonianObje
     return ordered
 
 
+def _allocate(groups: Dict[str, List[SmithsonianObject]], limit: int) -> Dict[str, int]:
+    """
+    Picks per museum, in proportion to its share of the pool, at least one each.
+
+    Museums are served largest first, so when there are more museums than
+    picks the smallest get none. Largest remainders settle the rounding.
+
+    Args:
+        groups: Pool objects by museum, largest groups first.
+        limit: Number of picks.
+
+    Returns:
+        Dict[str, int]: Picks per museum.
+    """
+    total = sum(len(group) for group in groups.values()) or 1
+    quota = {code: 0 for code in groups}
+    for code in list(groups)[:limit]:
+        quota[code] = 1
+    remaining = limit - sum(quota.values())
+    while remaining > 0:
+        open_codes = [code for code in groups if quota[code] < len(groups[code])]
+        if not open_codes:
+            break
+        code = max(
+            open_codes,
+            key=lambda c: len(groups[c]) / total * limit - quota[c],
+        )
+        quota[code] += 1
+        remaining -= 1
+    return quota
+
+
 def _diverse_sample(
     pool: List[SmithsonianObject], limit: int
 ) -> List[SmithsonianObject]:
     """
-    Pick objects round-robin across museums, and across types within a museum.
+    Pick objects across museums in proportion to their share of the pool.
+
+    Within a museum, consecutive picks differ in object type where possible,
+    and the pool order (relevance) is kept within each type. The picks are
+    then interleaved across museums.
 
     Args:
-        pool: Candidate objects, preferred ones first.
+        pool: Candidate objects, most relevant first.
         limit: Number of objects to pick.
 
     Returns:
@@ -737,13 +779,19 @@ def _diverse_sample(
     groups: Dict[str, List[SmithsonianObject]] = {}
     for obj in pool:
         groups.setdefault(obj.unit_code or "", []).append(obj)
-    queues = [_interleave_types(group) for group in groups.values()]
+    groups = dict(sorted(groups.items(), key=lambda item: -len(item[1])))
+    quota = _allocate(groups, limit)
+    queues = [
+        deque(list(_interleave_types(group))[: quota[code]])
+        for code, group in groups.items()
+        if quota[code]
+    ]
     picks: List[SmithsonianObject] = []
-    while len(picks) < limit and any(queues):
+    while any(queues):
         for queue in queues:
-            if queue and len(picks) < limit:
+            if queue:
                 picks.append(queue.popleft())
-    return picks
+    return picks[:limit]
 
 
 def _facets(pool: List[SmithsonianObject]) -> TopicFacets:
@@ -773,16 +821,90 @@ def _facets(pool: List[SmithsonianObject]) -> TopicFacets:
     )
 
 
+def _topic_stems(topic: str) -> List[str]:
+    """
+    Lowercase stems of the words that identify a topic.
+
+    Args:
+        topic: Topic keywords, e.g. "space exploration".
+
+    Returns:
+        List[str]: Stems such as ["space", "exploration"]; plural "s" dropped.
+    """
+    stems = []
+    for word in re.findall(r"[a-z0-9]+", topic.lower()):
+        if word in _TOPIC_STOP_WORDS or len(word) < 3:
+            continue
+        stems.append(word[:-1] if len(word) > 4 and word.endswith("s") else word)
+    return stems
+
+
+def _topic_score(obj: SmithsonianObject, stems: List[str]) -> int:
+    """
+    How many topic stems name the object in its title, type or subject topics.
+
+    Free-text search also matches words in places, notes and citations (a
+    lichen collected at Dinosaur National Monument matches "dinosaurs"), so
+    objects that name the topic in these fields are preferred.
+
+    Args:
+        obj: Candidate object.
+        stems: Stems from _topic_stems.
+
+    Returns:
+        int: Number of stems found; stems of four or more letters also match
+        longer words ("space" matches "Spacecraft").
+    """
+    text = " ".join([obj.title or "", obj.object_type or "", *(obj.topics or [])])
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return sum(
+        1
+        for stem in stems
+        if any(
+            word == stem or (len(stem) >= 4 and word.startswith(stem)) for word in words
+        )
+    )
+
+
+def _rank_pool(
+    pool: List[SmithsonianObject], topic: str
+) -> Tuple[List[SmithsonianObject], List[SmithsonianObject]]:
+    """
+    Split a relevance-ordered pool into objects that name the topic and the rest.
+
+    Objects naming more topic words come first; ties are shuffled so repeated
+    calls vary. The rest keep the API's relevance order.
+
+    Args:
+        pool: Search results, most relevant first.
+        topic: The topic.
+
+    Returns:
+        Tuple: (objects naming the topic, other objects).
+    """
+    stems = _topic_stems(topic)
+    scored: Dict[int, List[SmithsonianObject]] = {}
+    for obj in pool:
+        scored.setdefault(_topic_score(obj, stems), []).append(obj)
+    named: List[SmithsonianObject] = []
+    for score in sorted((score for score in scored if score), reverse=True):
+        tier = scored[score]
+        random.shuffle(tier)
+        named += tier
+    return named, scored.get(0, [])
+
+
 async def explore_topic(
     topic: str,
     museum: Optional[str] = None,
     limit: Annotated[int, Field(ge=1, le=EXPLORE_MAX_LIMIT)] = EXPLORE_DEFAULT_LIMIT,
 ) -> TopicExploration:
     """
-    A varied random sample of objects about a topic, spread across museums and
-    object types, with counts by museum and type. Use it for open-ended
-    browsing; use search_objects to find specific things. Each call returns a
-    different sample.
+    A varied sample of objects about a topic, spread across museums in
+    proportion to their matches and across object types, with counts by museum
+    and type. Prefers objects with images whose title, type or subject names the
+    topic. Use it for open-ended browsing; use search_objects to find specific
+    things. Calls can return different samples.
 
     Args:
         topic: Topic keywords, e.g. "dinosaurs" or "jazz". Every word must match.
@@ -796,44 +918,50 @@ async def explore_topic(
     if not topic:
         raise ToolError("topic is required, e.g. 'dinosaurs' or 'jazz'.")
     unit = _resolve_museum(museum)
-    unit_code = unit.code if unit else None
 
-    # Objects with images first; the topic is always part of the query
-    with_images = await _search(
-        CollectionSearchFilter(
+    def filters(has_images: bool) -> CollectionSearchFilter:
+        # The topic is always part of the query
+        return CollectionSearchFilter(
             query=topic,
-            unit_code=unit_code,
-            has_images=True,
-            sort="random",
+            unit_code=unit.code if unit else None,
+            has_images=has_images or None,
             limit=EXPLORE_POOL_SIZE,
         )
-    )
-    pool = list(with_images.objects)
-    total_count = with_images.total_count
+
+    result = await _search(filters(True))
+    total_count = result.total_count
     matches = "matches with images"
-    picks = _diverse_sample(pool, limit)
-    if len(picks) < limit:
-        # Too few with images: fill up with objects without images
-        everything = await _search(
-            CollectionSearchFilter(
-                query=topic, unit_code=unit_code, sort="random", limit=EXPLORE_POOL_SIZE
-            )
+    named, others = _rank_pool(result.objects, topic)
+    if len(named) + len(others) < limit:
+        # Too few with images: add the most relevant without images
+        everything = await _search(filters(False))
+        seen = {obj.id for obj in named + others}
+        more_named, more_others = _rank_pool(
+            [obj for obj in everything.objects if obj.id not in seen], topic
         )
-        seen = {obj.id for obj in pool}
-        rest = [obj for obj in everything.objects if obj.id not in seen]
-        picks += _diverse_sample(rest, limit - len(picks))
-        pool += rest
+        named += more_named
+        others += more_others
         total_count = everything.total_count
         matches = "matches"
 
+    picks = _diverse_sample(named, limit)
+    picks += _diverse_sample(others, limit - len(picks))
     if total_count == 0:
         if unit and unit.code in ARCHIVAL_UNIT_CODES:
             raise _archival_only_error(unit, "explore_topic")
         note = f"No objects match '{topic}'. Try a broader or different keyword."
+    elif named:
+        note = (
+            f"{len(named)} of the {len(named) + len(others)} most relevant of "
+            f"{total_count} {matches} name the topic in their title, type or "
+            "subjects; the sample and facets favor them. Call again for a "
+            "different sample."
+        )
     else:
         note = (
-            f"Random sample; facets count a pool of {len(pool)} of the "
-            f"{total_count} {matches}. Call again for a different sample."
+            f"Sample of the {len(others)} most relevant of {total_count} "
+            f"{matches}; none names the topic in its title, type or subjects, so "
+            "check that the results fit."
         )
 
     return TopicExploration(
@@ -844,7 +972,7 @@ async def explore_topic(
         museum=unit,
         objects=[_summarize(obj) for obj in picks],
         note=note,
-        facets=_facets(pool),
+        facets=_facets(named or others),
     )
 
 

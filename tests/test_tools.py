@@ -462,16 +462,19 @@ class TestListMuseums:
 
 
 class TestExploreTopic:
-    """explore_topic samples at random, always applies the topic, and spreads."""
+    """explore_topic samples relevant matches that name the topic, spread out."""
 
     @staticmethod
     def pool() -> List[Dict[str, Any]]:
-        rows = []
-        for i in range(8):
+        rows = [
+            # Matches the text search but does not name the topic
+            make_row("ld1-lichen", "Psora tuckermanii", "NMNHBOTANY", images=1),
+        ]
+        for i in range(6):
             rows.append(
                 make_row(
                     f"ld1-paleo-{i}",
-                    f"Fossil {i}",
+                    f"Sauropod Dinosaur {i}",
                     "NMNHPALEO",
                     images=1,
                     object_type="Fossils" if i % 2 else "Casts",
@@ -482,11 +485,7 @@ class TestExploreTopic:
         )
         rows.append(
             make_row(
-                "ld1-saam-0",
-                "Dinosaur painting",
-                "SAAM",
-                images=1,
-                object_type="Paintings",
+                "ld1-saam-0", "Untitled", "SAAM", images=1, object_type="Dinosaurs"
             )
         )
         return rows
@@ -498,34 +497,42 @@ class TestExploreTopic:
             "explore_topic",
             {"topic": "dinosaurs", "museum": "Natural History", "limit": 5},
         )
-        params = fake_api.searches[0]
+        (params,) = fake_api.searches
         assert params["q"] == (
             '(dinosaurs) AND unit_code:NMNH* AND online_media_type:"Images"'
         )
-        assert params["sort"] == "random"
+        assert params["rows"] == "100" and params["start"] == "0"
+        assert "sort" not in params  # relevance order
 
     @pytest.mark.asyncio
-    async def test_sample_spreads_across_museums_and_types(self, fake_api):
+    async def test_sample_prefers_objects_naming_the_topic(self, fake_api):
         fake_api.search = lambda params: search_payload(self.pool(), total=354)
         result = await call("explore_topic", {"topic": "dinosaurs", "limit": 4})
-        assert len(fake_api.searches) == 1
+        ids = [obj["id"] for obj in result["objects"]]
+        assert "ld1-lichen" not in ids
         codes = [obj["museum_code"] for obj in result["objects"]]
-        assert set(codes) == {"NMNHPALEO", "NMAH", "SAAM"}
+        # Proportional with at least one each: 6 Paleobiology, 1 NMAH, 1 SAAM
+        assert sorted(codes) == ["NMAH", "NMNHPALEO", "NMNHPALEO", "SAAM"]
         paleo_types = [
             obj["object_type"]
             for obj in result["objects"]
             if obj["museum_code"] == "NMNHPALEO"
         ]
-        assert len(set(paleo_types)) == len(paleo_types)
-        assert result["facets"]["museums"] == {"NMNHPALEO": 8, "NMAH": 1, "SAAM": 1}
-        assert result["facets"]["object_types"]["Fossils"] == 4
+        assert len(set(paleo_types)) == 2
+        assert result["facets"]["museums"] == {"NMNHPALEO": 6, "NMAH": 1, "SAAM": 1}
         assert result["total_count"] == 354 and result["next_offset"] is None
-        assert "Random sample" in result["note"]
+        assert result["note"].startswith("8 of the 9 most relevant of 354")
+
+    @pytest.mark.asyncio
+    async def test_other_matches_fill_the_sample_last(self, fake_api):
+        fake_api.search = lambda params: search_payload(self.pool(), total=9)
+        result = await call("explore_topic", {"topic": "dinosaurs", "limit": 9})
+        assert result["objects"][-1]["id"] == "ld1-lichen"
 
     @pytest.mark.asyncio
     async def test_fills_up_without_images_when_needed(self, fake_api):
-        with_images = [make_row("ld1-a", "A", images=1)]
-        without = [make_row(f"ld1-b{i}", f"B{i}", "SAAM") for i in range(5)]
+        with_images = [make_row("ld1-a", "Jazz A", images=1)]
+        without = [make_row(f"ld1-b{i}", f"Jazz B{i}", "SAAM") for i in range(5)]
 
         def search(params):
             if "online_media_type" in params["q"]:
@@ -536,13 +543,34 @@ class TestExploreTopic:
         result = await call("explore_topic", {"topic": "jazz", "limit": 4})
         assert len(fake_api.searches) == 2
         assert fake_api.searches[1]["q"] == "jazz"
-        assert result["objects"][0]["id"] == "ld1-a"  # images first
+        assert "ld1-a" in [obj["id"] for obj in result["objects"]]
         assert result["returned"] == 4 and result["total_count"] == 6
+        assert "6 most relevant of 6 matches" in result["note"]
 
     @pytest.mark.asyncio
     async def test_no_matches_has_a_note(self, fake_api):
         result = await call("explore_topic", {"topic": "zzzz"})
         assert result["objects"] == [] and "No objects match" in result["note"]
+
+    @pytest.mark.asyncio
+    async def test_archival_only_museum_points_to_archive_search(self, fake_api):
+        text = await call_error("explore_topic", {"topic": "letters", "museum": "AAA"})
+        assert "search_objects" in text and "record_type='archives'" in text
+
+    def test_allocation_is_proportional_with_one_each(self):
+        from smithsonian_mcp.tools import _allocate
+
+        groups = {"A": [None] * 6, "B": [None] * 3, "C": [None] * 1}
+        assert _allocate(groups, 5) == {"A": 3, "B": 1, "C": 1}
+        assert _allocate(groups, 2) == {"A": 1, "B": 1, "C": 0}
+        assert _allocate(groups, 20) == {"A": 6, "B": 3, "C": 1}
+
+    def test_topic_stems(self):
+        from smithsonian_mcp.tools import _topic_stems
+
+        assert _topic_stems("Space exploration") == ["space", "exploration"]
+        assert _topic_stems("dinosaurs OR fossils") == ["dinosaur", "fossil"]
+        assert _topic_stems("the art of jazz") == ["art", "jazz"]
 
 
 class TestCollectionStats:
