@@ -3,6 +3,7 @@ Tests for the transport options: argument parsing, the HTTP wiring of main()
 and a streamable HTTP server started as a subprocess.
 """
 
+import asyncio
 import os
 import signal
 import socket
@@ -144,9 +145,12 @@ class TestMainWiring:
         # Uvicorn logs through the stderr handler instead of its own config
         assert kwargs["uvicorn_config"] == {"log_config": None}
 
-    def test_keyboard_interrupt_ends_http_mode_cleanly(self, runs, monkeypatch):
+    # Python 3.11+ ends an interrupted event loop with KeyboardInterrupt; 3.10
+    # cancels its main task instead
+    @pytest.mark.parametrize("interrupt", [KeyboardInterrupt, asyncio.CancelledError])
+    def test_interrupt_ends_http_mode_cleanly(self, runs, monkeypatch, interrupt):
         def interrupted(**kwargs):
-            raise KeyboardInterrupt
+            raise interrupt
 
         monkeypatch.setattr(main_module.mcp, "run", interrupted)
         main_module.main(["--transport", "http"])  # returns instead of raising

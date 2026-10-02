@@ -178,8 +178,9 @@ def _serve_http(host: str, port: int) -> None:
     blocks DNS rebinding from web pages.
 
     Uvicorn shuts down gracefully on SIGINT and SIGTERM and then raises the
-    signal again. Both end as KeyboardInterrupt here, so the lifespan closes the
-    API client and the process exits with status 0.
+    signal again. Both end here as KeyboardInterrupt, or on Python 3.10 as the
+    cancellation of the event loop's main task, so the lifespan closes the API
+    client and the process exits with status 0.
 
     Args:
         host: Address to listen on.
@@ -196,7 +197,7 @@ def _serve_http(host: str, port: int) -> None:
             host_origin_protection="auto",
             uvicorn_config={"log_config": None},
         )
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("HTTP server stopped")
 
 
