@@ -537,7 +537,7 @@ Clients that support resources can attach these to a conversation without a tool
 | `collection_research` | `research_topic`, `focus_area` (optional) | Research a topic across the collections. |
 | `object_analysis` | `object_id` | Analyze one object in depth. |
 | `exhibition_planning` | `exhibition_theme`, `target_audience` (optional), `size` (optional: `small`, `medium` or `large`) | Plan an exhibition from collection objects. |
-| `educational_content` | `subject`, `grade_level` (optional), `learning_goals` (optional) | Build a lesson around collection objects. |
+| `educational_content` | `subject`, `grade_level` (optional), `learning_goals` (optional), `session_minutes` (optional: 10 to 480) | Build a lesson around collection objects. With `session_minutes`, the lesson features only as many objects as the session has time for, such as 2 or 3 for 60 minutes, and includes a timed agenda. |
 | `museum_on_view` | `museum`, `topic` (optional) | Find out what is on view at a museum. |
 
 ## Search tips

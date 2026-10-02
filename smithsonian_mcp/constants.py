@@ -470,6 +470,15 @@ SIZE_GUIDELINES: Dict[str, str] = {
     "large": "60+ objects",
 }
 
+# Teaching-session lengths, in minutes, accepted by the educational_content
+# prompt. The prompt sets aside SESSION_OVERHEAD_MINUTES for the introduction and
+# wrap-up and allows each object MINUTES_PER_OBJECT (fewest, most) for looking,
+# discussion and activity.
+SESSION_MIN_MINUTES = 10
+SESSION_MAX_MINUTES = 480
+SESSION_OVERHEAD_MINUTES = 10
+MINUTES_PER_OBJECT: Tuple[int, int] = (15, 20)
+
 # Object page URLs that follow from the record_ID (or the accession number after
 # its prefix) alone, by museum code; used by utils.record_page_url. Pages of other
 # museums need record data, such as record_link or guid.

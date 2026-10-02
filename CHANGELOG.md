@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The `educational_content` prompt takes an optional `session_minutes`, the length of the teaching session from 10 to 480 minutes. The lesson then features only as many objects as fit, allowing 15 to 20 minutes for each object after 10 minutes for the introduction and wrap-up (2 or 3 objects for 60 minutes), and includes a timed agenda.
+
 ## [2.0.0] - 2026-10-02
 
 Version 2.0 replaces the 28 tools of 1.x with 5. Tool names and output shapes change, so prompts, scripts and saved workflows that call 1.x tools need updating. See [Migrating from 1.x](README.md#migrating-from-1x).
