@@ -91,7 +91,10 @@ ARCHIVAL_UNIT_CODES: FrozenSet[str] = frozenset(
 
 # Units that publish archive records as well as objects (row_group "archives"
 # counts checked in October 2026: SIA 863,592, CFCHFOLKLIFE 73,400, NMAAHC
-# 16,427, SAAM 2,788, NPG 701, SIL 554).
+# 16,427, SAAM 2,788, NPG 701, SIL 554). To refresh this and
+# ARCHIVAL_UNIT_CODES, count each code from GET /terms/unit_code twice with
+# GET /search?q=unit_code:<code>&rows=0, once with row_group=archives: codes with
+# both counts above zero belong here, codes with archive records only above.
 MIXED_UNIT_CODES: FrozenSet[str] = frozenset(
     {"CFCHFOLKLIFE", "NMAAHC", "NPG", "SAAM", "SIA", "SIL"}
 )
@@ -309,7 +312,10 @@ UNIT_INFO: Dict[str, Dict[str, str]] = {
 }
 
 # Exhibition building codes seen in onPhysicalExhibit records (October 2026),
-# with the building's name and place. Rooms are reported separately.
+# with the building's name and place. Rooms are reported separately. To refresh,
+# page through GET /search?q=onPhysicalExhibit:"Yes"&rows=1000 (start=0, 1000,
+# ...) and collect the distinct "building" values of
+# content.indexedStructured.exhibition.
 EXHIBITION_BUILDINGS: Dict[str, Tuple[str, str]] = {
     "ACM": ("Anacostia Community Museum", "Washington, DC"),
     "CHNDM": ("Cooper Hewitt, Smithsonian Design Museum", "New York, NY"),
