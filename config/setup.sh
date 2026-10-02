@@ -18,6 +18,11 @@ REQUIREMENTS_FILE="config/requirements.txt"
 MCPO_EXAMPLE="examples/mcpo-config.json"
 MCPO_CONFIG="mcpo-config.json"
 SERVICE_NAME="smithsonian-mcp"
+# The service serves streamable HTTP; a stdio server with no client attached
+# would exit at once and be restarted in a loop.
+SERVICE_PORT=8000
+SERVICE_ARGS="--transport http --host 127.0.0.1 --port $SERVICE_PORT"
+SERVICE_URL="http://127.0.0.1:$SERVICE_PORT/mcp"
 
 # --- Functions ---
 
@@ -197,6 +202,9 @@ setup_service() {
 setup_systemd_service() {
     local service_file="/etc/systemd/system/$SERVICE_NAME.service"
     local user_service_file="$HOME/.config/systemd/user/$SERVICE_NAME.service"
+    # User units run as the user and start with the user's default target
+    local user_line=""
+    local wanted_by="default.target"
 
     # Prefer user service if directory exists
     if [ -d "$HOME/.config/systemd/user" ]; then
@@ -204,23 +212,25 @@ setup_systemd_service() {
         info "Creating user systemd service..."
     else
         info "Creating system systemd service (requires sudo)..."
+        user_line="User=$USER
+"
+        wanted_by="multi-user.target"
     fi
 
     local service_content="[Unit]
-Description=Smithsonian MCP Server
+Description=Smithsonian MCP Server (streamable HTTP at $SERVICE_URL)
 After=network.target
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=$PROJECT_DIR
+${user_line}WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/$VENV_DIR/bin
-ExecStart=$SERVER_EXEC
+ExecStart=\"$SERVER_EXEC\" $SERVICE_ARGS
 Restart=always
 RestartSec=10
 
 [Install]
-WantedBy=multi-user.target"
+WantedBy=$wanted_by"
 
     if [ "$service_file" = "$user_service_file" ]; then
         echo "$service_content" > "$service_file" \
@@ -230,6 +240,7 @@ WantedBy=multi-user.target"
         systemctl --user enable "$SERVICE_NAME" \
             || { error "systemctl --user enable $SERVICE_NAME failed."; return 1; }
         info "User service installed. Start with: systemctl --user start $SERVICE_NAME"
+        info "It serves MCP over streamable HTTP at $SERVICE_URL"
     else
         echo "$service_content" | sudo tee "$service_file" > /dev/null \
             || { error "Could not write $service_file."; return 1; }
@@ -238,6 +249,7 @@ WantedBy=multi-user.target"
         sudo systemctl enable "$SERVICE_NAME" \
             || { error "systemctl enable $SERVICE_NAME failed."; return 1; }
         info "System service installed. Start with: sudo systemctl start $SERVICE_NAME"
+        info "It serves MCP over streamable HTTP at $SERVICE_URL"
     fi
 }
 
@@ -253,6 +265,12 @@ setup_launchd_service() {
     <key>ProgramArguments</key>
     <array>
         <string>$SERVER_EXEC</string>
+        <string>--transport</string>
+        <string>http</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>$SERVICE_PORT</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$PROJECT_DIR</string>
@@ -274,6 +292,7 @@ setup_launchd_service() {
     launchctl load "$plist_file" \
         || { error "launchctl load $plist_file failed."; return 1; }
     info "Launchd service installed and started."
+    info "It serves MCP over streamable HTTP at $SERVICE_URL"
 }
 
 # Function to add this server to the Claude Desktop config.
@@ -472,8 +491,9 @@ fi
 # 6. Setup service
 os=$(detect_os)
 if [ "$os" != "unknown" ]; then
-    info "Note: the server uses the stdio transport. MCP clients such as Claude Desktop"
-    info "start it on demand, so most users do not need a background service."
+    info "Note: MCP clients such as Claude Desktop start their own stdio server on"
+    info "demand, so most users do not need a background service. The service runs"
+    info "the server in HTTP mode at $SERVICE_URL for clients that connect over HTTP."
     echo -n "Do you want to install $SERVICE_NAME as a system service? (y/N): "
     read -r install_service
     if [[ "$install_service" =~ ^[Yy]$ ]]; then
@@ -512,6 +532,7 @@ info "Usage:"
 info "  Activate environment: source $VENV_DIR/bin/activate"
 info "  Test connection: python examples/test-api-connection.py"
 info "  Run server (stdio): $SERVER_EXEC"
+info "  Run server (HTTP): $SERVER_EXEC --transport http"
 if { command_exists systemctl && [ -f "/etc/systemd/system/$SERVICE_NAME.service" ]; } || [ -f "$HOME/.config/systemd/user/$SERVICE_NAME.service" ]; then
     info "  Manage service: systemctl --user start/stop/status $SERVICE_NAME"
 fi

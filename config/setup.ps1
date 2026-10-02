@@ -20,6 +20,12 @@ $venvDir = ".venv"
 $venvPython = Join-Path $projectDir "$venvDir\Scripts\python.exe"
 $serverExe = Join-Path $projectDir "$venvDir\Scripts\smithsonian-mcp.exe"
 
+# The service serves streamable HTTP; a stdio server with no client attached
+# would exit at once.
+$servicePort = 8000
+$serviceArgs = "--transport http --host 127.0.0.1 --port $servicePort"
+$serviceUrl = "http://127.0.0.1:$servicePort/mcp"
+
 # Output helpers
 function Write-Success { param([string]$Message) Write-Host "[OK] $Message" -ForegroundColor Green }
 function Write-Warning { param([string]$Message) Write-Host "[WARN] $Message" -ForegroundColor Yellow }
@@ -259,14 +265,15 @@ function Set-WindowsService {
             & sc.exe delete $serviceName | Out-Null
         }
 
-        New-Service -Name $serviceName -DisplayName "Smithsonian MCP Server" -BinaryPathName "`"$serverExe`"" -StartupType Manual | Out-Null
+        New-Service -Name $serviceName -DisplayName "Smithsonian MCP Server" -BinaryPathName "`"$serverExe`" $serviceArgs" -StartupType Manual | Out-Null
         Write-Success "Windows service '$serviceName' registered"
+        Write-Info "It serves MCP over streamable HTTP at $serviceUrl"
         Write-Info "Start the service with: Start-Service $serviceName"
         Write-Info "Stop the service with: Stop-Service $serviceName"
     }
     catch {
         Write-Error "Failed to install Windows service: $($_.Exception.Message)"
-        Write-Info "You can run the server manually with: $serverExe"
+        Write-Info "You can run the server manually with: $serverExe $serviceArgs"
     }
 }
 
@@ -492,8 +499,9 @@ function Start-Installation {
         }
 
         # Setup Windows service
-        Write-Info "Note: the server uses the stdio transport. MCP clients such as Claude Desktop"
-        Write-Info "start it on demand, so most users do not need a background service."
+        Write-Info "Note: MCP clients such as Claude Desktop start their own stdio server on"
+        Write-Info "demand, so most users do not need a background service. The service runs"
+        Write-Info "the server in HTTP mode at $serviceUrl for clients that connect over HTTP."
         $setupService = Read-Host "Do you want to install Smithsonian MCP as a Windows service? (y/N)"
         if ($setupService -match '^[Yy]') {
             Set-WindowsService
@@ -533,6 +541,7 @@ function Start-Installation {
         Write-Host "  Activate environment: .\$venvDir\Scripts\Activate.ps1"
         Write-Host "  Test connection: python examples/test-api-connection.py"
         Write-Host "  Run server (stdio): $serverExe"
+        Write-Host "  Run server (HTTP): $serverExe --transport http"
         if (Get-Service -Name "SmithsonianMCP" -ErrorAction SilentlyContinue) {
             Write-Host "  Manage service: Start-Service SmithsonianMCP / Stop-Service SmithsonianMCP"
         }
