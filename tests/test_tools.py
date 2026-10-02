@@ -146,6 +146,15 @@ class TestRegistration:
         assert total / 4 < 6000
 
     @pytest.mark.asyncio
+    async def test_argument_descriptions_are_single_lines(self):
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        for tool in tools:
+            for name, schema in tool.input_schema["properties"].items():
+                description = schema.get("description", "")
+                assert description == " ".join(description.split()), (tool.name, name)
+
+    @pytest.mark.asyncio
     async def test_on_view_argument_carries_the_natural_history_caveat(self):
         async with Client(mcp) as client:
             tools = {tool.name: tool for tool in await client.list_tools()}
@@ -880,6 +889,19 @@ class TestPrompts:
         text = result.messages[0].content.text
         assert "search_objects" in text and "on_view=true" in text
         assert "query='muppet'" in text and "exhibition_title" in text
+
+    @pytest.mark.asyncio
+    async def test_exhibition_size_is_constrained(self):
+        async with Client(mcp) as client:
+            result = await client.get_prompt(
+                "exhibition_planning", {"exhibition_theme": "flight", "size": "small"}
+            )
+            assert "about 15-25 objects" in result.messages[0].content.text
+            with pytest.raises(Exception, match="size"):
+                await client.get_prompt(
+                    "exhibition_planning",
+                    {"exhibition_theme": "flight", "size": "huge"},
+                )
 
     @pytest.mark.asyncio
     async def test_prompts_only_name_existing_tools(self):

@@ -5,7 +5,7 @@ Each prompt describes a task and names the tools to use for it; the tools
 themselves are documented in the server instructions and tool descriptions.
 """
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
@@ -76,7 +76,7 @@ def object_analysis(object_id: str) -> List[Message]:
 def exhibition_planning(
     exhibition_theme: str,
     target_audience: str = "general public",
-    size: str = "medium",
+    size: Literal["small", "medium", "large"] = "medium",
 ) -> List[Message]:
     """
     Plan an exhibition from Smithsonian objects.
@@ -84,12 +84,12 @@ def exhibition_planning(
     Args:
         exhibition_theme: Main theme or topic of the exhibition.
         target_audience: Intended audience, e.g. "children" or "scholars".
-        size: "small", "medium" or "large".
+        size: "small" (15-25 objects), "medium" (30-50) or "large" (60+).
 
     Returns:
         List[Message]: The prompt messages.
     """
-    object_count = SIZE_GUIDELINES.get(size, SIZE_GUIDELINES["medium"])
+    object_count = SIZE_GUIDELINES[size]
     return [
         Message(
             f"Help me plan a {size} exhibition on '{exhibition_theme}' for "

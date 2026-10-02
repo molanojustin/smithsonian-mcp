@@ -34,6 +34,7 @@ from typing import (
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.tools import FunctionTool
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -1157,9 +1158,14 @@ def register_tools(server: FastMCP) -> None:
         server: The FastMCP server.
     """
     for function, title in TOOLS:
-        server.tool(
+        tool = FunctionTool.from_function(
             function,
             title=title,
             description=summary_of(function),
             annotations=READ_ONLY,
         )
+        # Argument descriptions come from wrapped docstring lines
+        for schema in tool.parameters.get("properties", {}).values():
+            if isinstance(schema.get("description"), str):
+                schema["description"] = " ".join(schema["description"].split())
+        server.add_tool(tool)
