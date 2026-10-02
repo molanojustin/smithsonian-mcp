@@ -294,7 +294,8 @@ def _combine(kind: str, items: List[_QueryNode]) -> Optional[_QueryNode]:
     return _QueryNode(kind, children=flat)
 
 
-class _QueryParser:
+# A recursive-descent parser: parse() is its only entry point.
+class _QueryParser:  # pylint: disable=too-few-public-methods
     """
     Forgiving parser for free-text queries.
 

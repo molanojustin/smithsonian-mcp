@@ -60,7 +60,9 @@ def _wait_for_id(
             ) from exc
         if raw is None:
             lines.put(None)  # keep the end-of-output marker for _drain()
-            raise SmokeTestFailure(f"server closed stdout before answering id {request_id}")
+            raise SmokeTestFailure(
+                f"server closed stdout before answering id {request_id}"
+            )
         seen.append(raw)
         try:
             message = json.loads(raw)
@@ -121,7 +123,9 @@ def _handshake(
     _send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     tools_response = _wait_for_id(lines, seen, 2)
     if "result" not in tools_response:
-        raise SmokeTestFailure(f"tools/list returned an error: {tools_response.get('error')}")
+        raise SmokeTestFailure(
+            f"tools/list returned an error: {tools_response.get('error')}"
+        )
 
     return {
         "server": init["result"].get("serverInfo", {}),
@@ -161,7 +165,9 @@ def main() -> int:
         proc.kill()
         proc.wait()
         exit_code = None
-        failures.append(f"server did not exit within {EXIT_TIMEOUT_SECONDS}s after stdin closed")
+        failures.append(
+            f"server did not exit within {EXIT_TIMEOUT_SECONDS}s after stdin closed"
+        )
     _drain(lines, seen)
 
     stray = _stray_lines(seen)
@@ -170,7 +176,9 @@ def main() -> int:
     print(f"protocol: {result['protocol']}")
     print(f"tools: {len(result['tools'])}")
     print(f"stdout lines: {len(seen)}, non-JSON-RPC lines: {len(stray)}")
-    print(f"exit code after stdin closed: {'timeout' if exit_code is None else exit_code}")
+    print(
+        f"exit code after stdin closed: {'timeout' if exit_code is None else exit_code}"
+    )
     for raw in stray[:5]:
         print(f"  stray stdout: {raw[:200]!r}")
 

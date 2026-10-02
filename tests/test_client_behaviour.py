@@ -527,15 +527,18 @@ class TestSharedClient:
 
     @pytest.mark.asyncio
     async def test_lifespan_client_is_used_and_closed(self, monkeypatch):
-        from smithsonian_mcp.server import server_lifespan
+        created = []
 
-        create = AsyncMock(
-            side_effect=AssertionError("must not create a second client")
-        )
-        monkeypatch.setattr(context, "create_client", create)
+        async def fake_create():
+            client = SmithsonianAPIClient(api_key="test")
+            await client.connect()
+            created.append(client)
+            return client
+
+        monkeypatch.setattr(context, "create_client", fake_create)
         context.set_api_client(None)
 
-        async with server_lifespan(None) as server_context:
+        async with context.server_lifespan(None) as server_context:
             client = server_context.api_client
             assert client.session is not None
             assert await context.get_api_client() is client
@@ -543,7 +546,7 @@ class TestSharedClient:
 
         assert client.session is None  # closed on shutdown
         assert context.peek_api_client() is None
-        create.assert_not_awaited()
+        assert created == [client]  # the tools did not create a second client
 
     @pytest.mark.asyncio
     async def test_lazy_client_outside_lifespan(self, monkeypatch):

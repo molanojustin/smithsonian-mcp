@@ -12,7 +12,8 @@ from decouple import config
 from . import __version__
 
 
-class Config:
+# A namespace of settings read once at import, not an object with behaviour.
+class Config:  # pylint: disable=too-few-public-methods
     """Configuration settings for the Smithsonian MCP server."""
 
     # API key from https://api.data.gov/signup/. Sent only in the X-Api-Key header.

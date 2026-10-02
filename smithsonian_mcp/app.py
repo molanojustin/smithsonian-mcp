@@ -9,9 +9,9 @@ from fastmcp import FastMCP
 
 from . import __version__
 from .config import Config
+from .context import server_lifespan
 from .prompts import register_prompts
 from .resources import register_resources
-from .server import server_lifespan
 from .tools import register_tools
 
 WEBSITE_URL = "https://github.com/molanojustin/smithsonian-mcp"
