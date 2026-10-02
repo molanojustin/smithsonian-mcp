@@ -848,6 +848,43 @@ class TestCollectionStats:
         assert (await call("get_collection_stats"))["objects"] == 1000
 
 
+class TestOutputSchemas:
+    """Structured results validate against the advertised output schemas."""
+
+    @pytest.mark.asyncio
+    async def test_results_match_output_schemas(self, fake_api):
+        jsonschema = pytest.importorskip("jsonschema")
+        record = load_record("thunder_god_response.json")
+        archive = load_record("archive_record_response.json")
+        fake_api.add_record(record)
+
+        def search(params):
+            if params.get("rows") == "0":
+                return search_payload([], total=5)
+            if params.get("row_group") == "archives":
+                return search_payload([archive], total=1)
+            return search_payload(MUPPETS + [record], total=40)
+
+        fake_api.search = search
+        calls = [
+            ("search_objects", {"query": "muppet", "museum": "NMAH", "on_view": True}),
+            ("search_objects", {"query": "warren", "record_type": "archives"}),
+            ("search_objects", {"query": "Which muppets are on display?"}),
+            ("get_object", {"object_id": record["id"]}),
+            ("list_museums", {}),
+            ("explore_topic", {"topic": "muppets"}),
+            ("get_collection_stats", {}),
+            ("get_collection_stats", {"museum": "NMAH"}),
+        ]
+        async with Client(mcp) as client:
+            schemas = {
+                tool.name: tool.output_schema for tool in await client.list_tools()
+            }
+            for name, args in calls:
+                result = await client.call_tool(name, args)
+                jsonschema.validate(result.structured_content, schemas[name])
+
+
 class TestResources:
     """Resources return the tool data as JSON."""
 
