@@ -36,19 +36,25 @@ RUN groupadd --system --gid 10001 smithsonian \
 
 COPY --from=builder /app/.venv /app/.venv
 
-# MCP_HOST only applies in HTTP mode. Inside the container the server must
-# listen on all interfaces for a published port to reach it.
+# MCP_HOST and MCP_ALLOWED_HOSTS only apply in HTTP mode. Inside the container
+# the server must listen on all interfaces for a published port to reach it, so
+# requests are told apart by their Host header instead: only the names in
+# MCP_ALLOWED_HOSTS are accepted, which blocks DNS rebinding from web pages.
+# Add the names clients use to reach the container, comma-separated.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    MCP_HOST=0.0.0.0
+    MCP_HOST=0.0.0.0 \
+    MCP_ALLOWED_HOSTS=localhost,127.0.0.1,::1
 
 WORKDIR /app
 USER smithsonian
 
 # By default the server speaks MCP over stdio, so run the container with -i:
 #   docker run -i --rm -e SMITHSONIAN_API_KEY justinmol/smithsonian-mcp
-# For streamable HTTP at http://127.0.0.1:8000/mcp on the host:
+# For streamable HTTP at http://127.0.0.1:8000/mcp on this machine only (the
+# endpoint has no authentication, and anyone who can reach the port spends your
+# API key's quota):
 #   docker run --rm -e SMITHSONIAN_API_KEY -e MCP_TRANSPORT=http \
 #       -p 127.0.0.1:8000:8000 justinmol/smithsonian-mcp
 EXPOSE 8000

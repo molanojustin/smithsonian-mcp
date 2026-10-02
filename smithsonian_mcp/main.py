@@ -31,6 +31,11 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 # Path of the MCP endpoint in HTTP mode
 HTTP_PATH = "/mcp"
+# Host header values accepted in HTTP mode unless MCP_ALLOWED_HOSTS says
+# otherwise. A specific listening address is added to them.
+DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1", "::1")
+# Listening addresses that mean every interface and name no host.
+_ANY_ADDRESS = frozenset({"0.0.0.0", "::", "[::]"})
 
 
 def configure_logging(level: Optional[str] = None) -> None:
@@ -72,19 +77,57 @@ def _port(value: str) -> int:
     return port
 
 
+def _host_list(value: str) -> List[str]:
+    """
+    Split a comma-separated list of host names.
+
+    Args:
+        value: Names such as "localhost, mcp.example.org".
+
+    Returns:
+        List[str]: The names, without blanks.
+    """
+    return [name.strip() for name in value.split(",") if name.strip()]
+
+
+def allowed_hosts_for(host: str, configured: Optional[List[str]] = None) -> List[str]:
+    """
+    Host header values that HTTP mode accepts.
+
+    Requests naming any other host are refused, which blocks DNS rebinding from
+    web pages whatever address the server listens on.
+
+    Args:
+        host: The listening address.
+        configured: Names from --allowed-hosts or MCP_ALLOWED_HOSTS, if any.
+
+    Returns:
+        List[str]: The configured names, or localhost, 127.0.0.1 and ::1 plus
+        the listening address unless it is 0.0.0.0 or ::.
+    """
+    if configured:
+        return list(configured)
+    hosts = list(DEFAULT_ALLOWED_HOSTS)
+    if host not in _ANY_ADDRESS and host not in hosts:
+        hosts.append(host)
+    return hosts
+
+
 def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     """
     Parse command line arguments, ignoring unknown ones for compatibility.
 
-    ``--transport``, ``--host`` and ``--port`` default to ``MCP_TRANSPORT``,
-    ``MCP_HOST`` and ``MCP_PORT``, then to stdio, 127.0.0.1 and 8000. Invalid
+    ``--transport``, ``--host``, ``--port`` and ``--allowed-hosts`` default to
+    ``MCP_TRANSPORT``, ``MCP_HOST``, ``MCP_PORT`` and ``MCP_ALLOWED_HOSTS``, then
+    to stdio, 127.0.0.1, 8000 and the names from ``allowed_hosts_for``. Invalid
     values exit with status 2, whether they come from a flag or the environment.
 
     Args:
         argv: Arguments without the program name, or None for ``sys.argv[1:]``.
 
     Returns:
-        argparse.Namespace: Parsed arguments with transport, host and port set.
+        argparse.Namespace: Parsed arguments with transport, host, port and
+        allowed_hosts set.
     """
     parser = argparse.ArgumentParser(
         prog="smithsonian-mcp",
@@ -109,6 +152,15 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         help=f"port to listen on in HTTP mode (default: $MCP_PORT, else {DEFAULT_PORT})",
     )
     parser.add_argument(
+        "--allowed-hosts",
+        metavar="NAMES",
+        help=(
+            "comma-separated Host header names accepted in HTTP mode (default: "
+            "$MCP_ALLOWED_HOSTS, else localhost, 127.0.0.1, ::1 and the --host "
+            "address)"
+        ),
+    )
+    parser.add_argument(
         "--test",
         action="store_true",
         help="check the configuration and API access, then exit",
@@ -119,7 +171,21 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     args, unknown = parser.parse_known_args(argv)
     if unknown:
         args.unknown = unknown
+    _apply_settings(parser, args)
+    return args
 
+
+def _apply_settings(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """
+    Fill transport options not given as flags from the environment and defaults.
+
+    A blank environment value counts as unset; a blank --host or --allowed-hosts
+    is an error, because an empty listening address means every interface.
+
+    Args:
+        parser: The parser, for reporting invalid values.
+        args: Parsed arguments, updated in place.
+    """
     if args.transport is None:
         transport = (Config.MCP_TRANSPORT or "").strip().lower() or "stdio"
         if transport not in TRANSPORTS:
@@ -128,15 +194,28 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
                 f"not {transport!r}"
             )
         args.transport = transport
-    if args.host is None:
+
+    if args.host is not None:
+        args.host = args.host.strip()
+        if not args.host:
+            parser.error("--host must not be empty; use 0.0.0.0 for every interface")
+    else:
         args.host = (Config.MCP_HOST or "").strip() or DEFAULT_HOST
+
     if args.port is None:
         port = (Config.MCP_PORT or "").strip()
         try:
             args.port = _port(port) if port else DEFAULT_PORT
         except argparse.ArgumentTypeError as exc:
             parser.error(f"MCP_PORT: {exc}")
-    return args
+
+    if args.allowed_hosts is not None:
+        configured = _host_list(args.allowed_hosts)
+        if not configured:
+            parser.error("--allowed-hosts must name at least one host")
+    else:
+        configured = _host_list(Config.MCP_ALLOWED_HOSTS or "")
+    args.allowed_hosts = allowed_hosts_for(args.host, configured)
 
 
 async def _self_test() -> int:
@@ -168,14 +247,17 @@ async def _self_test() -> int:
     return 0
 
 
-def _serve_http(host: str, port: int) -> None:
+def _serve_http(host: str, port: int, allowed_hosts: List[str]) -> None:
     """
     Serve MCP over streamable HTTP until interrupted.
 
     Uvicorn's own log configuration is not applied, so its server and access
-    logs go through the stderr handler set up by ``configure_logging``. Host and
-    Origin headers are checked when listening on a loopback address, which
-    blocks DNS rebinding from web pages.
+    logs go through the stderr handler set up by ``configure_logging``.
+
+    Requests whose Host header is not in ``allowed_hosts`` (or the address the
+    connection arrived on) get 421, and requests from another site's Origin get
+    403, on any listening address. This blocks DNS rebinding from web pages.
+
 
     Uvicorn shuts down gracefully on SIGINT and SIGTERM and then raises the
     signal again. Both end here as KeyboardInterrupt, or on Python 3.10 as the
@@ -185,7 +267,9 @@ def _serve_http(host: str, port: int) -> None:
     Args:
         host: Address to listen on.
         port: Port to listen on.
+        allowed_hosts: Host header values to accept.
     """
+    logger.info("Accepting Host headers: %s", ", ".join(allowed_hosts))
     signal.signal(signal.SIGTERM, signal.default_int_handler)
     try:
         mcp.run(
@@ -194,7 +278,8 @@ def _serve_http(host: str, port: int) -> None:
             port=port,
             path=HTTP_PATH,
             show_banner=False,
-            host_origin_protection="auto",
+            host_origin_protection=True,
+            allowed_hosts=allowed_hosts,
             uvicorn_config={"log_config": None},
         )
     except (KeyboardInterrupt, asyncio.CancelledError):
@@ -226,7 +311,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         sys.exit(asyncio.run(_self_test()))
 
     if args.transport == "http":
-        _serve_http(args.host, args.port)
+        _serve_http(args.host, args.port, args.allowed_hosts)
     else:
         # The banner is noise on stderr for a stdio server
         mcp.run(transport="stdio", show_banner=False)

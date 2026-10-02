@@ -29,11 +29,13 @@ class Config:  # pylint: disable=too-few-public-methods
     LOG_LEVEL: str = config("LOG_LEVEL", default="INFO")  # type: ignore
 
     # Transport of the command line entry point: stdio, or http for streamable
-    # HTTP on MCP_HOST:MCP_PORT. The --transport, --host and --port options take
-    # precedence; the values are validated when the server starts.
+    # HTTP on MCP_HOST:MCP_PORT, accepting the Host header names in the
+    # comma-separated MCP_ALLOWED_HOSTS. The --transport, --host, --port and
+    # --allowed-hosts options take precedence; values are validated at startup.
     MCP_TRANSPORT: str = config("MCP_TRANSPORT", default="stdio")  # type: ignore
     MCP_HOST: str = config("MCP_HOST", default="127.0.0.1")  # type: ignore
     MCP_PORT: str = config("MCP_PORT", default="8000")  # type: ignore
+    MCP_ALLOWED_HOSTS: str = config("MCP_ALLOWED_HOSTS", default="")  # type: ignore
 
     # Value of the User-Agent header sent with every API request
     USER_AGENT: str = (
