@@ -3,7 +3,7 @@
 # Build stage: install the locked runtime dependencies and the package into
 # /app/.venv with uv. Nothing from this stage except the virtual environment
 # ends up in the final image.
-FROM python:3.13.15-slim-trixie@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b AS builder
+FROM python:3.14.8-slim-trixie@sha256:89fb7d3da20043c370643435258bdd7ab755d326d359001d02988ed15ae5219e AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.21 /uv /usr/local/bin/uv
 
@@ -24,7 +24,7 @@ RUN uv sync --frozen --no-dev --no-editable
 
 
 # Runtime stage
-FROM python:3.13.15-slim-trixie@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b
+FROM python:3.14.8-slim-trixie@sha256:89fb7d3da20043c370643435258bdd7ab755d326d359001d02988ed15ae5219e
 
 LABEL org.opencontainers.image.source="https://github.com/molanojustin/smithsonian-mcp"
 LABEL org.opencontainers.image.description="Smithsonian MCP Server - Model Context Protocol server for Smithsonian Open Access collections"
