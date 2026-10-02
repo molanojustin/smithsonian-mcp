@@ -75,6 +75,29 @@ jobs:
       - name: Smoke test the npm wrapper
         run: python3 .github/scripts/stdio_smoke.py node bin/smithsonian-mcp.js
 
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder so the server starts; initialize and tools/list make no API calls.
+      SMITHSONIAN_API_KEY: ci-placeholder-key-not-used-for-api-calls
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t smithsonian-mcp:ci .
+
+      - name: Smoke test stdio mode in the container
+        run: |
+          python3 .github/scripts/stdio_smoke.py \
+            docker run -i --rm -e SMITHSONIAN_API_KEY smithsonian-mcp:ci
+
+      - name: Smoke test HTTP mode in the container
+        run: |
+          python3 .github/scripts/http_smoke.py \
+            docker run --rm -p 127.0.0.1:{port}:8000 \
+            -e MCP_TRANSPORT=http -e SMITHSONIAN_API_KEY smithsonian-mcp:ci
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
