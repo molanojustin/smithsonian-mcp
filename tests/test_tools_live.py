@@ -157,3 +157,9 @@ async def test_counts_agree_with_search_totals():
     assert stats["objects"] == search["total_count"] > 0
     assert stats["objects"] >= stats["objects_with_images"]
     assert json.dumps(museums) and museums_tokens < 2500 and stats_tokens < 200
+
+
+async def test_lowercase_or_is_an_operator():
+    lower, _ = await call("search_objects", {"query": "muppet or henson", "limit": 1})
+    upper, _ = await call("search_objects", {"query": "muppet OR henson", "limit": 1})
+    assert lower["total_count"] == upper["total_count"] > 1000

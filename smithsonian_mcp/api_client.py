@@ -159,6 +159,8 @@ _BOOLEAN_OPERATORS = {
     "NOT": "NOT",
     "!": "NOT",
 }
+# Lowercase words used as operators when they stand between two terms.
+_LOWERCASE_OPERATORS = {"or": "OR", "and": "AND"}
 _GROUP_PREFIXES = frozenset({"+", "-", "!"})
 _RANGE_RE = re.compile(r"^[\[{]\s*\S+\s+TO\s+\S+\s*[\]}]$")
 _YEAR_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
@@ -314,7 +316,32 @@ def _tokenize_query(text: str) -> List[Tuple[str, str]]:
             word = word[:-1]
         if _is_search_term(word):
             tokens.append(("ATOM", word))
-    return tokens
+    return _lowercase_operators(tokens)
+
+
+def _lowercase_operators(tokens: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    """
+    Treat lowercase "or" and "and" between two terms as operators.
+
+    People type "muppet or henson" meaning OR; as a required word "or" matches
+    almost nothing. A lowercase "not" stays a word, because "not" inside a
+    title is far more common than a lowercase NOT meant as an operator.
+
+    Args:
+        tokens: Tokens from _tokenize_query.
+
+    Returns:
+        List[Tuple[str, str]]: The tokens with those words made operators.
+    """
+    result = list(tokens)
+    for index, (kind, value) in enumerate(tokens):
+        if kind != "ATOM" or value not in _LOWERCASE_OPERATORS:
+            continue
+        before = tokens[index - 1][0] if index > 0 else None
+        after = tokens[index + 1][0] if index + 1 < len(tokens) else None
+        if before in ("ATOM", "RPAREN") and after in ("ATOM", "LPAREN"):
+            result[index] = ("OP", _LOWERCASE_OPERATORS[value])
+    return result
 
 
 def _combine(kind: str, items: List[_QueryNode]) -> Optional[_QueryNode]:
