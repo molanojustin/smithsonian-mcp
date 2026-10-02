@@ -26,7 +26,7 @@ from .models import (
 )
 from .parsing import as_dict, as_list, parse_object_data, safe_int
 from .query import build_search_query
-from .utils import SingleFlight, mask_api_key
+from .utils import SingleFlight
 
 logger = logging.getLogger(__name__)
 
@@ -176,12 +176,17 @@ class SmithsonianAPIClient:
 
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         # The key travels in the X-Api-Key header only, never in the URL.
-        request_params = {
-            k: v for k, v in mask_api_key(dict(params or {})).items() if k != "api_key"
-        }
+        request_params = {k: v for k, v in (params or {}).items() if k != "api_key"}
 
         try:
-            logger.debug("GET %s params=%s", url, request_params)
+            # Log only the known search fields, never the parameter dict as a whole
+            logger.debug(
+                "GET %s q=%s start=%s rows=%s",
+                url,
+                request_params.get("q"),
+                request_params.get("start"),
+                request_params.get("rows"),
+            )
 
             if self.session is None:
                 raise APIError(

@@ -246,10 +246,11 @@ def _free_port() -> int:
 
 def _local_address() -> Optional[str]:
     """
-    A non-loopback IPv4 address of this machine that reaches a 0.0.0.0 listener.
+    A non-loopback IPv4 address of this machine that accepts local connections.
 
     Returns None when there is none, or when a sandbox or firewall blocks
-    connections to it; the caller then tests through loopback only.
+    connections to it; the caller then tests through loopback only. The probe
+    listener binds that one address rather than every interface.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         try:
@@ -261,7 +262,7 @@ def _local_address() -> Optional[str]:
     if address.startswith("127.") or address == "0.0.0.0":
         return None
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-        listener.bind(("0.0.0.0", 0))
+        listener.bind((address, 0))
         listener.listen()
         listener.settimeout(2)
 
