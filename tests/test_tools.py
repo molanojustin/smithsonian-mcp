@@ -5,6 +5,7 @@ The HTTP transport is replaced by tests.fake_api.FakeAPI, so the tool, client,
 query building and parsing code all run without network access or a real key.
 """
 
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -829,6 +830,44 @@ class TestCollectionStats:
         clock[0] += tools.STATS_CACHE_SECONDS + 1
         await call("get_collection_stats")
         assert len(fake_api.searches) == 8
+
+    @pytest.mark.asyncio
+    async def test_concurrent_calls_share_requests(self, fake_api, monkeypatch):
+        fake_api.search = counting_search(self.COUNTS)
+        send = httpx.AsyncHTTPTransport.handle_async_request
+
+        async def slow(transport, request):
+            # Keeps the first call's requests in flight while the others start
+            await asyncio.sleep(0.05)
+            return await send(transport, request)
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", slow)
+        stats = await asyncio.gather(*[call("get_collection_stats") for _ in range(10)])
+        museums = await asyncio.gather(*[call("list_museums") for _ in range(10)])
+
+        assert all(result == stats[0] for result in stats)
+        assert stats[0]["objects"] == 1000
+        assert len(fake_api.searches) == 4
+        assert all(result == museums[0] for result in museums)
+        assert fake_api.paths().count("terms/unit_code") == 1
+
+    @pytest.mark.asyncio
+    async def test_a_failure_reaches_every_concurrent_caller(
+        self, fake_api, monkeypatch
+    ):
+        fake_api.search = lambda params: httpx.Response(429, json={})
+        send = httpx.AsyncHTTPTransport.handle_async_request
+
+        async def slow(transport, request):
+            await asyncio.sleep(0.05)
+            return await send(transport, request)
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", slow)
+        errors = await asyncio.gather(
+            *[call_error("get_collection_stats") for _ in range(5)]
+        )
+        assert all("rate limit" in error for error in errors)
+        assert len(fake_api.searches) == 4
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

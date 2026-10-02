@@ -16,6 +16,7 @@ import inspect
 import logging
 import re
 import time
+from functools import partial
 from typing import (
     Annotated,
     Any,
@@ -52,7 +53,12 @@ from .models import (
 from .notes import explore_note, search_note, whole_smithsonian_note
 from .query import MAX_DATE_YEAR, MIN_DATE_YEAR, build_search_query, date_clause
 from .sampling import diverse_sample, facets, rank_pool
-from .utils import is_whole_smithsonian, record_types, resolve_museum_code
+from .utils import (
+    SingleFlight,
+    is_whole_smithsonian,
+    record_types,
+    resolve_museum_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +93,8 @@ UNKNOWN_MUSEUM_HELP = (
 _HIDDEN_ALIASES = frozenset({"ahm", "botony", "sculture garden"})
 
 _stats_cache: Dict[str, Tuple[float, CollectionOverview]] = {}
+# Concurrent get_collection_stats calls for one museum share one set of counts.
+_stats_flight: SingleFlight[CollectionOverview] = SingleFlight()
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +105,7 @@ _stats_cache: Dict[str, Tuple[float, CollectionOverview]] = {}
 def clear_caches() -> None:
     """Forget cached collection counts so the next call fetches them."""
     _stats_cache.clear()
+    _stats_flight.clear()
 
 
 def _resolve_museum(museum: Optional[str]) -> Optional[MuseumRef]:
@@ -213,7 +222,8 @@ async def _collection_counts(unit: Optional[MuseumRef]) -> CollectionOverview:
     Searchable record counts, cached for STATS_CACHE_SECONDS.
 
     Each figure is the total_count of the search_objects call it describes, so
-    the numbers always agree with search results.
+    the numbers always agree with search results. Concurrent calls for the same
+    museum share one set of requests.
 
     Args:
         unit: Museum to count, or None for the whole collection.
@@ -225,6 +235,20 @@ async def _collection_counts(unit: Optional[MuseumRef]) -> CollectionOverview:
     cached = _stats_cache.get(key)
     if cached and time.monotonic() - cached[0] < STATS_CACHE_SECONDS:
         return cached[1]
+    return await _stats_flight.run(key, partial(_fetch_counts, unit, key))
+
+
+async def _fetch_counts(unit: Optional[MuseumRef], key: str) -> CollectionOverview:
+    """
+    Request the four counts of a museum and cache them.
+
+    Args:
+        unit: Museum to count, or None for the whole collection.
+        key: Cache key of the museum.
+
+    Returns:
+        CollectionOverview: The counts.
+    """
     code = unit.code if unit else None
     try:
         objects, archives, with_images, cc0 = await asyncio.gather(

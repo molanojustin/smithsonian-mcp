@@ -1,11 +1,23 @@
 """
 Utility functions for the Smithsonian MCP server: text cleanup, unit codes,
-museum name resolution and object page URLs.
+museum name resolution, object page URLs, and sharing of concurrent fetches.
 """
 
+import asyncio
 import html
 import re
-from typing import Any, Dict, List, Optional
+from functools import partial
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Generic,
+    Hashable,
+    List,
+    Optional,
+    TypeVar,
+)
 
 from pydantic import HttpUrl
 
@@ -368,3 +380,51 @@ def record_page_url(
     except (KeyError, ValueError):
         return None
     return pattern["base_url"].rstrip("/") + path
+
+
+T = TypeVar("T")
+
+
+class SingleFlight(Generic[T]):
+    """
+    Share one in-flight call per key among concurrent callers.
+
+    The first caller for a key starts the call; callers that arrive while it
+    runs await the same result or exception instead of starting their own.
+    Once it finishes, the next caller starts a new call. A caller that is
+    cancelled does not cancel the call the others are waiting for.
+    """
+
+    def __init__(self) -> None:
+        """Start with no calls in flight."""
+        self._tasks: Dict[Hashable, "asyncio.Task[T]"] = {}
+
+    async def run(self, key: Hashable, call: Callable[[], Awaitable[T]]) -> T:
+        """
+        Await the in-flight call for a key, starting it if there is none.
+
+        Args:
+            key: Identifies calls that would return the same result.
+            call: Starts the call when none is in flight for the key.
+
+        Returns:
+            T: The call's result.
+        """
+        loop = asyncio.get_running_loop()
+        task = self._tasks.get(key)
+        if task is None or task.done() or task.get_loop() is not loop:
+            task = loop.create_task(call())
+            self._tasks[key] = task
+            task.add_done_callback(partial(self._finished, key))
+        return await asyncio.shield(task)
+
+    def _finished(self, key: Hashable, task: "asyncio.Task[T]") -> None:
+        """Forget a finished call, marking its exception as retrieved."""
+        if self._tasks.get(key) is task:
+            del self._tasks[key]
+        if not task.cancelled():
+            task.exception()
+
+    def clear(self) -> None:
+        """Forget all calls, so the next caller for every key starts anew."""
+        self._tasks.clear()
