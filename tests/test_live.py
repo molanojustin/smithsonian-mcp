@@ -11,13 +11,11 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from smithsonian_mcp.api_client import (
-    BASE_URL,
-    SmithsonianAPIClient,
-    build_search_query,
-)
+from smithsonian_mcp.api_client import BASE_URL, SmithsonianAPIClient
 from smithsonian_mcp.config import Config
 from smithsonian_mcp.models import CollectionSearchFilter
+from smithsonian_mcp.parsing import parse_object_data
+from smithsonian_mcp.query import build_search_query
 from smithsonian_mcp.utils import resolve_museum_code
 
 pytest.importorskip("pytest_asyncio")
@@ -391,7 +389,7 @@ async def test_makers_exclude_non_creators(client, unit):
     rows = await _direct_rows(f"unit_code:{unit}", rows=100)
     assert rows
     for row in rows:
-        obj = client._parse_object_data(row)
+        obj = parse_object_data(row)
         entries = row["content"].get("freetext", {}).get("name") or []
         creators = {
             entry.get("content")

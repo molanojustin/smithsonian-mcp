@@ -82,38 +82,6 @@ def clean_text(value: Optional[str]) -> Optional[str]:
     return _WHITESPACE_RE.sub(" ", text).strip()
 
 
-def escape_query_phrase(value: str) -> str:
-    """
-    Quote a value as a phrase for the search ``q`` parameter.
-
-    Backslashes and double quotes are escaped so user input cannot end the phrase
-    and inject query syntax.
-
-    Args:
-        value: Raw filter value.
-
-    Returns:
-        str: The value wrapped in double quotes.
-    """
-    text = _WHITESPACE_RE.sub(" ", str(value)).strip()
-    text = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{text}"'
-
-
-def escape_query_term(value: str) -> str:
-    """
-    Escape a value for use as a single unquoted query term (e.g. before a wildcard).
-
-    Args:
-        value: Raw term.
-
-    Returns:
-        str: The term with query syntax characters and whitespace escaped.
-    """
-    text = _WHITESPACE_RE.sub(" ", str(value)).strip()
-    return _LUCENE_SPECIAL_RE.sub(r"\\\1", text)
-
-
 def normalize_unit_code(code: Optional[str]) -> Optional[str]:
     """
     Normalize a unit code to the spelling used by the search index.
@@ -144,35 +112,6 @@ def normalize_unit_code(code: Optional[str]) -> Optional[str]:
         if known.upper() == upper:
             return known
     return raw
-
-
-def unit_code_query_clause(code: Optional[str]) -> Optional[str]:
-    """
-    Build the fielded ``unit_code`` clause for a unit code or alias.
-
-    ``NMNH`` expands to the wildcard ``unit_code:NMNH*`` because Natural History
-    records are indexed under department codes such as ``NMNHPALEO``.
-
-    Args:
-        code: Unit code, legacy code or aggregate code.
-
-    Returns:
-        Optional[str]: Query clause such as ``unit_code:NMAH``, or None for empty input.
-    """
-    from .constants import (  # pylint: disable=import-outside-toplevel
-        NMNH_AGGREGATE_CODE,
-    )
-
-    canonical = normalize_unit_code(code)
-    if not canonical:
-        return None
-    if canonical == NMNH_AGGREGATE_CODE:
-        return f"unit_code:{NMNH_AGGREGATE_CODE}*"
-    if _PLAIN_CODE_RE.match(canonical):
-        return f"unit_code:{canonical}"
-    if _WILDCARD_CODE_RE.match(canonical):
-        return f"unit_code:{escape_query_term(canonical[:-1])}*"
-    return f"unit_code:{escape_query_phrase(canonical)}"
 
 
 def _normalize_museum_name(text: str) -> str:

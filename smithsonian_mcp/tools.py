@@ -38,12 +38,6 @@ from fastmcp.tools import FunctionTool
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from .api_client import (
-    MAX_DATE_YEAR,
-    MIN_DATE_YEAR,
-    build_search_query,
-    date_clause,
-)
 from .constants import (
     ARCHIVAL_UNIT_CODES,
     EXHIBITION_BUILDINGS,
@@ -68,6 +62,7 @@ from .models import (
     TopicExploration,
     TopicFacets,
 )
+from .query import MAX_DATE_YEAR, MIN_DATE_YEAR, build_search_query, date_clause
 from .utils import (
     record_page_url,
     resolve_museum_code,

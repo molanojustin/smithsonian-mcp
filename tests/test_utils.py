@@ -120,7 +120,8 @@ def test_resolve_museum_code_prefers_longest_match():
 
 def test_normalize_unit_code_and_query_clause():
     """Unit codes map to the clauses the search index understands."""
-    from smithsonian_mcp.utils import normalize_unit_code, unit_code_query_clause
+    from smithsonian_mcp.query import unit_code_query_clause
+    from smithsonian_mcp.utils import normalize_unit_code
 
     assert normalize_unit_code("FSG") == "NMAA"
     assert normalize_unit_code("nmafa") == "NMAfA"
@@ -234,16 +235,14 @@ def test_bert_puppet_parsing():
     """Test parsing of bert puppet response to validate record_id extraction."""
     import json
 
-    from smithsonian_mcp.api_client import SmithsonianAPIClient
+    from smithsonian_mcp.parsing import parse_object_data
     from smithsonian_mcp.utils import record_page_url
 
     # Load the bert puppet response
     with open("tests/bert_puppet_response.json", "r", encoding="utf-8") as f:
         response_data = json.load(f)
 
-    obj = SmithsonianAPIClient(api_key="test")._parse_object_data(
-        response_data["response"]
-    )
+    obj = parse_object_data(response_data["response"])
 
     assert obj.id == "ld1-1643398912743-1643398933001-0"
     assert obj.record_id == "nmah_1448973"
