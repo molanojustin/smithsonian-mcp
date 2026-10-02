@@ -2,9 +2,6 @@
 Tests for the utils module.
 """
 
-import logging
-from unittest.mock import MagicMock
-
 import pytest
 
 from smithsonian_mcp.utils import mask_api_key, resolve_museum_code
@@ -167,65 +164,17 @@ def test_clean_text_strips_html():
     assert clean_text(None) is None
 
 
-def test_prioritize_objects_by_unit_code_uses_unit_codes():
-    """Objects are matched by unit code, with NMNH covering its departments."""
-    from smithsonian_mcp.models import SmithsonianObject
-    from smithsonian_mcp.utils import prioritize_objects_by_unit_code
+def test_record_page_url_patterns():
+    """Museums whose page URL follows from the record_id get a URL; others None."""
+    from smithsonian_mcp.utils import record_page_url
 
-    objects = [
-        SmithsonianObject(id="ld1-1", title="a", unit_code="NMAH"),
-        SmithsonianObject(id="ld1-2", title="b", unit_code="NMNHPALEO"),
-        SmithsonianObject(id="ld1-3", title="c", unit_code="NMAA"),
-    ]
-    ordered = prioritize_objects_by_unit_code(objects, "NMNH")
-    assert [o.id for o in ordered] == ["ld1-2", "ld1-1", "ld1-3"]
-    ordered = prioritize_objects_by_unit_code(objects, "FSG")
-    assert [o.id for o in ordered] == ["ld1-3", "ld1-1", "ld1-2"]
-
-
-@pytest.mark.asyncio
-async def test_url_lookup_uses_shared_client(monkeypatch):
-    """The API fallback for URLs reuses the shared client with one direct lookup."""
-    from unittest.mock import AsyncMock
-
-    from smithsonian_mcp import context
-    from smithsonian_mcp.api_client import SmithsonianAPIClient
-    from smithsonian_mcp.models import SmithsonianObject
-    from smithsonian_mcp.utils import construct_url_from_record_id
-
-    shared = AsyncMock(spec=SmithsonianAPIClient)
-    shared.get_object_by_id.return_value = SmithsonianObject(
-        id="ld1-x",
-        title="Mask",
-        record_link=None,
-        guid="http://n2t.net/ark:/65665/ys78ccba99f",
+    assert (
+        record_page_url("nmah_1448973")
+        == "https://americanhistory.si.edu/collections/object/nmah_1448973"
     )
-    context.set_api_client(shared)
-    created = AsyncMock()
-    monkeypatch.setattr(context, "create_client", created)
+    # Asian Art uses the accession number after the fsg_ prefix
+    assert record_page_url("fsg_F1900.47") == "https://asia.si.edu/object/F1900.47"
 
-    url = await construct_url_from_record_id("nmafa_2005-6-55")
-
-    assert url == "http://n2t.net/ark:/65665/ys78ccba99f"
-    shared.get_object_by_id.assert_awaited_once_with("edanmdm:nmafa_2005-6-55")
-    created.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_construct_url_from_record_id():
-    """Test URL construction from record_id."""
-    from smithsonian_mcp.utils import construct_url_from_record_id
-    from unittest.mock import patch, AsyncMock
-
-    # Test with valid record_id - NMAH
-    url = await construct_url_from_record_id("nmah_1448973")
-    assert url == "https://americanhistory.si.edu/collections/object/nmah_1448973"
-
-    # Test FSG (uses accession identifier)
-    url = await construct_url_from_record_id("fsg_F1900.47")
-    assert url == "https://asia.si.edu/object/F1900.47"
-
-    # Test museums that construct URLs directly (record_ID and accession identifiers with plain base_url)
     test_cases = [
         ("nmaahc_2022.91.10ab", "https://nmaahc.si.edu/object/nmaahc_2022.91.10ab"),
         (
@@ -252,92 +201,58 @@ async def test_construct_url_from_record_id():
         ("npm_0.293996.232", "https://postalmuseum.si.edu/object/npm_0.293996.232"),
         ("siris_arc_403511", "https://siarchives.si.edu/collections/siris_arc_403511"),
     ]
-
     for record_id, expected_url in test_cases:
-        url = await construct_url_from_record_id(record_id)
-        assert (
-            url == expected_url
-        ), f"Failed for {record_id}: expected {expected_url}, got {url}"
+        assert record_page_url(record_id) == expected_url, record_id
 
-    # Test museums that require API data (guid, record_link, url, idsId, or template variables in base_url)
-    api_required_cases = [
-        "saam_30913",  # uses {record_link} in base_url
-        "nasm_nv913e903df",  # uses {record_link} in base_url
-        "hmsg_66.1608",  # uses url identifier
-        "nmafa_ys7a3f230ba",  # uses {guid} in base_url
-        "nmai_ws69d7d97b6",  # uses {record_link} in base_url
-        "acm_dl8b7ab6959",  # uses {guid} in base_url
-        "nzp_20190815_002RP",  # uses idsId identifier
-        "chndm_33665",  # uses {record_link} in base_url
-        "nmnhbirds_352f6df2a",  # uses {guid} in base_url
-        "nmnhbotany_32cbf4c79",  # uses {guid} in base_url
-        "nmnhento_339e344dc",  # uses {guid} in base_url
-        "nmnhfishes_3ccbe2c66",  # uses {guid} in base_url
-        "nmnhherps_359523727",  # uses {guid} in base_url
-        "nmnhmammals_30b523759",  # uses {guid} in base_url
+    # Pages of these museums need record data (record_link, guid, EDAN URL or
+    # IDS id), so no URL is built from the record_id
+    needs_record_data = [
+        "saam_30913",
+        "nasm_nv913e903df",
+        "hmsg_66.1608",
+        "nmafa_ys7a3f230ba",
+        "nmai_ws69d7d97b6",
+        "acm_dl8b7ab6959",
+        "nzp_20190815_002RP",
+        "chndm_33665",
+        "nmnhbirds_352f6df2a",
+        "nmnhbotany_32cbf4c79",
+        "nmnhento_339e344dc",
+        "nmnhfishes_3ccbe2c66",
+        "nmnhherps_359523727",
+        "nmnhmammals_30b523759",
+        "unknown_123",
     ]
+    for record_id in needs_record_data:
+        assert record_page_url(record_id) is None, record_id
 
-    # Mock the API fallback to return None
-    with patch("smithsonian_mcp.utils._get_url_from_api_record_id", return_value=None):
-        for record_id in api_required_cases:
-            url = await construct_url_from_record_id(record_id)
-            # With mocked API returning None, these should return None
-            assert (
-                url is None
-            ), f"Expected None for API-required museum {record_id}, got {url}"
-
-    # Test with invalid record_id (no underscore)
-    url = await construct_url_from_record_id("invalid")
-    assert url is None
-
-    # Test with empty record_id
-    url = await construct_url_from_record_id("")
-    assert url is None
-
-    # Test with None
-    url = await construct_url_from_record_id(None)
-    assert url is None
-
-    # Test unknown museum (should fall back to API, mocked to return None)
-    with patch("smithsonian_mcp.utils._get_url_from_api_record_id", return_value=None):
-        url = await construct_url_from_record_id("unknown_123")
-        assert url is None
+    for record_id in ("invalid", "", None):
+        assert record_page_url(record_id) is None
 
 
-@pytest.mark.asyncio
-async def test_bert_puppet_parsing():
+def test_bert_puppet_parsing():
     """Test parsing of bert puppet response to validate record_id extraction."""
     import json
+
     from smithsonian_mcp.api_client import SmithsonianAPIClient
-    from smithsonian_mcp.api_client import create_client
+    from smithsonian_mcp.utils import record_page_url
 
     # Load the bert puppet response
-    with open("tests/bert_puppet_response.json", "r") as f:
+    with open("tests/bert_puppet_response.json", "r", encoding="utf-8") as f:
         response_data = json.load(f)
 
-    # Parse the object
-    client = SmithsonianAPIClient()
-    obj = client._parse_object_data(response_data["response"])
+    obj = SmithsonianAPIClient(api_key="test")._parse_object_data(
+        response_data["response"]
+    )
 
-    # Validate the parsed data
     assert obj.id == "ld1-1643398912743-1643398933001-0"
     assert obj.record_id == "nmah_1448973"
     assert obj.title == "Bert Puppet"
     assert obj.unit_code == "NMAH"
-
-    # Test URL construction from record_id
-    from smithsonian_mcp.utils import construct_url_from_record_id
-
-    url = await construct_url_from_record_id(obj.record_id)
-    assert url == "https://americanhistory.si.edu/collections/object/nmah_1448973"
-
-    # Test museum website lookup
-    client = await create_client()
-    units = await client.get_units()
-    nmah_unit = next((u for u in units if u.code == "NMAH"), None)
-    assert nmah_unit is not None
-    assert str(nmah_unit.website) == "https://americanhistory.si.edu/"
-    await client.disconnect()
+    assert (
+        record_page_url(obj.record_id)
+        == "https://americanhistory.si.edu/collections/object/nmah_1448973"
+    )
 
 
 @pytest.mark.parametrize(

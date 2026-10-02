@@ -527,8 +527,7 @@ class TestUnits:
         assert "FSG" not in codes and "NMAA" in codes and "NMNH" in codes
         assert codes.count("SAAM") == 1
         aaa = next(u for u in units if u.code == "AAA")
-        assert aaa.archival_only is True
-        assert "archival" in aaa.description
+        assert aaa.name == "Archives of American Art"
 
 
 class TestSharedClient:

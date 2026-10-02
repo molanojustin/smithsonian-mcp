@@ -3,13 +3,10 @@ Utility functions for the Smithsonian MCP server.
 """
 
 import html
-import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import HttpUrl
-
-logger = logging.getLogger(__name__)
 
 _TAG_RE = re.compile(r"</?[A-Za-z][^<>]*>")
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -178,33 +175,6 @@ def unit_code_query_clause(code: Optional[str]) -> Optional[str]:
     return f"unit_code:{escape_query_phrase(canonical)}"
 
 
-def unit_code_matches(
-    object_unit_code: Optional[str], filter_code: Optional[str]
-) -> bool:
-    """
-    Check whether an object's unit code falls under a filter unit code.
-
-    Args:
-        object_unit_code: Unit code of a returned object (e.g. ``NMNHPALEO``).
-        filter_code: Unit code used as a filter (e.g. ``NMNH`` or ``FSG``).
-
-    Returns:
-        bool: True if the object belongs to the filtered unit.
-    """
-    from .constants import (  # pylint: disable=import-outside-toplevel
-        NMNH_AGGREGATE_CODE,
-    )
-
-    canonical = normalize_unit_code(filter_code)
-    if not object_unit_code or not canonical:
-        return False
-    if canonical == NMNH_AGGREGATE_CODE:
-        return object_unit_code.upper().startswith(NMNH_AGGREGATE_CODE)
-    if canonical.endswith("*"):
-        return object_unit_code.upper().startswith(canonical[:-1].upper())
-    return object_unit_code.upper() == canonical.upper()
-
-
 def _normalize_museum_name(text: str) -> str:
     """Lowercase a museum name and reduce punctuation to single spaces."""
     text = text.lower().replace("&", " and ")
@@ -347,43 +317,6 @@ def validate_url(url_str: Optional[str]) -> Optional[str]:
     return None
 
 
-def prioritize_objects_by_unit_code(objects: List, unit_code: Optional[str]) -> List:
-    """
-    Reorder search results so objects from the requested unit come first.
-
-    An object matches when its ``unit_code`` falls under the filter code (``NMNH``
-    covers every NMNH department, ``FSG`` means ``NMAA``) or, for objects without a
-    unit code, when its ID starts with the lowercase code and an underscore.
-
-    Args:
-        objects: List of SmithsonianObject instances from search results
-        unit_code: The unit code used in the search (e.g., "NMAH", "NMNH")
-
-    Returns:
-        Reordered list with museum-specific objects first, relative order kept
-    """
-    if not unit_code or not objects:
-        return objects
-
-    unit_prefix = f"{unit_code.lower()}_"
-
-    prioritized = []
-    others = []
-
-    for obj in objects:
-        object_code = getattr(obj, "unit_code", None)
-        if object_code:
-            matched = unit_code_matches(object_code, unit_code)
-        else:
-            matched = bool(obj.id and obj.id.lower().startswith(unit_prefix))
-        if matched:
-            prioritized.append(obj)
-        else:
-            others.append(obj)
-
-    return prioritized + others
-
-
 def _normalize_museum_code(record_id_prefix: str) -> str:
     """Normalize record_id prefix to museum code key used in MUSEUM_URL_PATTERNS."""
     prefix = record_id_prefix.lower()
@@ -453,63 +386,3 @@ def record_page_url(
     except (KeyError, ValueError):
         return None
     return base_url.rstrip("/") + path
-
-
-async def construct_url_from_record_id(record_id: Optional[str]) -> Optional[str]:
-    """
-    Construct a URL from a record_id using museum-specific URL patterns.
-
-    Museums whose URLs follow from the record_id are built directly by
-    ``record_page_url``. Other museums, whose pages need record data (record_link
-    or guid), are looked up through the shared API client.
-
-    Args:
-        record_id: The record identifier (e.g., "nmah_1448973", "fsg_F1900.47")
-
-    Returns:
-        Constructed URL string, or None if museum not found or record_id malformed
-
-    Examples:
-        construct_url_from_record_id("nmah_1448973")
-        # Returns: "https://americanhistory.si.edu/collections/object/nmah_1448973"
-
-        construct_url_from_record_id("fsg_F1900.47")
-        # Returns: "https://asia.si.edu/object/F1900.47"
-    """
-    if not record_id or "_" not in record_id:
-        return None
-    return record_page_url(record_id) or await _get_url_from_api_record_id(record_id)
-
-
-async def _get_url_from_api_record_id(record_id: str) -> Optional[str]:
-    """
-    Look up an object's web URL through the shared API client.
-
-    Used when pattern-based construction fails or when the URL needs record data
-    (record_link or guid). The record is fetched directly by its EDAN URL
-    (``edanmdm:<record_id>``), which is a single request.
-
-    Args:
-        record_id: Record identifier such as ``saam_1956.11.37``.
-
-    Returns:
-        Optional[str]: The record_link or guid URL, or None if unavailable.
-    """
-    # Imported here to avoid circular imports (api_client imports this module)
-    from .context import get_api_client  # pylint: disable=import-outside-toplevel
-    from .models import APIError  # pylint: disable=import-outside-toplevel
-
-    try:
-        client = await get_api_client()
-        obj = await client.get_object_by_id(f"edanmdm:{record_id}")
-    except (APIError, ValueError) as exc:
-        logger.debug("URL lookup failed for record_id %s: %s", record_id, exc)
-        return None
-
-    if obj is None:
-        return None
-    for candidate in (obj.record_link, getattr(obj, "guid", None)):
-        valid = validate_url(str(candidate)) if candidate else None
-        if valid:
-            return valid
-    return None

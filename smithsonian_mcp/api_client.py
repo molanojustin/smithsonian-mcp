@@ -6,7 +6,6 @@ the API has no separate filter parameter. The API key is sent only in the
 ``X-Api-Key`` header so it never appears in request URLs or logs.
 """
 
-import asyncio
 import json
 import logging
 import re
@@ -21,7 +20,6 @@ from pydantic import HttpUrl, ValidationError
 
 from .config import Config
 from .constants import (
-    ARCHIVAL_UNIT_CODES,
     KNOWN_UNIT_CODES,
     NMNH_AGGREGATE_CODE,
     UNIT_INFO,
@@ -33,8 +31,6 @@ from .models import (
     ImageData,
     APIError,
     SmithsonianUnit,
-    CollectionStats,
-    UnitStats,
 )
 from .utils import (
     clean_text,
@@ -141,8 +137,6 @@ _DIMENSION_LABELS = ("dimension", "measurement")
 _DECADE_RE = re.compile(r"^(\d{3,4})s$")
 # Labels that mention a creator but describe someone else's role.
 _NOT_MAKER_LABEL_PREFIXES = ("formerly", "copy after", "after", "possible owner")
-# API errors that a caller must see as they are: a rejected key or rate limiting.
-_CALLER_ERRORS = frozenset({"api_key_rejected", "rate_limit_exceeded"})
 # freetext.objectType labels that hold something other than a type: Paleobiology
 # records put the literature citation of a type specimen there.
 _NOT_OBJECT_TYPE_LABELS = frozenset({"type citation"})
@@ -998,18 +992,6 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
         return None
 
 
-def _parse_stats_time(value: Any) -> Optional[datetime]:
-    """Parse the /stats ``time`` value (e.g. "2026-09")."""
-    if not isinstance(value, str):
-        return None
-    for fmt in ("%Y-%m-%d", "%Y-%m"):
-        try:
-            return datetime.strptime(value.strip(), fmt)
-        except ValueError:
-            continue
-    return None
-
-
 def _object_id_candidates(object_id: str) -> List[str]:
     """
     ID formats to try with /content, most likely first.
@@ -1751,26 +1733,8 @@ class SmithsonianAPIClient:
     @staticmethod
     def _unit_from_code(code: str) -> SmithsonianUnit:
         """Build a SmithsonianUnit from the static unit information."""
-        info = UNIT_INFO.get(code)
-        if not info:
-            return SmithsonianUnit(
-                code=code,
-                name=code,
-                description="Smithsonian unit",
-                website=None,
-                location=None,
-                archival_only=code in ARCHIVAL_UNIT_CODES,
-            )
-        description = info.get("description")
-        if code in ARCHIVAL_UNIT_CODES:
-            description = f"{description} (archival records only; not returned by object searches)"
         return SmithsonianUnit(
-            code=code,
-            name=info["name"],
-            description=description,
-            website=info.get("website"),
-            location=info.get("location"),
-            archival_only=code in ARCHIVAL_UNIT_CODES,
+            code=code, name=UNIT_INFO.get(code, {}).get("name", code)
         )
 
     async def get_units(self) -> List[SmithsonianUnit]:
@@ -1796,135 +1760,6 @@ class SmithsonianAPIClient:
             )
             units.insert(position, self._unit_from_code(NMNH_AGGREGATE_CODE))
         return units
-
-    async def get_collection_stats(self) -> CollectionStats:
-        """
-        Get overall collection statistics.
-
-        Totals, per-unit counts and CC0 counts come from ``/stats``. The number of
-        objects with images comes from one ``rows=0`` count query. Both requests
-        run concurrently; no objects are sampled.
-
-        Returns:
-            CollectionStats: Collection statistics.
-
-        Raises:
-            APIError: If neither /stats nor the fallback count query succeeds,
-                or as is if the key is rejected or the rate limit is reached.
-        """
-        stats_result, images_result = await asyncio.gather(
-            self._make_request("stats"),
-            self.count_matches(HAS_IMAGES_CLAUSE),
-            return_exceptions=True,
-        )
-        for result in (stats_result, images_result):
-            if isinstance(result, BaseException) and not isinstance(result, APIError):
-                raise result
-            # The caller must act on these; a fallback would only hide them
-            if isinstance(result, APIError) and result.error in _CALLER_ERRORS:
-                raise result
-
-        total_with_images: Optional[int] = None
-        if isinstance(images_result, APIError):
-            logger.warning("Could not count objects with images: %s", images_result)
-        else:
-            total_with_images = images_result
-
-        if isinstance(stats_result, APIError):
-            logger.warning(
-                "Stats endpoint failed, using count queries: %s", stats_result
-            )
-            return await self._fallback_collection_stats(
-                total_with_images, stats_result
-            )
-
-        stats = _as_dict(stats_result.get("response"))
-        metrics = _as_dict(stats.get("metrics"))
-        unit_stats = []
-        for unit in _as_list(stats.get("units")):
-            if not isinstance(unit, dict) or not isinstance(unit.get("unit"), str):
-                continue
-            code = unit["unit"]
-            unit_metrics = _as_dict(unit.get("metrics"))
-            data_source = unit.get("data_source")
-            unit_stats.append(
-                UnitStats(
-                    unit_code=code,
-                    unit_name=UNIT_INFO.get(code, {}).get("name")
-                    or (data_source if isinstance(data_source, str) else None)
-                    or code,
-                    total_objects=_safe_int(unit.get("total_objects")) or 0,
-                    digitized_objects=None,
-                    cc0_objects=_safe_int(unit_metrics.get("CC0_records")),
-                    objects_with_images=None,
-                    cc0_objects_with_cc0_media=_safe_int(
-                        unit_metrics.get("CC0_records_with_CC0_media")
-                    ),
-                    object_types=None,
-                )
-            )
-
-        return CollectionStats(
-            total_objects=_safe_int(stats.get("total_objects")) or 0,
-            total_digitized=total_with_images,
-            total_cc0=_safe_int(metrics.get("CC0_records")),
-            total_with_images=total_with_images,
-            total_cc0_objects_with_cc0_media=_safe_int(
-                metrics.get("CC0_records_with_CC0_media")
-            ),
-            object_type_breakdown=None,
-            units=unit_stats,
-            last_updated=_parse_stats_time(stats.get("time")) or datetime.now(),
-            notes=(
-                "Totals, per-unit totals and CC0 counts are from the API /stats "
-                "endpoint and include archival records. total_with_images (also "
-                "used for total_digitized) counts searchable object records with "
-                "online images. The API does not provide per-unit image counts or "
-                "object type breakdowns."
-            ),
-        )
-
-    async def _fallback_collection_stats(
-        self, total_with_images: Optional[int], cause: APIError
-    ) -> CollectionStats:
-        """
-        Build minimal statistics from a count query when /stats is unavailable.
-
-        Args:
-            total_with_images: Count of objects with images, if known.
-            cause: The error from /stats.
-
-        Returns:
-            CollectionStats: Totals without per-unit data.
-
-        Raises:
-            APIError: If the count query fails too.
-        """
-        try:
-            total_objects = await self.count_matches("*")
-        except APIError as fallback_error:
-            if fallback_error.error in _CALLER_ERRORS:
-                raise
-            logger.error("Fallback count query also failed: %s", fallback_error)
-            raise APIError(
-                error="stats_failed",
-                message=f"Failed to retrieve collection statistics: {cause}",
-                status_code=None,
-            ) from fallback_error
-
-        return CollectionStats(
-            total_objects=total_objects,
-            total_digitized=total_with_images,
-            total_cc0=None,
-            total_with_images=total_with_images,
-            object_type_breakdown=None,
-            units=[],
-            last_updated=datetime.now(),
-            notes=(
-                "The /stats endpoint was unavailable; total_objects counts "
-                "searchable object records. CC0 and per-unit figures are missing."
-            ),
-        )
 
 
 # Utility function for creating client instance

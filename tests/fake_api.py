@@ -1,7 +1,7 @@
 """
 In-process stand-in for the Smithsonian Open Access API, used by tool tests.
 
-``FakeAPI`` answers the requests the client makes (search, content, stats and
+``FakeAPI`` answers the requests the client makes (search, content and
 terms) from data set up by each test and records every request, so tests can run
 the real tool, client and parsing code with no network access.
 """
@@ -25,21 +25,6 @@ DEFAULT_UNIT_CODES = [
     "SAAM",
     "SIL",
 ]
-
-DEFAULT_STATS = {
-    "time": "2026-09",
-    "total_objects": 1050,
-    "metrics": {"CC0_records": 600, "CC0_records_with_CC0_media": 300},
-    "units": [
-        {"unit": "NMAH", "total_objects": 400, "metrics": {"CC0_records": 300}},
-        {"unit": "NMNHBOTANY", "total_objects": 250, "metrics": {"CC0_records": 250}},
-        {"unit": "NMNHPALEO", "total_objects": 50, "metrics": {"CC0_records": 50}},
-        {"unit": "SAAM", "total_objects": 200, "metrics": {"CC0_records": 0}},
-        {"unit": "AAA", "total_objects": 100, "metrics": {}},
-        {"unit": "NMAA", "total_objects": 30, "metrics": {"CC0_records": 30}},
-        {"unit": "FSG", "total_objects": 20, "metrics": {"CC0_records": 5}},
-    ],
-}
 
 
 def make_row(  # pylint: disable=too-many-arguments,too-many-locals
@@ -167,7 +152,6 @@ class FakeAPI:
             lambda params: search_payload([])
         )
         self.records: Dict[str, Dict[str, Any]] = {}
-        self.stats: Union[Dict[str, Any], httpx.Response] = DEFAULT_STATS
         self.unit_codes: Union[List[str], httpx.Response] = list(DEFAULT_UNIT_CODES)
 
     @property
@@ -202,11 +186,6 @@ class FakeAPI:
         path = request.url.path.split("/v1.0/", 1)[-1]
         if path == "search":
             return self._respond(self.search(dict(request.url.params)), request)
-        if path == "stats":
-            stats = self.stats
-            if isinstance(stats, httpx.Response):
-                return self._respond(stats, request)
-            return self._respond({"status": 200, "response": stats}, request)
         if path == "terms/unit_code":
             if isinstance(self.unit_codes, httpx.Response):
                 return self._respond(self.unit_codes, request)
