@@ -128,11 +128,11 @@ In stdio mode, stdout carries only MCP messages. Wrapper scripts or shell profil
 
 - A service must run the server in HTTP mode. In stdio mode it exits when no MCP client is attached, so the service restarts it in a loop. The setup scripts install services with `--transport http --host 127.0.0.1 --port 8000`; services installed by earlier versions of the scripts lack these arguments, so run the setup script again or add them to the unit, plist or service command line. MCP clients such as Claude Desktop start their own stdio server and do not need a service.
 - If the log says the address is already in use, another program (mcpo defaults to port 8000 too) holds the port. Change `--port` in the service definition.
-- The service reads the API key from `.env` in the project root. Check that the file sets `SMITHSONIAN_API_KEY`.
+- The service reads the API key from `.env` in the project root. Check that the file sets `SMITHSONIAN_API_KEY` and that the user the service runs as can read it; the setup scripts make it readable by your user only.
 - Run `uv run python scripts/verify-setup.py` for diagnostics.
 - Check the logs:
   - Linux: `journalctl --user -u smithsonian-mcp`
-  - macOS: `~/Library/Logs/com.smithsonian.mcp.log`
+  - macOS: `~/Library/Logs/com.smithsonian.mcp.log` (the server logs to stderr, and the job sends both output streams to this file)
 - Check that the package and its dependencies are installed: `uv sync`.
 
 ## HTTP mode
@@ -148,8 +148,9 @@ In stdio mode, stdout carries only MCP messages. Wrapper scripts or shell profil
 
 - Use the full endpoint URL, including the `/mcp` path, and a client that supports the streamable HTTP transport. Plain HTTP requests such as a browser visit get an error status rather than a page.
 - By default the server listens on `127.0.0.1` only, so other machines cannot reach it. To accept remote connections, start it with `--host 0.0.0.0`, and control access in front of it: the endpoint has no authentication and uses your API key.
-- "421 Misdirected Request" or "403 Forbidden Origin": when the server listens on a loopback address, it refuses requests whose `Host` or `Origin` header names another site, which protects against DNS rebinding. Connect to `127.0.0.1` or `localhost` directly, or have a reverse proxy keep the original `Host` header of the local address.
-- A server that an MCP client starts itself, such as a Claude Desktop entry, must stay in stdio mode. If its `env` block or `.env` sets `MCP_TRANSPORT=http`, the client finds an HTTP server instead of a stdio one and the connection fails.
+- "421 Misdirected Request": the request's `Host` header is not an allowed name, which protects against DNS rebinding. The allowed names are `localhost`, `127.0.0.1`, `::1` and the `--host` address, plus the address the connection arrived on. If clients reach the server by another name (a reverse proxy's upstream name, a LAN host name, a container name), add it with `--allowed-hosts` or `MCP_ALLOWED_HOSTS`, for example `MCP_ALLOWED_HOSTS=localhost,127.0.0.1,::1,mcp.example.org`.
+- "403 Forbidden Origin": the request comes from a web page on another site. MCP clients that are not browsers send no `Origin` header.
+- A server that an MCP client starts itself, such as a Claude Desktop entry, must stay in stdio mode. If its `env` block or `.env` sets `MCP_TRANSPORT=http`, the client finds an HTTP server instead of a stdio one and the connection fails. Add `--transport stdio` to the entry's `args`, as the configurations in the README and those written by the setup scripts do.
 
 ### HTTP mode in Docker
 
@@ -159,7 +160,7 @@ The container speaks stdio unless `MCP_TRANSPORT=http` is set, and its port must
 docker run --rm -e SMITHSONIAN_API_KEY -e MCP_TRANSPORT=http -p 127.0.0.1:8000:8000 smithsonian-mcp
 ```
 
-The image sets `MCP_HOST=0.0.0.0`, because a server listening on 127.0.0.1 inside the container cannot be reached through a published port. Stop the container with Ctrl+C or `docker stop`.
+The endpoint has no authentication, so keep the `127.0.0.1:` prefix unless something else controls access: anyone who can reach the port spends your API key's quota. The image sets `MCP_HOST=0.0.0.0`, because a server listening on 127.0.0.1 inside the container cannot be reached through a published port, and `MCP_ALLOWED_HOSTS=localhost,127.0.0.1,::1`. Requests that name the container by another host name get 421 until that name is added to `MCP_ALLOWED_HOSTS`. Stop the container with Ctrl+C or `docker stop`.
 
 ## mcpo
 
@@ -172,7 +173,7 @@ mcpo cannot find the Smithsonian MCP module. To fix it:
 ```json
 {
   "command": "/full/path/to/your/project/.venv/bin/smithsonian-mcp",
-  "args": []
+  "args": ["--transport", "stdio"]
 }
 ```
 
@@ -181,7 +182,7 @@ Or use the Python interpreter with the module entry point:
 ```json
 {
   "command": "/full/path/to/your/project/.venv/bin/python",
-  "args": ["-m", "smithsonian_mcp.main"],
+  "args": ["-m", "smithsonian_mcp.main", "--transport", "stdio"],
   "env": {
     "PYTHONPATH": "/full/path/to/your/project"
   }
@@ -269,6 +270,7 @@ Get-Service SmithsonianMCP
 | `MCP_TRANSPORT` | `stdio` | `stdio`, or `http` for streamable HTTP. `--transport` takes precedence. |
 | `MCP_HOST` | `127.0.0.1` | Address to listen on in HTTP mode. `--host` takes precedence. |
 | `MCP_PORT` | `8000` | Port to listen on in HTTP mode. `--port` takes precedence. |
+| `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` and `MCP_HOST` | `Host` header names accepted in HTTP mode, comma-separated. `--allowed-hosts` takes precedence. |
 
 To set a variable for a terminal session:
 
@@ -292,7 +294,7 @@ $env:LOG_LEVEL = "DEBUG"
 
 - Services run under launchd and serve HTTP at `http://127.0.0.1:8000/mcp`.
 - Agent files: `~/Library/LaunchAgents/`
-- Logs: `~/Library/Logs/com.smithsonian.mcp.log`
+- Logs: `~/Library/Logs/com.smithsonian.mcp.log` (stdout and stderr)
 
 ### Windows
 

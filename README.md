@@ -115,7 +115,7 @@ uv sync
   "mcpServers": {
     "smithsonian_open_access": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/smithsonian-mcp", "run", "smithsonian-mcp"],
+      "args": ["--directory", "/absolute/path/to/smithsonian-mcp", "run", "smithsonian-mcp", "--transport", "stdio"],
       "env": {
         "SMITHSONIAN_API_KEY": "your_key_here"
       }
@@ -124,7 +124,9 @@ uv sync
 }
 ```
 
-Alternatively, use the installed command directly as `"command": "/absolute/path/to/smithsonian-mcp/.venv/bin/smithsonian-mcp"` (on Windows, `.venv\Scripts\smithsonian-mcp.exe`) with no `args`.
+Alternatively, use the installed command directly as `"command": "/absolute/path/to/smithsonian-mcp/.venv/bin/smithsonian-mcp"` (on Windows, `.venv\Scripts\smithsonian-mcp.exe`) with `"args": ["--transport", "stdio"]`.
+
+A server run from the clone also reads the clone's `.env`. `--transport stdio` keeps it in stdio mode even if that file sets `MCP_TRANSPORT=http` for [HTTP mode](#http-transport).
 
 #### Python virtual environment without uv
 
@@ -137,7 +139,7 @@ python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-Then use `/absolute/path/to/smithsonian-mcp/.venv/bin/smithsonian-mcp` as the `command`. This installs the newest compatible dependencies rather than the versions pinned in `uv.lock`.
+Then use `/absolute/path/to/smithsonian-mcp/.venv/bin/smithsonian-mcp` as the `command`, with `"args": ["--transport", "stdio"]` as above. This installs the newest compatible dependencies rather than the versions pinned in `uv.lock`.
 
 #### Docker
 
@@ -161,13 +163,13 @@ docker build -t smithsonian-mcp .
 }
 ```
 
-To run the container as an HTTP server instead, set `MCP_TRANSPORT=http` and publish port 8000:
+To run the container as an HTTP server instead, set `MCP_TRANSPORT=http` and publish port 8000 on this machine only:
 
 ```bash
-docker run --rm -e SMITHSONIAN_API_KEY -e MCP_TRANSPORT=http -p 8000:8000 smithsonian-mcp
+docker run --rm -e SMITHSONIAN_API_KEY -e MCP_TRANSPORT=http -p 127.0.0.1:8000:8000 smithsonian-mcp
 ```
 
-The image sets `MCP_HOST=0.0.0.0` so that the published port reaches the server. `-p 8000:8000` publishes it on every interface of the host; use `-p 127.0.0.1:8000:8000` to keep it on the local machine. See [HTTP transport](#http-transport).
+The HTTP endpoint has no authentication: anyone who can reach the port can call the tools and spends your API key's quota. `-p 127.0.0.1:8000:8000` keeps the port on this machine; `-p 8000:8000` would publish it on every interface of the host, and on Linux Docker's published ports bypass firewalls such as ufw. The image sets `MCP_HOST=0.0.0.0` so that the published port reaches the server, and `MCP_ALLOWED_HOSTS=localhost,127.0.0.1,::1`, so requests naming any other host are refused. To reach the container by another name, add it with `-e MCP_ALLOWED_HOSTS=localhost,127.0.0.1,::1,mcp.example.org` and control access in front of it. See [HTTP transport](#http-transport).
 
 ### Automated Setup Scripts
 
@@ -214,13 +216,15 @@ It serves MCP at `http://127.0.0.1:8000/mcp` until you stop it with Ctrl+C (or S
 | `--transport` | `MCP_TRANSPORT` | `stdio` | `stdio` or `http`. |
 | `--host` | `MCP_HOST` | `127.0.0.1` | Address to listen on in HTTP mode. |
 | `--port` | `MCP_PORT` | `8000` | Port to listen on in HTTP mode. |
+| `--allowed-hosts` | `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` and the `--host` address | Comma-separated `Host` header names that HTTP mode accepts. |
 
-Options on the command line take precedence over the environment variables, which can also be set in `.env`. Leave `MCP_TRANSPORT` unset in a `.env` that an MCP client's stdio launch also reads, or that client will find an HTTP server instead of a stdio one. mcpo also defaults to port 8000, so pick another port with `--port` if you run both.
+Options on the command line take precedence over the environment variables, which can also be set in `.env`. A blank environment variable counts as unset; a blank `--host` is an error. Configurations in which an MCP client starts the server from a clone pass `--transport stdio`, so `MCP_TRANSPORT=http` in the clone's `.env` does not affect them. mcpo also defaults to port 8000, so pick another port with `--port` if you run both.
 
 Notes:
 
-- The endpoint has no authentication, and every request uses your API key and its rate limit. Keep the default `127.0.0.1` unless you put the server behind something that controls access.
-- When the server listens on a loopback address, requests whose `Host` or `Origin` header names another site are refused (HTTP 421 or 403), which blocks DNS rebinding from web pages.
+- The HTTP endpoint has no authentication: anyone who can reach the port can call the tools and spends your API key's quota. Keep the default `127.0.0.1` unless you put the server behind something that controls access.
+- Requests whose `Host` header is not an allowed name (or the address the connection arrived on) get HTTP 421, and requests whose `Origin` header names another site get 403. This blocks DNS rebinding from web pages, whatever address the server listens on. With `--host 0.0.0.0`, the allowed names are only `localhost`, `127.0.0.1` and `::1`; add the names that clients use, such as `--allowed-hosts localhost,127.0.0.1,mcp.example.org`. Clients that connect by IP address need nothing extra.
+- The server is stateless: each request is handled on its own, so it keeps no MCP sessions and its memory does not grow with the number of clients. The tools only answer requests, so nothing needs a session.
 - Logs go to stderr in both modes, including the access log of each HTTP request, and the API key is still sent only in the `X-Api-Key` header to the Smithsonian API.
 - In Docker, set `-e MCP_TRANSPORT=http` and publish the port, as shown under [Docker](#docker).
 
@@ -758,7 +762,7 @@ The offline tests block outgoing network access and answer API requests from `te
 | `tests/test_tools.py` | The five tools, resources and prompts, against the fake API |
 | `tests/test_query_building.py` | Free-text parsing and the filter clauses of the `q` parameter |
 | `tests/test_client_behaviour.py` | Record parsing, units, the shared client, logging and the entry points |
-| `tests/test_http_transport.py` | `--transport`, `--host` and `--port`, and a server started in HTTP mode |
+| `tests/test_http_transport.py` | The transport options, and servers started in HTTP mode, including the `Host` header checks |
 | `tests/test_on_view.py` | On-view filters and exhibition fields |
 | `tests/test_utils.py` | Museum name resolution, unit codes and page URLs |
 | `tests/test_api_client_error_handling.py`, `tests/test_key_obfuscation.py` | API errors, and that the key stays out of URLs and logs |
@@ -767,7 +771,7 @@ The offline tests block outgoing network access and answer API requests from `te
 
 ## Service Management
 
-The setup scripts can register the server as a background service. The service runs the server with `--transport http --host 127.0.0.1 --port 8000`, so it stays up and serves MCP at `http://127.0.0.1:8000/mcp` for clients that connect over HTTP (see [HTTP transport](#http-transport)). It reads the API key from `.env` in the project root. MCP clients such as Claude Desktop start their own stdio server, so they do not need the service. To expose the tools as OpenAPI endpoints instead, run them behind [mcpo](#mcpo-integration-mcp-orchestrator).
+The setup scripts can register the server as a background service. The service runs the server with `--transport http --host 127.0.0.1 --port 8000`, so it stays up and serves MCP at `http://127.0.0.1:8000/mcp` for clients that connect over HTTP (see [HTTP transport](#http-transport)). It reads the API key from `.env` in the project root, which the scripts make readable by your user only. Running a setup script again rewrites the service and reloads or restarts it, so it picks up the new settings. MCP clients such as Claude Desktop start their own stdio server, so they do not need the service. To expose the tools as OpenAPI endpoints instead, run them behind [mcpo](#mcpo-integration-mcp-orchestrator).
 
 ### Linux (systemd)
 
@@ -799,6 +803,8 @@ launchctl unload ~/Library/LaunchAgents/com.smithsonian.mcp.plist
 # Check status
 launchctl list | grep com.smithsonian.mcp
 ```
+
+The server's log is `~/Library/Logs/com.smithsonian.mcp.log`.
 
 ### Windows
 
