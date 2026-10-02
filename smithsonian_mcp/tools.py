@@ -1024,6 +1024,37 @@ def _rank_pool(
     return named, scored.get(0, [])
 
 
+def _explore_note(
+    topic: str, total_count: int, matches: str, named: int, others: int
+) -> str:
+    """
+    Describe an explore_topic sample.
+
+    Args:
+        topic: The topic.
+        total_count: Matches of the search the pool came from.
+        matches: What was matched, "matches" or "matches with images".
+        named: Pooled objects that name the topic.
+        others: Other pooled objects.
+
+    Returns:
+        str: The note.
+    """
+    if total_count == 0:
+        return f"No objects match '{topic}'. Try a broader or different keyword."
+    if named:
+        return (
+            f"{named} of the {named + others} most relevant of {total_count} "
+            f"{matches} name the topic in their title, type or subjects; the "
+            "sample and facets favor them. Call again for a different sample."
+        )
+    return (
+        f"Sample of the {others} most relevant of {total_count} {matches}; none "
+        "names the topic in its title, type or subjects, so check that the "
+        "results fit."
+    )
+
+
 async def explore_topic(
     topic: str,
     museum: Optional[str] = None,
@@ -1066,33 +1097,19 @@ async def explore_topic(
         # Too few with images: add the most relevant without images
         everything = await _search(filters(False))
         seen = {obj.id for obj in named + others}
-        more_named, more_others = _rank_pool(
+        extra = _rank_pool(
             [obj for obj in everything.objects if obj.id not in seen], topic
         )
-        named += more_named
-        others += more_others
+        named += extra[0]
+        others += extra[1]
         total_count = everything.total_count
         matches = "matches"
 
     picks = _diverse_sample(named, limit)
     picks += _diverse_sample(others, limit - len(picks))
-    if total_count == 0:
-        if unit and unit.code in ARCHIVAL_UNIT_CODES:
-            raise _archival_only_error(unit, "explore_topic")
-        note = f"No objects match '{topic}'. Try a broader or different keyword."
-    elif named:
-        note = (
-            f"{len(named)} of the {len(named) + len(others)} most relevant of "
-            f"{total_count} {matches} name the topic in their title, type or "
-            "subjects; the sample and facets favor them. Call again for a "
-            "different sample."
-        )
-    else:
-        note = (
-            f"Sample of the {len(others)} most relevant of {total_count} "
-            f"{matches}; none names the topic in its title, type or subjects, so "
-            "check that the results fit."
-        )
+    if total_count == 0 and unit and unit.code in ARCHIVAL_UNIT_CODES:
+        raise _archival_only_error(unit, "explore_topic")
+    note = _explore_note(topic, total_count, matches, len(named), len(others))
     if _whole_smithsonian(museum):
         note = WHOLE_SMITHSONIAN_NOTE.format(museum=museum.strip()) + " " + note
 
