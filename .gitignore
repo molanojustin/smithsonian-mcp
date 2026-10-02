@@ -11,7 +11,7 @@
 *.sln.docstates
 *.env
 .python-version
-
+.claude/
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
