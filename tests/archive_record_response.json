@@ -1,0 +1,159 @@
+{
+ "status": 200,
+ "responseCode": 1,
+ "response": {
+  "id": "ebl-1657214401397-1657214404501-1",
+  "title": "Spring Isn't Everything",
+  "unitCode": "ACAH",
+  "type": "ead_component",
+  "url": "ead_component:sova-nmah-ac-0750-ref1761",
+  "content": {
+   "id": "sova.nmah.ac.0750_ref1761",
+   "guid": "https://n2t.net/ark:/65665/ep8f9d5f800-479b-4b58-beaf-c17a0d0a1fe7",
+   "type": "ead_component",
+   "boost": "1.4",
+   "level": "file",
+   "title": "Spring Isn't Everything",
+   "freetext": {
+    "name": [
+     {
+      "flag": [
+       "personal_name",
+       "personal_main",
+       "inherited"
+      ],
+      "label": "Collection Donor",
+      "content": "Riva, Julia",
+      "indexedContent": "Riva, Julia"
+     },
+     {
+      "flag": [
+       "personal_name",
+       "personal_main",
+       "inherited"
+      ],
+      "label": "Collection Donor",
+      "content": "Jones, Jophe",
+      "indexedContent": "Jones, Jophe"
+     },
+     {
+      "flag": [
+       "personal_name",
+       "personal_main",
+       "inherited"
+      ],
+      "label": "Collection Composer",
+      "content": "Warren, Harry, 1893-1981",
+      "indexedContent": "Warren, Harry"
+     }
+    ],
+    "setName": [
+     {
+      "label": "See more items in",
+      "content": "Harry Warren Papers",
+      "indexedContent": "Harry Warren Papers"
+     },
+     {
+      "label": "See more items in",
+      "content": "Harry Warren Papers / Series 8: Recordings, Audiovisual Materials, Motion Picture Films, and Photographs / 8.8: Reference CD's Digital Images of Original Music Manuscripts / MGM Folder",
+      "indexedContent": "Harry Warren Papers / Series 8: Recordings, Audiovisual Materials, Motion Picture Films, and Photographs / 8.8: Reference CD's Digital Images of Original Music Manuscripts / MGM Folder"
+     }
+    ],
+    "container": [
+     {
+      "label": "Container",
+      "content": "Box 42, Disk CD3"
+     }
+    ],
+    "dataSource": [
+     {
+      "label": "Archival Repository",
+      "content": "Archives Center, National Museum of American History",
+      "indexedContent": "Archives Center, National Museum of American History"
+     }
+    ],
+    "objectType": [
+     {
+      "label": "Type",
+      "content": "Archival materials",
+      "indexedContent": "Archival materials"
+     },
+     {
+      "label": "Type",
+      "content": "Photographs",
+      "indexedContent": "Photographs"
+     }
+    ],
+    "prefercite": [
+     {
+      "flag": [
+       "inherited"
+      ],
+      "label": "Collection Citation",
+      "content": "Harry Warren Papers, 1909-2000, Archives Center, National Museum of American History. Gift of Jophe Jones and Julia Riva."
+     }
+    ],
+    "userestrict": [
+     {
+      "flag": [
+       "inherited"
+      ],
+      "label": "Collection Rights",
+      "content": "Collection items available for reproduction, but the Archives Center makes no guarantees concerning copyright restrictions. Other intellectual property rights may apply. Archives Center cost-recovery and use fees may apply when requesting reproductions."
+     }
+    ],
+    "accessrestrict": [
+     {
+      "flag": [
+       "inherited"
+      ],
+      "label": "Collection Restrictions",
+      "content": "Parts of the collection (audiovisual materials) stored off-site.  Arrangements must be made with the Archives Center staff three-weeks prior to a scheduled visit. Contact the Archives Center for information at archivescenter@si.edu or 202-633-3270."
+     }
+    ]
+   },
+   "record_id": "NMAH.AC.0750_ref1761",
+   "usage_flag": "Large EAD",
+   "containedIn": [
+    {
+     "url": "https://sova.si.edu/record/NMAH.AC.0750",
+     "type": "Collection",
+     "unittitle": "Harry Warren Papers"
+    },
+    {
+     "url": "https://sova.si.edu/record/NMAH.AC.0750/ref517",
+     "type": "Series",
+     "unittitle": "Recordings, Audiovisual Materials, Motion Picture Films, and Photographs"
+    },
+    {
+     "url": "https://sova.si.edu/record/NMAH.AC.0750/ref1485",
+     "type": "Subseries",
+     "unittitle": "Reference CD's Digital Images of Original Music Manuscripts"
+    },
+    {
+     "url": "https://sova.si.edu/record/NMAH.AC.0750/ref1736",
+     "type": "File",
+     "unittitle": "MGM Folder"
+    },
+    {
+     "url": "https://sova.si.edu/record/NMAH.AC.0750/ref1761",
+     "type": "File",
+     "unittitle": "Spring Isn't Everything"
+    }
+   ],
+   "record_link": "https://n2t.net/ark:/65665/ep8f9d5f800-479b-4b58-beaf-c17a0d0a1fe7",
+   "filelocation": "https://sirismm.si.edu/EADs/NMAH.AC.0750-ead.xml",
+   "collection_id": "NMAH.AC.0750",
+   "metadata_usage": {
+    "access": "CC0"
+   },
+   "archival_repository": "ACAH",
+   "digital_assets_available": "false"
+  },
+  "hash": "ecfd7d88dfb5b5d21017b1cfd2bf6bbf2b34adf2",
+  "docSignature": "344884a313818d556a308b85e4c0ac48",
+  "timestamp": "1657541106",
+  "lastTimeUpdated": "1787823362",
+  "version": "1787823307"
+ }
+}

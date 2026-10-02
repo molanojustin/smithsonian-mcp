@@ -10,6 +10,7 @@ from smithsonian_mcp.models import (
     SearchResult,
 )
 from smithsonian_mcp.api_client import SmithsonianAPIClient
+from smithsonian_mcp.parsing import parse_object_data
 
 pytest.importorskip("pytest_asyncio")
 
@@ -152,8 +153,9 @@ class TestOnViewAPIClient:
 
         params = client._build_search_params(filters)
 
-        assert "fq" in params
-        assert 'onPhysicalExhibit:"Yes"' in params["fq"]
+        # The API has no fq parameter; filters are fielded terms inside q
+        assert "fq" not in params
+        assert params["q"] == '* AND onPhysicalExhibit:"Yes"'
 
     def test_build_search_params_on_view_false(self):
         """Test building search params with on_view=False."""
@@ -175,11 +177,13 @@ class TestOnViewAPIClient:
 
         params = client._build_search_params(filters)
 
-        assert "fq" in params
-        assert 'onPhysicalExhibit:"No"' in params["fq"]
+        # Records not on view usually have no onPhysicalExhibit value at all, so
+        # on_view=False excludes "Yes" instead of matching "No".
+        assert "fq" not in params
+        assert params["q"] == '* AND (* NOT onPhysicalExhibit:"Yes")'
 
     def test_build_search_params_with_maker(self):
-        """Ensure maker filter maps to the indexedStructured.name facet."""
+        """Ensure maker filter maps to the name field inside q."""
         client = SmithsonianAPIClient(api_key="test_key")
 
         filters = CollectionSearchFilter(
@@ -198,7 +202,11 @@ class TestOnViewAPIClient:
 
         params = client._build_search_params(filters)
 
-        assert params["fq"] == 'indexedStructured.name:"Alma Thomas"'
+        assert "fq" not in params
+        assert params["q"].startswith(
+            '* AND (name:"Alma Thomas" OR name:"Thomas, Alma" '
+        )
+        assert r"OR name:Thomas\,\ Alma\ *" in params["q"]
 
     def test_build_search_params_on_view_with_unit(self):
         """Test building search params with on_view and unit_code."""
@@ -220,13 +228,9 @@ class TestOnViewAPIClient:
 
         params = client._build_search_params(filters)
 
-        # unitCode is now in the main query due to API bug workaround
-        assert "q" in params
-        assert "* AND unit_code:NMNH" == params["q"]
-
-        assert "fq" in params
-        assert 'onPhysicalExhibit:"Yes"' in params["fq"]
-        # unitCode is no longer in fq due to API bug
+        # NMNH records are indexed under department codes, hence the wildcard
+        assert "fq" not in params
+        assert params["q"] == '* AND unit_code:NMNH* AND onPhysicalExhibit:"Yes"'
 
     def test_build_search_params_on_view_none(self):
         """Test building search params with on_view=None (no filter)."""
@@ -248,13 +252,11 @@ class TestOnViewAPIClient:
 
         params = client._build_search_params(filters)
 
-        if "fq" in params:
-            assert "onPhysicalExhibit" not in params["fq"]
+        assert "fq" not in params
+        assert params["q"] == "test"
 
     def test_parse_object_data_on_view_yes(self):
         """Test parsing object data with onPhysicalExhibit=Yes."""
-        client = SmithsonianAPIClient(api_key="test_key")
-
         raw_data = {
             "id": "test-123",
             "title": "Test Object on View",
@@ -266,7 +268,7 @@ class TestOnViewAPIClient:
             },
         }
 
-        obj = client._parse_object_data(raw_data)
+        obj = parse_object_data(raw_data)
 
         assert obj.is_on_view is True
         assert obj.id == "test-123"
@@ -274,8 +276,6 @@ class TestOnViewAPIClient:
 
     def test_parse_object_data_on_view_no(self):
         """Test parsing object data with onPhysicalExhibit=No."""
-        client = SmithsonianAPIClient(api_key="test_key")
-
         raw_data = {
             "id": "test-456",
             "title": "Test Object in Storage",
@@ -287,14 +287,12 @@ class TestOnViewAPIClient:
             },
         }
 
-        obj = client._parse_object_data(raw_data)
+        obj = parse_object_data(raw_data)
 
         assert obj.is_on_view is False
 
     def test_parse_object_data_on_view_missing(self):
         """Test parsing object data without onPhysicalExhibit field."""
-        client = SmithsonianAPIClient(api_key="test_key")
-
         raw_data = {
             "id": "test-789",
             "title": "Test Object No Status",
@@ -306,7 +304,7 @@ class TestOnViewAPIClient:
             },
         }
 
-        obj = client._parse_object_data(raw_data)
+        obj = parse_object_data(raw_data)
 
         assert obj.is_on_view is False
 
@@ -388,15 +386,11 @@ class TestOnViewIntegration:
 
         params = client._build_search_params(filters)
 
-        # unitCode is now in the main query due to API bug workaround
-        assert "q" in params
-        assert "* AND unit_code:NMNH" == params["q"]
-
-        assert "fq" in params
-        fq_value = params["fq"]
-        assert 'onPhysicalExhibit:"Yes"' in fq_value
-        assert 'online_media_type:Images' in fq_value
-        # unitCode is no longer in fq due to API bug
+        assert "fq" not in params
+        assert params["q"] == (
+            '* AND unit_code:NMNH* AND online_media_type:"Images" '
+            'AND onPhysicalExhibit:"Yes"'
+        )
 
     async def test_combined_filters_on_view_and_cc0(self):
         """Test combining on_view filter with CC0 license."""
@@ -418,10 +412,10 @@ class TestOnViewIntegration:
 
         params = client._build_search_params(filters)
 
-        assert "fq" in params
-        fq_value = params["fq"]
-        assert 'onPhysicalExhibit:"Yes"' in fq_value
-        assert "usage_rights:CC0" in fq_value
+        assert "fq" not in params
+        assert params["q"] == (
+            '(painting) AND media_usage:"CC0" AND onPhysicalExhibit:"Yes"'
+        )
 
 
 if __name__ == "__main__":

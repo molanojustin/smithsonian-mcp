@@ -1,55 +1,54 @@
 """
 Configuration management for Smithsonian MCP Server.
+
+Settings are read from environment variables, or from a ``.env`` file found by
+python-decouple, when this module is first imported.
 """
 
 from typing import Optional
+
 from decouple import config
 
+from . import __version__
 
-class Config:
+
+# A namespace of settings read once at import, not an object with behaviour.
+class Config:  # pylint: disable=too-few-public-methods
     """Configuration settings for the Smithsonian MCP server."""
 
-    # API Configuration
-    API_DATA_GOV_BASE_URL: str = config(
-        "API_DATA_GOV_BASE_URL", default="https://api.data.gov"
-    )  # type: ignore
-
+    # API key from https://api.data.gov/signup/. Sent only in the X-Api-Key header.
     API_KEY: Optional[str] = config("SMITHSONIAN_API_KEY", default=None)  # type: ignore
 
-    # Smithsonian specific endpoints
-    EDAN_API_PATH: str = "/edan"
+    # Server identity
+    SERVER_NAME: str = config(
+        "SERVER_NAME", default="Smithsonian Open Access"
+    )  # type: ignore
+    SERVER_VERSION: str = __version__
 
-    # Rate limiting
-    DEFAULT_RATE_LIMIT: int = config("DEFAULT_RATE_LIMIT", default=60, cast=int)
-
-    # Server configuration
-    SERVER_NAME: str = config("SERVER_NAME", default="Smithsonian Open Access")  # type: ignore
-    SERVER_VERSION: str = config("SERVER_VERSION", default="1.0.0")  # type: ignore
-
-    # Logging
+    # Logging level used by the command line entry point (DEBUG, INFO, ...)
     LOG_LEVEL: str = config("LOG_LEVEL", default="INFO")  # type: ignore
 
-    # Cache settings
-    ENABLE_CACHE: bool = config("ENABLE_CACHE", default=True, cast=bool)
-    CACHE_TTL_SECONDS: int = config("CACHE_TTL_SECONDS", default=3600, cast=int)
+    # Transport of the command line entry point: stdio, or http for streamable
+    # HTTP on MCP_HOST:MCP_PORT, accepting the Host header names in the
+    # comma-separated MCP_ALLOWED_HOSTS. The --transport, --host, --port and
+    # --allowed-hosts options take precedence; values are validated at startup.
+    MCP_TRANSPORT: str = config("MCP_TRANSPORT", default="stdio")  # type: ignore
+    MCP_HOST: str = config("MCP_HOST", default="127.0.0.1")  # type: ignore
+    MCP_PORT: str = config("MCP_PORT", default="8000")  # type: ignore
+    MCP_ALLOWED_HOSTS: str = config("MCP_ALLOWED_HOSTS", default="")  # type: ignore
 
-    # Image handling
-    MAX_IMAGE_SIZE_MB: int = config("MAX_IMAGE_SIZE_MB", default=50, cast=int)
+    # Value of the User-Agent header sent with every API request
+    USER_AGENT: str = (
+        f"smithsonian-mcp/{__version__} "
+        "(+https://github.com/molanojustin/smithsonian-mcp)"
+    )
 
     @classmethod
     def validate_api_key(cls) -> bool:
-        """Check if API key is configured."""
-        return cls.API_KEY is not None and len(cls.API_KEY) > 0
+        """
+        Check if an API key is configured.
 
-    @classmethod
-    def get_headers(cls) -> dict:
-        """Get standard headers for API requests."""
-        headers = {
-            "User-Agent": f"smithsonian-mcp-server/{cls.SERVER_VERSION}",
-            "Accept": "application/json",
-        }
-
-        if cls.API_KEY:
-            headers["X-Api-Key"] = cls.API_KEY
-
-        return headers
+        Returns:
+            bool: True if a non-empty API key is configured.
+        """
+        return cls.API_KEY is not None and len(cls.API_KEY.strip()) > 0

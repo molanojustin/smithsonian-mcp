@@ -1,8 +1,12 @@
 {
   "mcpServers": {
     "smithsonian_open_access": {
-      "command": "python",
-      "args": ["-m", "smithsonian_mcp.server"],
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/molanojustin/smithsonian-mcp",
+        "smithsonian-mcp"
+      ],
       "env": {
         "SMITHSONIAN_API_KEY": "your_api_key_here",
         "LOG_LEVEL": "INFO"
