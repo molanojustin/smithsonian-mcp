@@ -23,6 +23,7 @@ Version 2.0 replaces the 28 tools of version 1.x with 5. See [Migrating from 1.x
 ## Contents
 
 - [Quick Start](#quick-start)
+- [HTTP transport](#http-transport)
 - [Tools](#tools)
 - [Resources](#resources)
 - [Prompts](#prompts)
@@ -41,7 +42,7 @@ You need:
 - A free API key from [api.data.gov/signup](https://api.data.gov/signup/)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/). uv downloads a compatible Python (3.10 or newer) if one is not already installed.
 
-The server speaks MCP over stdio. MCP clients such as Claude Desktop start it on demand; you do not run it in the background yourself.
+The server speaks MCP over stdio by default. MCP clients such as Claude Desktop start it on demand; you do not run it in the background yourself. For clients that connect over HTTP, it can also run as a long-lived server; see [HTTP transport](#http-transport).
 
 ### Claude Desktop with uvx (recommended)
 
@@ -160,18 +161,26 @@ docker build -t smithsonian-mcp .
 }
 ```
 
+To run the container as an HTTP server instead, set `MCP_TRANSPORT=http` and publish port 8000:
+
+```bash
+docker run --rm -e SMITHSONIAN_API_KEY -e MCP_TRANSPORT=http -p 8000:8000 smithsonian-mcp
+```
+
+The image sets `MCP_HOST=0.0.0.0` so that the published port reaches the server. `-p 8000:8000` publishes it on every interface of the host; use `-p 127.0.0.1:8000:8000` to keep it on the local machine. See [HTTP transport](#http-transport).
+
 ### Automated Setup Scripts
 
-For a local clone, the setup scripts install dependencies (with `uv sync` when uv is available, otherwise a Python 3.10+ virtual environment and pip), validate your API key and save it to `.env`, and can optionally add the server to your Claude Desktop config, generate an mcpo config and run a health check.
+For a local clone, the setup scripts install dependencies (with `uv sync` when uv is available, otherwise a Python 3.10+ virtual environment and pip), validate your API key and save it to `.env`, and can optionally add the server to your Claude Desktop config, generate an mcpo config, install a background service that serves HTTP (see [Service Management](#service-management)) and run a health check.
 
-**macOS/Linux:**
+On macOS or Linux:
 
 ```bash
 chmod +x config/setup.sh
 config/setup.sh
 ```
 
-**Windows:**
+On Windows:
 
 ```powershell
 config\setup.ps1
@@ -189,6 +198,31 @@ Check an installation from a clone:
 uv run python examples/test-api-connection.py
 uv run python scripts/verify-setup.py
 ```
+
+## HTTP transport
+
+stdio is the default and the right choice when an MCP client starts the server itself. For clients that connect to a running server over HTTP, start it with the streamable HTTP transport:
+
+```bash
+smithsonian-mcp --transport http
+```
+
+It serves MCP at `http://127.0.0.1:8000/mcp` until you stop it with Ctrl+C (or SIGTERM). The same flags work with `uvx --from git+https://github.com/molanojustin/smithsonian-mcp smithsonian-mcp`, `uv run smithsonian-mcp` and `npx -y @molanojustin/smithsonian-mcp`.
+
+| Option | Environment variable | Default | Purpose |
+|---|---|---|---|
+| `--transport` | `MCP_TRANSPORT` | `stdio` | `stdio` or `http`. |
+| `--host` | `MCP_HOST` | `127.0.0.1` | Address to listen on in HTTP mode. |
+| `--port` | `MCP_PORT` | `8000` | Port to listen on in HTTP mode. |
+
+Options on the command line take precedence over the environment variables, which can also be set in `.env`. Leave `MCP_TRANSPORT` unset in a `.env` that an MCP client's stdio launch also reads, or that client will find an HTTP server instead of a stdio one. mcpo also defaults to port 8000, so pick another port with `--port` if you run both.
+
+Notes:
+
+- The endpoint has no authentication, and every request uses your API key and its rate limit. Keep the default `127.0.0.1` unless you put the server behind something that controls access.
+- When the server listens on a loopback address, requests whose `Host` or `Origin` header names another site are refused (HTTP 421 or 403), which blocks DNS rebinding from web pages.
+- Logs go to stderr in both modes, including the access log of each HTTP request, and the API key is still sent only in the `X-Api-Key` header to the Smithsonian API.
+- In Docker, set `-e MCP_TRANSPORT=http` and publish the port, as shown under [Docker](#docker).
 
 ## Tools
 
@@ -550,7 +584,7 @@ See [Quick Start](#quick-start) for Claude Desktop configurations using uvx, npm
 
 ### mcpo Integration (MCP Orchestrator)
 
-**mcpo** is an MCP orchestrator that converts multiple MCP servers into OpenAPI/HTTP endpoints, ideal for combining multiple services into a single systemd service.
+mcpo is an MCP orchestrator that converts multiple MCP servers into OpenAPI/HTTP endpoints, ideal for combining multiple services into a single systemd service.
 
 #### Installation
 
@@ -678,8 +712,11 @@ Open the clone with `code .`. After `uv sync --group dev`, `.vscode/tasks.json` 
 # Test API connection
 smithsonian-mcp --test
 
-# Run MCP server
+# Run MCP server (stdio)
 smithsonian-mcp
+
+# Run MCP server over HTTP at http://127.0.0.1:8000/mcp
+smithsonian-mcp --transport http
 
 # Show help
 smithsonian-mcp --help
@@ -700,28 +737,37 @@ uv run smithsonian-mcp
 # Explore the server interactively with the MCP Inspector
 npx @modelcontextprotocol/inspector .venv/bin/smithsonian-mcp
 
-# Run test suite
+# Run the offline test suite (no API key or network needed)
 uv run pytest tests/
 
-# Run on-view functionality tests
-uv run pytest tests/test_on_view.py -v
-
-# Run basic tests
-uv run pytest tests/test_basic.py -v
-
-# Run the tool tests (offline, against a fake API)
-uv run pytest tests/test_tools.py -v
-
 # Run the opt-in live tests (they use your API key and its rate limit)
-SMITHSONIAN_LIVE_TESTS=1 uv run pytest tests/test_live.py tests/test_tools_live.py -v
+SMITHSONIAN_LIVE_TESTS=1 uv run pytest tests/ -m live
+
+# Check formatting and lint, as CI does
+uv run black --check smithsonian_mcp/ tests/ examples/ scripts/ .github/scripts/
+uv run pylint smithsonian_mcp/
 
 # Verify complete setup
 uv run python scripts/verify-setup.py
 ```
 
+The offline tests block outgoing network access and answer API requests from `tests/fake_api.py`, so they need no key. The test files are:
+
+| File | Covers |
+|---|---|
+| `tests/test_tools.py` | The five tools, resources and prompts, against the fake API |
+| `tests/test_query_building.py` | Free-text parsing and the filter clauses of the `q` parameter |
+| `tests/test_client_behaviour.py` | Record parsing, units, the shared client, logging and the entry points |
+| `tests/test_http_transport.py` | `--transport`, `--host` and `--port`, and a server started in HTTP mode |
+| `tests/test_on_view.py` | On-view filters and exhibition fields |
+| `tests/test_utils.py` | Museum name resolution, unit codes and page URLs |
+| `tests/test_api_client_error_handling.py`, `tests/test_key_obfuscation.py` | API errors, and that the key stays out of URLs and logs |
+| `tests/test_basic.py` | Configuration, models and client setup |
+| `tests/test_live.py`, `tests/test_tools_live.py` | Live API checks of the client and the tools (opt-in) |
+
 ## Service Management
 
-The setup scripts can register the server as a background service. Because the server uses the stdio transport, it exits as soon as no client is attached, so a standalone service is rarely useful. To expose the tools as a long-running HTTP service, run them behind [mcpo](#mcpo-integration-mcp-orchestrator) instead.
+The setup scripts can register the server as a background service. The service runs the server with `--transport http --host 127.0.0.1 --port 8000`, so it stays up and serves MCP at `http://127.0.0.1:8000/mcp` for clients that connect over HTTP (see [HTTP transport](#http-transport)). It reads the API key from `.env` in the project root. MCP clients such as Claude Desktop start their own stdio server, so they do not need the service. To expose the tools as OpenAPI endpoints instead, run them behind [mcpo](#mcpo-integration-mcp-orchestrator).
 
 ### Linux (systemd)
 
@@ -735,9 +781,11 @@ systemctl --user stop smithsonian-mcp
 # Check status
 systemctl --user status smithsonian-mcp
 
-# Enable on boot
+# Enable on login
 systemctl --user enable smithsonian-mcp
 ```
+
+When `~/.config/systemd/user` does not exist, the script installs a system service instead; manage it with `sudo systemctl` and no `--user`.
 
 ### macOS (launchd)
 
@@ -765,6 +813,8 @@ Stop-Service SmithsonianMCP
 Get-Service SmithsonianMCP
 ```
 
+`smithsonian-mcp.exe` is a console program, so the Windows service starts only when it is wrapped by a service host such as NSSM.
+
 ## Troubleshooting
 
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) covers:
@@ -773,6 +823,7 @@ Get-Service SmithsonianMCP
 - Searches that return nothing, including on-view searches at Natural History
 - Old 1.x tool names that no longer work
 - Claude Desktop connection and server startup problems
+- HTTP mode, background services and Docker
 - Module import errors and mcpo setup
 
 ## Documentation
@@ -788,8 +839,23 @@ Get-Service SmithsonianMCP
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Run tests
+4. Run the tests, black and pylint (see [Testing](#testing)); CI runs all three
 5. Submit a pull request
+
+The package is organized by responsibility:
+
+| Module | Contents |
+|---|---|
+| `main.py` | Command line entry point, logging setup and the stdio and HTTP transports |
+| `app.py` | The FastMCP server, its instructions and registration |
+| `tools.py` | The five tools |
+| `formatting.py`, `notes.py`, `sampling.py` | Result summaries and records, result notes, and the `explore_topic` sample |
+| `resources.py`, `prompts.py` | MCP resources and prompts |
+| `api_client.py` | HTTP client for the Open Access API and its error mapping |
+| `query.py` | Free-text query parsing and the filter clauses of the `q` parameter |
+| `parsing.py` | Records parsed into `SmithsonianObject` models |
+| `context.py` | The shared API client and the server lifespan |
+| `models.py`, `constants.py`, `utils.py`, `config.py` | Data models, static tables, museum names and URLs, settings |
 
 ## License
 

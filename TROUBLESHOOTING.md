@@ -8,6 +8,7 @@ This guide covers common problems with the Smithsonian Open Access MCP server an
 - [Searches](#searches)
 - [Upgrading from 1.x](#upgrading-from-1x)
 - [Setup and connection](#setup-and-connection)
+- [HTTP mode](#http-mode)
 - [mcpo](#mcpo)
 - [Diagnostic commands](#diagnostic-commands)
 - [Environment variables](#environment-variables)
@@ -103,7 +104,9 @@ The client is still running a 1.x build. Listing the tools (see [Diagnostic comm
 
 ### The server starts and exits immediately
 
-Versions before 2.0 exited at once when started with `python -m smithsonian_mcp.server`; use the `smithsonian-mcp` command.
+In stdio mode the server exits when its input closes, so started from a script or service with no MCP client attached it ends at once. That is expected: MCP clients start it themselves. To run it as a standalone server, use `smithsonian-mcp --transport http` (see [HTTP mode](#http-mode)).
+
+Versions before 2.0 also exited at once when started with `python -m smithsonian_mcp.server`; use the `smithsonian-mcp` command.
 
 ### The client reports invalid JSON or fails during the handshake
 
@@ -123,12 +126,40 @@ In stdio mode, stdout carries only MCP messages. Wrapper scripts or shell profil
 
 ### A background service fails to start or keeps restarting
 
-- The server uses the stdio transport and exits when no MCP client is attached, so a background service restarts repeatedly. MCP clients such as Claude Desktop start the server themselves. For a long-running HTTP service, run the server behind mcpo (see [README.md](README.md#mcpo-integration-mcp-orchestrator)).
+- A service must run the server in HTTP mode. In stdio mode it exits when no MCP client is attached, so the service restarts it in a loop. The setup scripts install services with `--transport http --host 127.0.0.1 --port 8000`; services installed by earlier versions of the scripts lack these arguments, so run the setup script again or add them to the unit, plist or service command line. MCP clients such as Claude Desktop start their own stdio server and do not need a service.
+- If the log says the address is already in use, another program (mcpo defaults to port 8000 too) holds the port. Change `--port` in the service definition.
+- The service reads the API key from `.env` in the project root. Check that the file sets `SMITHSONIAN_API_KEY`.
 - Run `uv run python scripts/verify-setup.py` for diagnostics.
 - Check the logs:
   - Linux: `journalctl --user -u smithsonian-mcp`
   - macOS: `~/Library/Logs/com.smithsonian.mcp.log`
 - Check that the package and its dependencies are installed: `uv sync`.
+
+## HTTP mode
+
+`smithsonian-mcp --transport http` serves MCP at `http://127.0.0.1:8000/mcp`. `--host` and `--port`, or `MCP_HOST` and `MCP_PORT`, change the address. See [HTTP transport](README.md#http-transport).
+
+### The server does not start in HTTP mode
+
+- "address already in use": another program holds the port. Pick another with `--port`, or find it with `lsof -i :8000` (macOS/Linux) or `Get-NetTCPConnection -LocalPort 8000` (Windows).
+- "MCP_TRANSPORT must be one of stdio, http" or "MCP_PORT: invalid port": fix the environment variable or the `.env` entry, or override it with `--transport` or `--port`.
+
+### A client cannot connect
+
+- Use the full endpoint URL, including the `/mcp` path, and a client that supports the streamable HTTP transport. Plain HTTP requests such as a browser visit get an error status rather than a page.
+- By default the server listens on `127.0.0.1` only, so other machines cannot reach it. To accept remote connections, start it with `--host 0.0.0.0`, and control access in front of it: the endpoint has no authentication and uses your API key.
+- "421 Misdirected Request" or "403 Forbidden Origin": when the server listens on a loopback address, it refuses requests whose `Host` or `Origin` header names another site, which protects against DNS rebinding. Connect to `127.0.0.1` or `localhost` directly, or have a reverse proxy keep the original `Host` header of the local address.
+- A server that an MCP client starts itself, such as a Claude Desktop entry, must stay in stdio mode. If its `env` block or `.env` sets `MCP_TRANSPORT=http`, the client finds an HTTP server instead of a stdio one and the connection fails.
+
+### HTTP mode in Docker
+
+The container speaks stdio unless `MCP_TRANSPORT=http` is set, and its port must be published:
+
+```bash
+docker run --rm -e SMITHSONIAN_API_KEY -e MCP_TRANSPORT=http -p 127.0.0.1:8000:8000 smithsonian-mcp
+```
+
+The image sets `MCP_HOST=0.0.0.0`, because a server listening on 127.0.0.1 inside the container cannot be reached through a published port. Stop the container with Ctrl+C or `docker stop`.
 
 ## mcpo
 
@@ -203,6 +234,12 @@ List the server's tools through the MCP Inspector CLI. A 2.0 build lists five to
 npx @modelcontextprotocol/inspector --cli .venv/bin/smithsonian-mcp --method tools/list
 ```
 
+For a server running in HTTP mode:
+
+```bash
+npx @modelcontextprotocol/inspector --cli http://127.0.0.1:8000/mcp --transport http --method tools/list
+```
+
 Verify the complete setup:
 
 ```bash
@@ -229,6 +266,9 @@ Get-Service SmithsonianMCP
 | `SMITHSONIAN_API_KEY` | none | API key from api.data.gov. Required. |
 | `LOG_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING` or `ERROR`. Logs go to stderr. |
 | `SERVER_NAME` | `Smithsonian Open Access` | Server name reported to MCP clients. |
+| `MCP_TRANSPORT` | `stdio` | `stdio`, or `http` for streamable HTTP. `--transport` takes precedence. |
+| `MCP_HOST` | `127.0.0.1` | Address to listen on in HTTP mode. `--host` takes precedence. |
+| `MCP_PORT` | `8000` | Port to listen on in HTTP mode. `--port` takes precedence. |
 
 To set a variable for a terminal session:
 
@@ -244,13 +284,13 @@ $env:LOG_LEVEL = "DEBUG"
 
 ### Linux
 
-- Services run under user systemd (`systemctl --user`).
+- Services run under user systemd (`systemctl --user`) and serve HTTP at `http://127.0.0.1:8000/mcp`.
 - Unit files: `~/.config/systemd/user/`
 - Logs: `journalctl --user -u smithsonian-mcp`
 
 ### macOS
 
-- Services run under launchd.
+- Services run under launchd and serve HTTP at `http://127.0.0.1:8000/mcp`.
 - Agent files: `~/Library/LaunchAgents/`
 - Logs: `~/Library/Logs/com.smithsonian.mcp.log`
 

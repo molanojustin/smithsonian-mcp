@@ -22,6 +22,8 @@ Version 2.0 replaces the 28 tools of 1.x with 5. Tool names and output shapes ch
 - Asian Art is unit code `NMAA`. `FSG` and names such as "Freer" or "Sackler" are still accepted and map to `NMAA`.
 - `is_cc0` on an object means the object has CC0 media that can be reused. Records with CC0 text but restricted or no media are no longer reported as CC0.
 - Collection statistics are exact search counts instead of estimates from sampling, so they agree with search results. They take four requests and are cached for 6 hours. The API's statistics endpoint is not used, because its per-museum totals disagree with search by up to 2,000 times.
+- The background services that the setup scripts install run the server in HTTP mode at `http://127.0.0.1:8000/mcp`. As stdio servers with no client attached they exited at once and restarted in a loop. User systemd services start with the user's default target.
+- Internal structure: the API client is split into query building (`query.py`), record parsing (`parsing.py`) and the HTTP client (`api_client.py`), and the tool layer into `tools.py`, `formatting.py`, `notes.py` and `sampling.py`. The server lifespan moves to `context.py`. Tool behaviour is unchanged. The code is black- and pylint-clean, and CI fails on lint errors.
 
 ### Added
 
@@ -30,12 +32,15 @@ Version 2.0 replaces the 28 tools of 1.x with 5. Tool names and output shapes ch
 - Exhibition locations name the building and place, such as the Steven F. Udvar-Hazy Center in Chantilly, VA, instead of a code.
 - Images link to a screen-sized image that browsers display, with the full-resolution file as `download_url`.
 - `date_from` and `date_to` accept decades such as `"1860s"`, and lowercase `or` and `and` between words work as operators.
+- An optional streamable HTTP transport. `smithsonian-mcp --transport http` serves MCP at `http://127.0.0.1:8000/mcp`; `--host` and `--port`, or `MCP_TRANSPORT`, `MCP_HOST` and `MCP_PORT`, configure it. stdio stays the default. Logs still go to stderr, requests whose `Host` or `Origin` names another site are refused on loopback addresses, and Ctrl+C or SIGTERM stop the server cleanly. In Docker, `-e MCP_TRANSPORT=http -p 8000:8000` serves HTTP from the container.
 
 ### Removed
 
 - All 28 tools from 1.x. The [migration table](README.md#removed-tools) maps each one to its replacement: `search_collections`, `simple_search`, `search_by_unit`, `get_search_context`, `summarize_search_results`, `get_object_ids`, `get_first_object_id`, `find_and_describe`, `search_and_get_first_details`, `search_and_get_details`, `get_object_details`, `get_object_context`, `validate_object_id`, `get_object_url`, `search_and_get_first_url`, `get_smithsonian_units`, `get_units_context`, `resolve_museum_name`, `get_objects_on_view`, `find_on_view_items`, `get_museum_highlights_on_view`, `get_on_view_context`, `simple_explore`, `continue_explore`, `get_collection_statistics`, `get_stats_context`, `get_museum_collection_types` and `check_museum_has_object_type`.
 - The prompts `get_object_url_prompt`, `quick_object_lookup_prompt`, `find_object_url_prompt`, `museum_object_search_prompt`, `search_and_get_url_prompt` and `resolve_museum_prompt`, which only restated how to call tools.
 - Settings that had no effect: `API_DATA_GOV_BASE_URL`, `ENABLE_CACHE`, `CACHE_TTL_SECONDS`, `DEFAULT_RATE_LIMIT`, `MAX_IMAGE_SIZE_MB` and `SERVER_VERSION`.
+- Library code that the server no longer uses: `SmithsonianAPIClient.get_collection_stats` with the `CollectionStats` and `UnitStats` models; `construct_url_from_record_id`, `prioritize_objects_by_unit_code` and `unit_code_matches` in `utils`; the `classification` and `raw_metadata` fields of `SmithsonianObject`, which were never filled in; and the `description`, `website`, `location` and `archival_only` fields of `SmithsonianUnit`. The query escaping helpers and `unit_code_query_clause` moved from `utils` to `query`.
+- The exploration scripts in `scripts/dev/`, which called 1.x tools.
 
 ### Fixed
 
