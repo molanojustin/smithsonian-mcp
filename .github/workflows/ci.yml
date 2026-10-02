@@ -67,6 +67,11 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/wheel-venv/bin/python" dist/*.whl
           python3 .github/scripts/stdio_smoke.py "$RUNNER_TEMP/wheel-venv/bin/smithsonian-mcp"
 
+      - name: Smoke test HTTP mode from the built wheel
+        run: |
+          python3 .github/scripts/http_smoke.py \
+            "$RUNNER_TEMP/wheel-venv/bin/smithsonian-mcp" --transport http --port {port}
+
       - name: Smoke test the npm wrapper
         run: python3 .github/scripts/stdio_smoke.py node bin/smithsonian-mcp.js
 

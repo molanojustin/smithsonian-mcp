@@ -212,7 +212,7 @@ class SmithsonianMCPServer {
         process.exit(1);
       }
 
-      log('Starting MCP server on stdio...');
+      log('Starting MCP server...');
       this.runInProject([SERVER_COMMAND, ...args]);
     } catch (error) {
       log(`Error starting MCP server: ${error.message}`);
@@ -231,9 +231,12 @@ Usage:
   smithsonian-mcp [options]
 
 Options:
-  --help, -h     Show this help message
-  --version, -v  Show version information
-  --test         Run API connection test
+  --help, -h                 Show this help message
+  --version, -v              Show version information
+  --test                     Run API connection test
+  --transport {stdio,http}   Serve MCP over stdio (default) or streamable HTTP
+  --host HOST                Address to listen on in HTTP mode (default: 127.0.0.1)
+  --port PORT                Port to listen on in HTTP mode (default: 8000)
 
 Requirements:
   uv             Fast Python package manager (https://docs.astral.sh/uv/)
@@ -243,10 +246,15 @@ Requirements:
 Environment Variables:
   SMITHSONIAN_API_KEY    Your Smithsonian API key (required)
                          Get it from: https://api.data.gov/signup/
+  MCP_TRANSPORT          Default for --transport
+  MCP_HOST, MCP_PORT     Defaults for --host and --port
 
 Examples:
   # Start the MCP server (stdio transport)
   smithsonian-mcp
+
+  # Serve streamable HTTP at http://127.0.0.1:8000/mcp
+  smithsonian-mcp --transport http
 
   # Test API connection
   smithsonian-mcp --test

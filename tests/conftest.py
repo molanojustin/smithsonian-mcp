@@ -12,6 +12,7 @@ import httpx
 import pytest
 
 LIVE_TESTS_ENABLED = os.environ.get("SMITHSONIAN_LIVE_TESTS") == "1"
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 if not LIVE_TESTS_ENABLED:
     # Set before smithsonian_mcp.config is imported; environment variables take
@@ -45,13 +46,19 @@ def pytest_collection_modifyitems(
 def _isolate_client_state(request: pytest.FixtureRequest, monkeypatch):
     """
     Block real network access in offline tests and reset shared client state.
+
+    Requests to a loopback address still go through, so tests can talk to a
+    server they started locally.
     """
     from smithsonian_mcp import context
     from smithsonian_mcp.api_client import SmithsonianAPIClient
 
     if "live" not in request.keywords:
+        send = httpx.AsyncHTTPTransport.handle_async_request
 
-        async def _blocked(self, http_request):  # pylint: disable=unused-argument
+        async def _blocked(self, http_request):
+            if http_request.url.host in LOOPBACK_HOSTS:
+                return await send(self, http_request)
             raise httpx.ConnectError(
                 "Network access is disabled in offline tests", request=http_request
             )
