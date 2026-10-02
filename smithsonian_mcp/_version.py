@@ -3,4 +3,4 @@
 This file defines the __version__ variable for the smithsonian_mcp package.
 """
 
-__version__ = "2.0.1"
+__version__ = "2.1.0"
