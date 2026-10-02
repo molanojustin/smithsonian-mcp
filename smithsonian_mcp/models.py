@@ -44,7 +44,12 @@ def _list_omit_if_empty(description: Optional[str] = None) -> Any:
 class ImageData(BaseModel):
     """Represents image data for a collection object."""
 
-    url: Optional[HttpUrl] = Field(None, description="URL to the image file")
+    url: Optional[HttpUrl] = Field(
+        None, description="URL of a displayable, screen-sized image"
+    )
+    download_url: Optional[HttpUrl] = Field(
+        None, description="Full-resolution file, a JPEG where one is offered"
+    )
     thumbnail_url: Optional[HttpUrl] = Field(
         None, description="URL to thumbnail version"
     )
@@ -385,7 +390,8 @@ class TopicExploration(ObjectSearchResults):
 class ImageSummary(BaseModel):
     """One image of an object."""
 
-    url: Optional[str] = _omit_if_empty()
+    url: Optional[str] = _omit_if_empty("Displayable image")
+    download_url: Optional[str] = _omit_if_empty("Full-resolution file")
     thumbnail_url: Optional[str] = _omit_if_empty()
     iiif_url: Optional[str] = _omit_if_empty()
     caption: Optional[str] = _omit_if_empty()

@@ -1349,29 +1349,37 @@ class SmithsonianAPIClient:
             if not isinstance(media_item, dict) or media_item.get("type") != "Images":
                 continue
 
-            media_url = None
             width = _safe_int(media_item.get("width"))
             height = _safe_int(media_item.get("height"))
-            # Prefer high-resolution versions listed in resources
+            # The full-resolution download, a JPEG where one is offered (TIFF
+            # files cannot be displayed in a browser)
+            downloads = {}
             for resource in _as_list(media_item.get("resources")):
                 if not isinstance(resource, dict):
                     continue
                 label = str(resource.get("label") or "").lower()
-                if "high-resolution tiff" in label or "high-resolution jpeg" in label:
-                    media_url = _safe_url(resource.get("url"))
-                    if media_url is not None:
-                        dimensions = resource.get("dimensions")
-                        if isinstance(dimensions, str) and "x" in dimensions:
-                            w_text, _, h_text = dimensions.partition("x")
-                            width = _safe_int(w_text) or width
-                            height = _safe_int(h_text) or height
-                        break
+                for kind in ("high-resolution jpeg", "high-resolution tiff"):
+                    resource_url = _safe_url(resource.get("url"))
+                    if kind in label and resource_url is not None:
+                        downloads.setdefault(kind, (resource_url, resource))
+            download_url = None
+            for kind in ("high-resolution jpeg", "high-resolution tiff"):
+                if kind in downloads:
+                    download_url, resource = downloads[kind]
+                    dimensions = resource.get("dimensions")
+                    if isinstance(dimensions, str) and "x" in dimensions:
+                        w_text, _, h_text = dimensions.partition("x")
+                        width = _safe_int(w_text) or width
+                        height = _safe_int(h_text) or height
+                    break
 
-            if media_url is None:
-                for field_name in ("content", "url", "href", "src"):
-                    media_url = _safe_url(media_item.get(field_name))
-                    if media_url is not None:
-                        break
+            # The delivery URL serves a displayable, screen-sized image
+            media_url = None
+            for field_name in ("content", "url", "href", "src"):
+                media_url = _safe_url(media_item.get(field_name))
+                if media_url is not None:
+                    break
+            media_url = media_url or download_url
 
             usage = media_item.get("usage")
             if isinstance(usage, dict):
@@ -1389,6 +1397,7 @@ class SmithsonianAPIClient:
                 images.append(
                     ImageData(
                         url=media_url,
+                        download_url=download_url,
                         thumbnail_url=_safe_url(media_item.get("thumbnail")),
                         iiif_url=_safe_url(media_item.get("iiif")),
                         alt_text=alt_text or "",

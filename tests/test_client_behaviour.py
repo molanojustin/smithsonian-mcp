@@ -120,7 +120,9 @@ class TestParsing:
         assert obj.is_cc0 is True
         assert obj.last_modified is not None and obj.last_modified.year == 2025
         assert len(obj.images) == 2
-        assert str(obj.images[0].url).endswith("SAAM-1.tif")
+        # A displayable delivery URL, with the TIFF as the download
+        assert str(obj.images[0].url).endswith("deliveryService?id=SAAM-1")
+        assert str(obj.images[0].download_url).endswith("SAAM-1.tif")
         assert (obj.images[0].width, obj.images[0].height) == (3000, 2423)
         assert obj.images[0].is_cc0 is True
         assert obj.images[1].url is None and obj.images[1].size_bytes is None

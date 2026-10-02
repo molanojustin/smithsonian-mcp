@@ -6,7 +6,7 @@ Access API. Codes in ``ARCHIVAL_UNIT_CODES`` only publish archival records, whic
 the object search used by this server does not return.
 """
 
-from typing import Dict, FrozenSet, List
+from typing import Dict, FrozenSet, List, Tuple
 
 from . import __version__
 
@@ -408,6 +408,44 @@ UNIT_INFO: Dict[str, Dict[str, str]] = {
         "website": "https://library.si.edu/",
         "location": "Washington, DC",
     },
+}
+
+# Exhibition building codes seen in onPhysicalExhibit records (October 2026),
+# with the building's name and place. Rooms are reported separately.
+EXHIBITION_BUILDINGS: Dict[str, Tuple[str, str]] = {
+    "ACM": ("Anacostia Community Museum", "Washington, DC"),
+    "CHNDM": ("Cooper Hewitt, Smithsonian Design Museum", "New York, NY"),
+    "Freer": (
+        "Freer Gallery of Art, National Museum of Asian Art",
+        "Washington, DC",
+    ),
+    "HAZY": (
+        "Steven F. Udvar-Hazy Center, National Air and Space Museum",
+        "Chantilly, VA",
+    ),
+    "HMSG": ("Hirshhorn Museum and Sculpture Garden", "Washington, DC"),
+    "NASM": ("National Air and Space Museum", "Washington, DC"),
+    "NMAAHC": (
+        "National Museum of African American History and Culture",
+        "Washington, DC",
+    ),
+    "NMAfA": ("National Museum of African Art", "Washington, DC"),
+    "NMAH": ("National Museum of American History", "Washington, DC"),
+    "NMAI DC": ("National Museum of the American Indian", "Washington, DC"),
+    "NMAI NY": (
+        "National Museum of the American Indian, George Gustav Heye Center",
+        "New York, NY",
+    ),
+    "NMNH": ("National Museum of Natural History", "Washington, DC"),
+    "NPG": ("National Portrait Gallery", "Washington, DC"),
+    "NPM": ("National Postal Museum", "Washington, DC"),
+    "Quadrangle": ("Smithsonian Quadrangle", "Washington, DC"),
+    "Renwick": ("Renwick Gallery, Smithsonian American Art Museum", "Washington, DC"),
+    "Sackler": (
+        "Arthur M. Sackler Gallery, National Museum of Asian Art",
+        "Washington, DC",
+    ),
+    "SAAM": ("Smithsonian American Art Museum", "Washington, DC"),
 }
 
 # Museum names (lowercase) mapped to unit codes, used by resolve_museum_code.

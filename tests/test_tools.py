@@ -199,7 +199,7 @@ class TestSearchObjects:
             "object_type": "Puppets",
             "on_view": True,
             "exhibition_title": "Entertainment Nation",
-            "exhibition_location": "National Museum of American History",
+            "exhibition_location": "National Museum of American History, Washington, DC",
             "web_url": "https://americanhistory.si.edu/collections/object/nmah_1448970",
         }
         assert lunch_box["title"] == "The Muppets Lunch Box"
@@ -254,6 +254,66 @@ class TestSearchObjects:
         assert '(* NOT onPhysicalExhibit:"Yes")' in query
         assert params["rows"] == "5" and params["start"] == "10"
         assert "sort" not in params
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "building, room, location",
+        [
+            (
+                "HAZY",
+                None,
+                "Steven F. Udvar-Hazy Center, National Air and Space Museum, "
+                "Chantilly, VA",
+            ),
+            (
+                "Freer",
+                "Gallery 19",
+                "Freer Gallery of Art, National Museum of Asian Art, Gallery 19, "
+                "Washington, DC",
+            ),
+            (
+                "NMAI NY",
+                None,
+                "National Museum of the American Indian, George Gustav Heye Center, "
+                "New York, NY",
+            ),
+            (
+                "HAC",
+                None,
+                "Smithsonian Gardens, Horticultural Artifacts Collection, "
+                "Washington, DC",
+            ),
+            ("Building 7", "Room 2", "Building 7, Room 2"),
+        ],
+    )
+    async def test_exhibition_buildings_are_named(
+        self, fake_api, building, room, location
+    ):
+        row = make_row(
+            "ld1-x", "X", "NASM", on_view=True, exhibition="E", building=building
+        )
+        if room:
+            row["content"]["indexedStructured"]["exhibition"][0]["room"] = room
+        fake_api.search = lambda params: search_payload([row])
+        result = await call("search_objects", {"query": "x", "on_view": True})
+        assert result["objects"][0]["exhibition_location"] == location
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "date_from, decade",
+        [("1860s", "1860s"), ("1860's", "1860s"), ("1865", "1860s")],
+    )
+    async def test_decade_strings_are_accepted(self, fake_api, date_from, decade):
+        await call(
+            "search_objects",
+            {"query": "lincoln", "date_from": date_from, "date_to": date_from},
+        )
+        assert fake_api.searches[0]["q"] == f'(lincoln) AND date:"{decade}"'
+
+    @pytest.mark.asyncio
+    async def test_unparseable_date_text_gets_the_date_help(self, fake_api):
+        text = await call_error("search_objects", {"date_from": "the sixties"})
+        assert '"1860s"' in text and fake_api.requests == []
 
     @pytest.mark.asyncio
     async def test_pagination_uses_next_offset(self, fake_api):
@@ -462,7 +522,13 @@ class TestGetObject:
         assert result["web_url"] == "https://asia.si.edu/object/F1900.47/"
         assert 1 <= len(result["images"]) <= MAX_IMAGES
         assert "image_count" not in result
-        assert all(image["url"].startswith("https://") for image in result["images"])
+        first = result["images"][0]
+        # Displayable delivery URL; the thumbnail is the same URL, so left out
+        assert (
+            first["url"] == "https://ids.si.edu/ids/deliveryService?id=FS-F1900.47_001"
+        )
+        assert first["download_url"].endswith("FS-F1900.47_001.jpg")
+        assert "thumbnail_url" not in first
 
     @pytest.mark.asyncio
     async def test_images_and_notes_are_capped(self, fake_api):

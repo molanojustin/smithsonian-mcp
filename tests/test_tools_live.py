@@ -90,7 +90,9 @@ async def test_get_object_for_elmo():
         "https://americanhistory.si.edu/collections/object/nmah_1444757"
     )
     assert result["exhibition_title"] == "Entertainment Nation"
-    assert result["exhibition_location"] == "National Museum of American History"
+    assert result["exhibition_location"] == (
+        "National Museum of American History, Washington, DC"
+    )
     assert tokens < 2500
 
 

@@ -29,6 +29,7 @@ from typing import (
     NoReturn,
     Optional,
     Tuple,
+    Union,
 )
 
 from fastmcp import FastMCP
@@ -44,6 +45,7 @@ from .api_client import (
 )
 from .constants import (
     ARCHIVAL_UNIT_CODES,
+    EXHIBITION_BUILDINGS,
     MIXED_UNIT_CODES,
     MUSEUM_MAP,
     NMNH_AGGREGATE_CODE,
@@ -104,8 +106,10 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True, idempotentHin
 
 DATE_HELP = (
     f"date_from and date_to take four-digit years from {MIN_DATE_YEAR} to "
-    f"{MAX_DATE_YEAR}, e.g. 1865. Dates match by decade."
+    f'{MAX_DATE_YEAR}, such as 1865, or decades such as "1860s". Dates match '
+    "by decade."
 )
+_YEAR_TEXT_RE = re.compile(r"\s*(\d{1,4})\s*'?s?\s*")
 UNKNOWN_MUSEUM_HELP = (
     "Use a museum name or unit code such as 'American History' (NMAH), "
     "'Natural History' (NMNH), 'American Art' (SAAM), 'Asian Art' (NMAA), "
@@ -364,6 +368,31 @@ async def _collection_counts(unit: Optional[MuseumRef]) -> CollectionOverview:
     return overview
 
 
+def _year_text(value: Optional[Union[int, str]]) -> Optional[str]:
+    """
+    Normalize a year argument for the client's date filter.
+
+    Args:
+        value: A year (1865), a year string ("1865") or a decade ("1860s").
+
+    Returns:
+        Optional[str]: The year as text, or None if no year was given.
+
+    Raises:
+        ToolError: If the value is not a year or decade.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, bool):
+        raise ToolError(DATE_HELP)
+    if isinstance(value, int):
+        return str(value)
+    match = _YEAR_TEXT_RE.fullmatch(value)
+    if not match:
+        raise ToolError(DATE_HELP)
+    return match.group(1)
+
+
 def _reads_like_a_sentence(query: Optional[str]) -> bool:
     """
     Whether a free-text query looks like a question or sentence.
@@ -414,21 +443,27 @@ def _location_name(location: Optional[str]) -> Optional[str]:
     """
     Readable exhibition location.
 
-    Exhibition blocks name the building by unit code ("NMAH"), optionally
-    followed by a room; the code is replaced with the museum name.
+    Exhibition blocks name the building by a code ("NMAH", "HAZY", "NMAI NY"),
+    optionally followed by a room. Known codes become the building's name and
+    place, with the room in between.
 
     Args:
-        location: Location as parsed by the client ("NMAH" or "NMAH, Gallery 3").
+        location: Location as parsed by the client ("NMAH" or "Freer, Gallery 19").
 
     Returns:
-        Optional[str]: The location with a known building code spelled out.
+        Optional[str]: The location, e.g. "Steven F. Udvar-Hazy Center, National
+        Air and Space Museum, Chantilly, VA".
     """
     if not location:
         return None
-    building, _, rest = location.partition(", ")
-    if building in UNIT_INFO:
-        building = UNIT_INFO[building]["name"]
-    return f"{building}, {rest}" if rest else building
+    building, _, room = location.partition(", ")
+    if building in EXHIBITION_BUILDINGS:
+        name, place = EXHIBITION_BUILDINGS[building]
+    elif building in UNIT_INFO:
+        name, place = UNIT_INFO[building]["name"], UNIT_INFO[building]["location"]
+    else:
+        return location
+    return ", ".join(part for part in (name, room, place) if part)
 
 
 def _web_url(obj: SmithsonianObject) -> Optional[str]:
@@ -571,7 +606,13 @@ def _details(obj: SmithsonianObject) -> ObjectDetails:
         images=[
             ImageSummary(
                 url=str(image.url) if image.url else None,
-                thumbnail_url=str(image.thumbnail_url) if image.thumbnail_url else None,
+                download_url=str(image.download_url) if image.download_url else None,
+                # Often the same delivery URL as url
+                thumbnail_url=(
+                    str(image.thumbnail_url)
+                    if image.thumbnail_url and image.thumbnail_url != image.url
+                    else None
+                ),
                 iiif_url=str(image.iiif_url) if image.iiif_url else None,
                 caption=_trim(image.caption, MAX_SHORT_TEXT_CHARS),
                 is_cc0=image.is_cc0,
@@ -623,8 +664,8 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
     maker: Optional[str] = None,
     topic: Optional[str] = None,
     material: Optional[str] = None,
-    date_from: Optional[int] = None,
-    date_to: Optional[int] = None,
+    date_from: Optional[Union[int, str]] = None,
+    date_to: Optional[Union[int, str]] = None,
     has_images: bool = False,
     cc0_only: bool = False,
     on_view: Optional[bool] = None,
@@ -648,8 +689,10 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
         maker: Creator name, e.g. "Winslow Homer".
         topic: Subject term, e.g. "Civil War".
         material: Material or medium, e.g. "bronze".
-        date_from: Earliest year, matched with decade precision.
-        date_to: Latest year, matched with decade precision.
+        date_from: Earliest year, such as 1860 or "1860s", matched by decade.
+            Some records are dated by their subject, so later books about a
+            period can match.
+        date_to: Latest year, matched by decade.
         has_images: Only objects with images.
         cc0_only: Only objects with CC0 (public domain) media.
         on_view: true for objects on physical exhibit now, false for objects
@@ -665,8 +708,8 @@ async def search_objects(  # pylint: disable=too-many-arguments,too-many-positio
         ObjectSearchResults: Total count, pagination and object summaries.
     """
     unit = _resolve_museum(museum)
-    date_start = str(date_from) if date_from is not None else None
-    date_end = str(date_to) if date_to is not None else None
+    date_start = _year_text(date_from)
+    date_end = _year_text(date_to)
     try:
         date_clause(date_start, date_end)
     except ValueError as exc:
