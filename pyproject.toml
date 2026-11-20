@@ -3,7 +3,7 @@ name = "smithsonian-mcp"
 version = "2.2.0"
 description = "A Model Context Protocol (MCP) server that provides AI assistants with access to the Smithsonian Institution's Open Access collections."
 readme = "README.md"
-requires-python = ">=3.10.0"
+requires-python = ">=3.12"
 authors = [
     {name = "Justin Molano", email = "justinmolano2@gmail.com"}
 ]
