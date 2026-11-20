@@ -40,7 +40,7 @@ Version 2.0 replaces the 28 tools of version 1.x with 5. See [Migrating from 1.x
 You need:
 
 - A free API key from [api.data.gov/signup](https://api.data.gov/signup/)
-- [uv](https://docs.astral.sh/uv/getting-started/installation/). uv downloads a compatible Python (3.10 or newer) if one is not already installed.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/). uv downloads a compatible Python (3.12 or newer) if one is not already installed.
 
 The server speaks MCP over stdio by default. MCP clients such as Claude Desktop start it on demand; you do not run it in the background yourself. For clients that connect over HTTP, it can also run as a long-lived server; see [HTTP transport](#http-transport).
 
@@ -130,7 +130,7 @@ A server run from the clone also reads the clone's `.env`. `--transport stdio` k
 
 #### Python virtual environment without uv
 
-Requires Python 3.10 or newer:
+Requires Python 3.12 or newer:
 
 ```bash
 git clone https://github.com/molanojustin/smithsonian-mcp.git
@@ -173,7 +173,7 @@ The HTTP endpoint has no authentication: anyone who can reach the port can call 
 
 ### Automated Setup Scripts
 
-For a local clone, the setup scripts install dependencies (with `uv sync` when uv is available, otherwise a Python 3.10+ virtual environment and pip), validate your API key and save it to `.env`, and can optionally add the server to your Claude Desktop config, generate an mcpo config, install a background service that serves HTTP (see [Service Management](#service-management)) and run a health check.
+For a local clone, the setup scripts install dependencies (with `uv sync` when uv is available, otherwise a Python 3.12+ virtual environment and pip), validate your API key and save it to `.env`, and can optionally add the server to your Claude Desktop config, generate an mcpo config, install a background service that serves HTTP (see [Service Management](#service-management)) and run a health check.
 
 On macOS or Linux:
 
@@ -694,7 +694,7 @@ Open the clone with `code .`. After `uv sync --group dev`, `.vscode/tasks.json` 
 
 ### For uvx or a local clone:
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs Python 3.10 or newer if needed
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs Python 3.12 or newer if needed
 - API key from [api.data.gov](https://api.data.gov/signup/) (free)
 - Internet connection for API access
 
@@ -707,7 +707,7 @@ Open the clone with `code .`. After `uv sync --group dev`, `.vscode/tasks.json` 
 
 ### For a virtual environment without uv:
 
-- Python 3.10 or higher (CI tests 3.10 through 3.14)
+- Python 3.12 or higher (CI tests 3.12 through 3.14)
 - API key from [api.data.gov](https://api.data.gov/signup/) (free)
 - Internet connection for API access
 
